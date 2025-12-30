@@ -39,3 +39,16 @@ export {
   connectElasticsearch,
   disconnectElasticsearch,
 } from './database';
+
+export {
+  AppError,
+  HttpStatus,
+  ErrorCode,
+  ValidationError,
+  UnauthorizedError,
+  AuthErrorReason,
+} from './errors';
+export type { ErrorDetails, FieldError } from './errors';
+
+export { Logger, initLogger, getLogger, LogLevel, LogCategory, LogModel } from './logger';
+export type { ILogger, LogEntry, LogMetadata, LoggerOptions } from './logger';
