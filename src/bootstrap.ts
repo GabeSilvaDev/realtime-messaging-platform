@@ -1,9 +1,24 @@
+import {
+  connectPostgres,
+  connectRedis,
+  connectMongo,
+  connectElasticsearch,
+  disconnectPostgres,
+  disconnectRedis,
+  disconnectMongo,
+  disconnectElasticsearch,
+} from './shared/database';
+
 export async function bootstrap(): Promise<void> {
-  // Inicialização de conexões com bancos de dados
-  // PostgreSQL, Redis, MongoDB, Elasticsearch
-  // TODO: Inicializar conexões
-  // await connectPostgres();
-  // await connectRedis();
-  // await connectMongoDB();
-  // await connectElasticsearch();
+  await connectPostgres();
+  await connectRedis();
+  await connectMongo();
+  await connectElasticsearch();
+}
+
+export async function shutdown(): Promise<void> {
+  await disconnectElasticsearch();
+  await disconnectMongo();
+  await disconnectRedis();
+  await disconnectPostgres();
 }
