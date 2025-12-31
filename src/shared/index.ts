@@ -1,16 +1,19 @@
-// Types
 export type { Environment } from './types';
 
-// Interfaces
 export type {
   Config,
   DatabaseConfig,
   RedisConfig,
   MongoConfig,
   ElasticsearchConfig,
+  CorsConfig,
+  RateLimiterOptions,
+  SecurityConfig,
+  RequestIdOptions,
+  ErrorResponse,
+  RequestLogMetadata,
 } from './interfaces';
 
-// Constants
 export {
   DEFAULT_PORT,
   POSTGRES_DEFAULTS,
@@ -19,12 +22,19 @@ export {
   ELASTICSEARCH_DEFAULTS,
   POOL_CONFIG,
   MONGO_OPTIONS,
+  CORS_DEFAULT_METHODS,
+  CORS_DEFAULT_ALLOWED_HEADERS,
+  CORS_DEFAULT_EXPOSED_HEADERS,
+  CORS_DEFAULT_MAX_AGE,
+  RATE_LIMIT_DEFAULT_WINDOW_MS,
+  RATE_LIMIT_DEFAULT_MAX_REQUESTS,
+  RATE_LIMIT_DEFAULT_KEY_PREFIX,
+  REQUEST_ID_DEFAULT_HEADER_NAME,
+  HSTS_DEFAULT_MAX_AGE,
 } from './constants';
 
-// Config
 export { default as config } from './config/database';
 
-// Database connections
 export {
   sequelize,
   connectPostgres,
@@ -52,3 +62,19 @@ export type { ErrorDetails, FieldError } from './errors';
 
 export { Logger, initLogger, getLogger, LogLevel, LogCategory, LogModel } from './logger';
 export type { ILogger, LogEntry, LogMetadata, LoggerOptions } from './logger';
+
+export {
+  errorHandler,
+  requestLogger,
+  rateLimiter,
+  strictRateLimiter,
+  authRateLimiter,
+  createRateLimiter,
+  corsMiddleware,
+  createCorsMiddleware,
+  helmetMiddleware,
+  createHelmetMiddleware,
+  notFoundHandler,
+  requestIdMiddleware,
+  createRequestIdMiddleware,
+} from './middlewares';
