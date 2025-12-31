@@ -19,4 +19,18 @@ export type {
   Subscriber,
   IEventHandler,
 } from './event.interfaces';
-export type { LogMetadata, LogEntry, ILogger, LoggerOptions, ILogDocument } from './logger.interfaces';
+export type {
+  LogMetadata,
+  LogEntry,
+  ILogger,
+  LoggerOptions,
+  ILogDocument,
+} from './logger.interfaces';
+export type {
+  CorsConfig,
+  RateLimiterOptions,
+  SecurityConfig,
+  RequestIdOptions,
+  ErrorResponse,
+  RequestLogMetadata,
+} from './middleware.interfaces';
