@@ -12,6 +12,7 @@ import {
   partialSchema,
   pickSchema,
   omitSchema,
+  z as zodExport,
 } from '@/shared/utils/validator';
 
 describe('Validator Utils', () => {
@@ -349,9 +350,23 @@ describe('Validator Utils', () => {
       expect(result.success).toBe(true);
     });
 
+    it('should validate with options using created validator', () => {
+      const validator = createValidator(stringSchema);
+      const result = validator.validate('hello', {});
+
+      expect(result.success).toBe(true);
+    });
+
     it('should validateAsync using created validator', async () => {
       const validator = createValidator(stringSchema);
       const result = await validator.validateAsync('hello');
+
+      expect(result.success).toBe(true);
+    });
+
+    it('should validateAsync with options using created validator', async () => {
+      const validator = createValidator(stringSchema);
+      const result = await validator.validateAsync('hello', {});
 
       expect(result.success).toBe(true);
     });
@@ -363,9 +378,23 @@ describe('Validator Utils', () => {
       expect(data).toBe('hello');
     });
 
+    it('should validateOrThrow with options using created validator', () => {
+      const validator = createValidator(stringSchema);
+      const data = validator.validateOrThrow('hello', {});
+
+      expect(data).toBe('hello');
+    });
+
     it('should validateOrThrowAsync using created validator', async () => {
       const validator = createValidator(stringSchema);
       const data = await validator.validateOrThrowAsync('hello');
+
+      expect(data).toBe('hello');
+    });
+
+    it('should validateOrThrowAsync with options using created validator', async () => {
+      const validator = createValidator(stringSchema);
+      const data = await validator.validateOrThrowAsync('hello', {});
 
       expect(data).toBe('hello');
     });
@@ -491,6 +520,15 @@ describe('Validator Utils', () => {
       const result = omitted.safeParse({ id: '123', name: 'John' });
 
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('z re-export', () => {
+    it('should re-export z from zod', () => {
+      expect(zodExport).toBe(z);
+      expect(zodExport.string).toBeDefined();
+      expect(zodExport.number).toBeDefined();
+      expect(zodExport.object).toBeDefined();
     });
   });
 });
