@@ -68,16 +68,14 @@ function formatZodIssue(issue: ZodIssue): ValidationErrorDetail {
     }
   } else if (issue.code === 'invalid_value') {
     const valueIssue = issue as ZodIssueInvalidValue;
-    if (valueIssue.values.length > 0) {
-      message = `Deve ser um dos valores: ${valueIssue.values.join(', ')}`;
-    }
+    message = `Deve ser um dos valores: ${valueIssue.values.join(', ')}`;
   }
 
   return {
     field: getFieldPath(issue),
     message,
     code: issue.code,
-    path: issue.path.map((p) => (typeof p === 'symbol' ? p.toString() : p)),
+    path: issue.path.map((p) => String(p)),
     received: issue.input,
     expected: 'expected' in issue ? (issue.expected as string) : undefined,
   };
@@ -139,7 +137,7 @@ export function validateOrThrow<T>(
   if (!result.success) {
     const error = new Error('Validation failed');
     (error as Error & { validationErrors: ValidationErrorDetail[] }).validationErrors =
-      result.errors ?? [];
+      result.errors!;
     throw error;
   }
 
@@ -156,7 +154,7 @@ export async function validateOrThrowAsync<T>(
   if (!result.success) {
     const error = new Error('Validation failed');
     (error as Error & { validationErrors: ValidationErrorDetail[] }).validationErrors =
-      result.errors ?? [];
+      result.errors!;
     throw error;
   }
 
