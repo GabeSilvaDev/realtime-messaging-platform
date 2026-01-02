@@ -66,10 +66,10 @@ export type { ILogger, LogEntry, LogMetadata, LoggerOptions } from './logger';
 export {
   errorHandler,
   requestLogger,
-  rateLimiter,
-  strictRateLimiter,
-  authRateLimiter,
   createRateLimiter,
+  getRateLimiter,
+  getStrictRateLimiter,
+  getAuthRateLimiter,
   corsMiddleware,
   createCorsMiddleware,
   helmetMiddleware,
