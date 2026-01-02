@@ -54,7 +54,6 @@ const logSchema = new Schema<ILogDocumentModel>(
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
     },
   },
   {
