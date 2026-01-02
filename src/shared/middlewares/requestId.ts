@@ -34,6 +34,13 @@ export function createRequestIdMiddleware(options: RequestIdOptions = {}) {
   };
 }
 
-export const requestIdMiddleware = createRequestIdMiddleware();
+let _requestIdMiddleware: ReturnType<typeof createRequestIdMiddleware> | null = null;
 
-export default requestIdMiddleware;
+export function getRequestIdMiddleware(): ReturnType<typeof createRequestIdMiddleware> {
+  _requestIdMiddleware ??= createRequestIdMiddleware();
+  return _requestIdMiddleware;
+}
+
+export const requestIdMiddleware = getRequestIdMiddleware;
+
+export default createRequestIdMiddleware;

@@ -31,8 +31,8 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimitRe
     standardHeaders: true,
     legacyHeaders: false,
     skip,
-    keyGenerator:
-      keyGenerator ?? ((req: Request): string => req.ip ?? req.socket.remoteAddress ?? 'unknown'),
+    keyGenerator,
+    validate: { xForwardedForHeader: false },
     handler: (req: Request, res: Response): void => {
       const requestId = String(req.headers['x-request-id'] ?? 'unknown');
       const error = new AppError(message, HttpStatus.TOO_MANY_REQUESTS, ErrorCode.RATE_LIMITED);
@@ -64,19 +64,36 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimitRe
   return rateLimit(rateLimitOptions);
 }
 
-export const rateLimiter = createRateLimiter();
+let _rateLimiter: RateLimitRequestHandler | null = null;
+let _strictRateLimiter: RateLimitRequestHandler | null = null;
+let _authRateLimiter: RateLimitRequestHandler | null = null;
 
-export const strictRateLimiter = createRateLimiter({
-  max: RATE_LIMIT_STRICT_MAX_REQUESTS,
-  keyPrefix: RATE_LIMIT_STRICT_KEY_PREFIX,
-  message: 'Too many attempts, please try again later',
-});
+export function getRateLimiter(): RateLimitRequestHandler {
+  _rateLimiter ??= createRateLimiter();
+  return _rateLimiter;
+}
 
-export const authRateLimiter = createRateLimiter({
-  windowMs: RATE_LIMIT_AUTH_WINDOW_MS,
-  max: RATE_LIMIT_AUTH_MAX_REQUESTS,
-  keyPrefix: RATE_LIMIT_AUTH_KEY_PREFIX,
-  message: 'Too many authentication attempts, please try again in a minute',
-});
+export function getStrictRateLimiter(): RateLimitRequestHandler {
+  _strictRateLimiter ??= createRateLimiter({
+    max: RATE_LIMIT_STRICT_MAX_REQUESTS,
+    keyPrefix: RATE_LIMIT_STRICT_KEY_PREFIX,
+    message: 'Too many attempts, please try again later',
+  });
+  return _strictRateLimiter;
+}
 
-export default rateLimiter;
+export function getAuthRateLimiter(): RateLimitRequestHandler {
+  _authRateLimiter ??= createRateLimiter({
+    windowMs: RATE_LIMIT_AUTH_WINDOW_MS,
+    max: RATE_LIMIT_AUTH_MAX_REQUESTS,
+    keyPrefix: RATE_LIMIT_AUTH_KEY_PREFIX,
+    message: 'Too many authentication attempts, please try again in a minute',
+  });
+  return _authRateLimiter;
+}
+
+export { getRateLimiter as rateLimiter };
+export { getStrictRateLimiter as strictRateLimiter };
+export { getAuthRateLimiter as authRateLimiter };
+
+export default createRateLimiter;

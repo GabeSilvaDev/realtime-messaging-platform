@@ -50,6 +50,13 @@ export function createHelmetMiddleware(config: SecurityConfig = {}): RequestHand
   return helmet(helmetOptions);
 }
 
-export const helmetMiddleware = createHelmetMiddleware();
+let _helmetMiddleware: RequestHandler | null = null;
 
-export default helmetMiddleware;
+export function getHelmetMiddleware(): RequestHandler {
+  _helmetMiddleware ??= createHelmetMiddleware();
+  return _helmetMiddleware;
+}
+
+export const helmetMiddleware = getHelmetMiddleware;
+
+export default createHelmetMiddleware;

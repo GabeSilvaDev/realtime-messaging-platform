@@ -62,6 +62,13 @@ export function createCorsMiddleware(config: CorsConfig = {}): RequestHandler {
   return cors(corsOptions);
 }
 
-export const corsMiddleware = createCorsMiddleware();
+let _corsMiddleware: RequestHandler | null = null;
 
-export default corsMiddleware;
+export function getCorsMiddleware(): RequestHandler {
+  _corsMiddleware ??= createCorsMiddleware();
+  return _corsMiddleware;
+}
+
+export const corsMiddleware = getCorsMiddleware;
+
+export default createCorsMiddleware;
