@@ -24,3 +24,15 @@ export type {
   SearchParams,
   DateRangeParams,
 } from './validation.types';
+
+export { UserStatus } from './user.types';
+export type {
+  UserAttributes,
+  UserCreationAttributes,
+  CreateUserDTO,
+  UpdateUserDTO,
+  UpdatePasswordDTO,
+  UserPublicResponse,
+  UserPrivateResponse,
+  UserFilters,
+} from './user.types';
