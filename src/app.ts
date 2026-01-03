@@ -33,7 +33,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
 
 // Routes will be registered here
-// app.use('/api/v1', apiRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
