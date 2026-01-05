@@ -15,14 +15,7 @@ jest.mock('@/shared/logger/models/Log.model', () => ({
   },
 }));
 
-import {
-  Logger,
-  initLogger,
-  getLogger,
-  LogLevel,
-  LogCategory,
-  LogModel,
-} from '@/shared/logger';
+import { Logger, initLogger, getLogger, LogLevel, LogCategory, LogModel } from '@/shared/logger';
 
 describe('Logger Index Exports', () => {
   beforeEach(() => {

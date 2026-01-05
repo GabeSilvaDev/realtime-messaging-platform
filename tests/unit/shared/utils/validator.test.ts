@@ -251,9 +251,7 @@ describe('Validator Utils', () => {
       try {
         validateOrThrow(stringSchema, 123);
       } catch (error) {
-        expect(
-          (error as Error & { validationErrors: unknown[] }).validationErrors
-        ).toBeDefined();
+        expect((error as Error & { validationErrors: unknown[] }).validationErrors).toBeDefined();
         expect(
           (error as Error & { validationErrors: unknown[] }).validationErrors.length
         ).toBeGreaterThan(0);
@@ -269,18 +267,14 @@ describe('Validator Utils', () => {
     });
 
     it('should throw error for invalid input asynchronously', async () => {
-      await expect(validateOrThrowAsync(stringSchema, 123)).rejects.toThrow(
-        'Validation failed'
-      );
+      await expect(validateOrThrowAsync(stringSchema, 123)).rejects.toThrow('Validation failed');
     });
 
     it('should attach validationErrors to thrown error asynchronously', async () => {
       try {
         await validateOrThrowAsync(stringSchema, 123);
       } catch (error) {
-        expect(
-          (error as Error & { validationErrors: unknown[] }).validationErrors
-        ).toBeDefined();
+        expect((error as Error & { validationErrors: unknown[] }).validationErrors).toBeDefined();
       }
     });
   });

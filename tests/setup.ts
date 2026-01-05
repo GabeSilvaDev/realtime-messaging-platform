@@ -4,7 +4,7 @@ import { LogLevel, LogCategory } from '@/shared/types/logger.types';
 
 beforeAll(() => {
   process.env.NODE_ENV = 'test';
-  
+
   Logger.resetInstance();
   Logger.getInstance({
     service: 'test',

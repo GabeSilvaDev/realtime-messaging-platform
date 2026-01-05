@@ -31,9 +31,7 @@ describe('Express App Integration', () => {
         res.json({ received: req.body });
       });
 
-      const response = await request(app)
-        .post('/test')
-        .set('Content-Type', 'application/json');
+      const response = await request(app).post('/test').set('Content-Type', 'application/json');
 
       expect(response.status).toBe(200);
       expect(response.body.received).toEqual({});

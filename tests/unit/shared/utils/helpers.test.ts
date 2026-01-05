@@ -1,52 +1,52 @@
 import {
-  slugify,
-  truncate,
+  addTime,
+  buildQueryString,
   capitalize,
   capitalizeWords,
-  maskEmail,
-  maskPhone,
-  stripHtml,
+  chunk,
+  clamp,
+  debounce,
+  deepClone,
   escapeHtml,
-  generateRandomString,
-  timeAgo,
-  formatISODate,
+  first,
+  flatten,
+  formatBytes,
   formatDate,
   formatDateTime,
-  isExpired,
-  addTime,
-  generateUUID,
-  generateToken,
+  formatISODate,
+  formatNumber,
+  generateRandomString,
   generateShortId,
-  hashString,
-  pick,
-  omit,
-  deepClone,
-  isEmpty,
-  flatten,
-  chunk,
+  generateToken,
+  generateUUID,
   groupBy,
+  hashString,
+  isDefined,
+  isEmpty,
+  isExpired,
+  isNumber,
+  isPlainObject,
+  isString,
+  isValidDate,
+  joinUrl,
+  last,
+  maskEmail,
+  maskPhone,
+  omit,
+  parseQueryString,
+  pick,
+  randomInt,
+  retry,
+  shuffle,
+  sleep,
+  slugify,
+  stripHtml,
+  throttle,
+  timeAgo,
+  truncate,
   unique,
   uniqueBy,
-  shuffle,
-  last,
-  first,
-  sleep,
-  retry,
   withTimeout,
-  debounce,
-  throttle,
-  clamp,
-  randomInt,
-  formatNumber,
-  formatBytes,
-  buildQueryString,
-  parseQueryString,
-  joinUrl,
-  isDefined,
-  isString,
-  isNumber,
-  isValidDate,
-  isPlainObject,
 } from '@/shared/utils/helpers';
 
 describe('Helpers', () => {
@@ -512,10 +512,7 @@ describe('Helpers', () => {
       });
 
       it('should retry on failure and succeed', async () => {
-        const fn = jest
-          .fn()
-          .mockRejectedValueOnce(new Error('fail'))
-          .mockResolvedValue('success');
+        const fn = jest.fn().mockRejectedValueOnce(new Error('fail')).mockResolvedValue('success');
         const result = await retry(fn, 3, 1, 1);
         expect(result).toBe('success');
         expect(fn).toHaveBeenCalledTimes(2);
@@ -575,9 +572,9 @@ describe('Helpers', () => {
         jest.useFakeTimers();
         const promise = new Promise<string>(() => {});
         const timeoutPromise = withTimeout(promise, 100);
-        
+
         jest.advanceTimersByTime(100);
-        
+
         await expect(timeoutPromise).rejects.toThrow('timed out');
         jest.useRealTimers();
       });
@@ -734,9 +731,7 @@ describe('Helpers', () => {
       });
 
       it('should handle trailing slashes', () => {
-        expect(joinUrl('https://api.com/', '/v1/', '/users/')).toBe(
-          'https://api.com/v1/users'
-        );
+        expect(joinUrl('https://api.com/', '/v1/', '/users/')).toBe('https://api.com/v1/users');
       });
 
       it('should filter empty parts', () => {

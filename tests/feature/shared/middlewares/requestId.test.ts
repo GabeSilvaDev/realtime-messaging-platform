@@ -10,11 +10,13 @@ describe('RequestId Middleware', () => {
   });
 
   describe('custom requestId middleware', () => {
-    const createTestRequestIdMiddleware = (options: {
-      headerName?: string;
-      generator?: () => string;
-      setResponseHeader?: boolean;
-    } = {}) => {
+    const createTestRequestIdMiddleware = (
+      options: {
+        headerName?: string;
+        generator?: () => string;
+        setResponseHeader?: boolean;
+      } = {}
+    ) => {
       const {
         headerName = REQUEST_ID_DEFAULT_HEADER_NAME,
         generator = () => `test-id-${Date.now()}`,

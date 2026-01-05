@@ -1,4 +1,10 @@
-import express, { Application, Request, Response, NextFunction, ErrorRequestHandler } from 'express';
+import express, {
+  Application,
+  Request,
+  Response,
+  NextFunction,
+  ErrorRequestHandler,
+} from 'express';
 import request from 'supertest';
 import { AppError, HttpStatus, ErrorCode } from '@/shared/errors';
 import type { ErrorResponse } from '@/shared/interfaces';

@@ -97,13 +97,13 @@ describe('Logger', () => {
       });
 
       logger.info('Test message');
-      
+
       jest.advanceTimersByTime(5000);
-      
+
       Logger.resetInstance();
       jest.clearAllTimers();
       jest.useRealTimers();
-      
+
       expect(LogModel.insertMany).toHaveBeenCalled();
     });
   });
@@ -556,7 +556,7 @@ describe('initLogger and getLogger', () => {
 
   it('should throw error if getLogger called before initLogger', () => {
     jest.resetModules();
-    
+
     jest.doMock('@/shared/logger/models/Log.model', () => ({
       LogModel: {
         insertMany: jest.fn().mockResolvedValue([]),
@@ -573,9 +573,9 @@ describe('initLogger and getLogger', () => {
         })),
       },
     }));
-    
+
     const freshModule = require('@/shared/logger');
-    
+
     expect(() => {
       freshModule.getLogger();
     }).toThrow('Logger not initialized. Call initLogger() first.');

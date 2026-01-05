@@ -3,9 +3,9 @@ import { EventBus } from '@/shared/event-bus/EventBus';
 describe('EventBus static null instance', () => {
   it('should handle resetInstance when instance is null', () => {
     (EventBus as any).instance = null;
-    
+
     expect(() => EventBus.resetInstance()).not.toThrow();
-    
+
     const instance = EventBus.getInstance();
     expect(instance).toBeDefined();
   });
@@ -109,9 +109,27 @@ describe('EventBus', () => {
     it('should call subscribers in priority order', async () => {
       const callOrder: number[] = [];
 
-      eventBus.subscribe('user:created', () => { callOrder.push(1); }, { priority: 1 });
-      eventBus.subscribe('user:created', () => { callOrder.push(2); }, { priority: 10 });
-      eventBus.subscribe('user:created', () => { callOrder.push(3); }, { priority: 5 });
+      eventBus.subscribe(
+        'user:created',
+        () => {
+          callOrder.push(1);
+        },
+        { priority: 1 }
+      );
+      eventBus.subscribe(
+        'user:created',
+        () => {
+          callOrder.push(2);
+        },
+        { priority: 10 }
+      );
+      eventBus.subscribe(
+        'user:created',
+        () => {
+          callOrder.push(3);
+        },
+        { priority: 5 }
+      );
 
       await eventBus.publish('user:created', userCreatedPayload);
 
@@ -122,11 +140,7 @@ describe('EventBus', () => {
       const callback = jest.fn();
       eventBus.subscribe('user:created', callback);
 
-      const eventId = await eventBus.publish(
-        'user:created',
-        userCreatedPayload,
-        { async: true }
-      );
+      const eventId = await eventBus.publish('user:created', userCreatedPayload, { async: true });
 
       expect(eventId).toBeDefined();
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -461,7 +475,7 @@ describe('EventBus', () => {
     it('should do nothing when instance is null', () => {
       EventBus.resetInstance();
       EventBus.resetInstance();
-      
+
       expect(() => EventBus.resetInstance()).not.toThrow();
     });
   });

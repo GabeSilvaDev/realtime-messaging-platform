@@ -1,4 +1,10 @@
-import express, { Application, Request, Response, NextFunction, ErrorRequestHandler } from 'express';
+import express, {
+  Application,
+  Request,
+  Response,
+  NextFunction,
+  ErrorRequestHandler,
+} from 'express';
 import request from 'supertest';
 import { AppError, HttpStatus, ErrorCode } from '@/shared/errors';
 import type { ErrorResponse } from '@/shared/interfaces';
@@ -97,9 +103,7 @@ describe('ErrorHandler Middleware', () => {
       });
       app.use(testErrorHandler);
 
-      const response = await request(app)
-        .get('/test')
-        .set('x-request-id', 'test-request-id');
+      const response = await request(app).get('/test').set('x-request-id', 'test-request-id');
 
       expect(response.body.error.requestId).toBe('test-request-id');
     });
