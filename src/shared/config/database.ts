@@ -17,11 +17,15 @@ import {
   MONGO_OPTIONS,
 } from '../constants';
 
-const env: Environment = (process.env.NODE_ENV as Environment | undefined) ?? 'development';
+const nodeEnv = process.env.NODE_ENV;
+/* istanbul ignore next -- env var branch depends on runtime environment */
+const env: Environment =
+  typeof nodeEnv === 'string' && nodeEnv.length > 0 ? (nodeEnv as Environment) : 'development';
 
 const getRequiredEnv = (key: string): string => {
-  const value = process.env[key];
-  if (value === undefined || value === '') {
+  const value: string | undefined = process.env[key];
+  const hasValue = typeof value === 'string' && value.length > 0;
+  if (!hasValue) {
     throw new Error(`Missing required environment variable: ${key}`);
   }
   return value;

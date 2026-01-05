@@ -136,8 +136,9 @@ export function validateOrThrow<T>(
 
   if (!result.success) {
     const error = new Error('Validation failed');
+    /* istanbul ignore next -- errors always present when success is false */
     (error as Error & { validationErrors: ValidationErrorDetail[] }).validationErrors =
-      result.errors!;
+      result.errors ?? [];
     throw error;
   }
 
@@ -153,8 +154,9 @@ export async function validateOrThrowAsync<T>(
 
   if (!result.success) {
     const error = new Error('Validation failed');
+    /* istanbul ignore next -- errors always present when success is false */
     (error as Error & { validationErrors: ValidationErrorDetail[] }).validationErrors =
-      result.errors!;
+      result.errors ?? [];
     throw error;
   }
 

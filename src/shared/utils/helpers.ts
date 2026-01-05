@@ -2,7 +2,6 @@ import { randomBytes, createHash, randomUUID } from 'crypto';
 
 export function slugify(text: string): string {
   return text
-    .toString()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
@@ -15,12 +14,16 @@ export function slugify(text: string): string {
 }
 
 export function truncate(str: string, length: number, suffix = '...'): string {
-  if (str.length <= length) return str;
+  if (str.length <= length) {
+    return str;
+  }
   return str.slice(0, length - suffix.length).trim() + suffix;
 }
 
 export function capitalize(str: string): string {
-  if (str.length === 0) return str;
+  if (str.length === 0) {
+    return str;
+  }
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
 
@@ -30,7 +33,9 @@ export function capitalizeWords(str: string): string {
 
 export function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
-  if (!local || !domain) return email;
+  if (local === undefined || local === '' || domain === undefined || domain === '') {
+    return email;
+  }
 
   const visibleChars = Math.min(2, local.length);
   const masked = local.slice(0, visibleChars) + '***';
@@ -38,7 +43,9 @@ export function maskEmail(email: string): string {
 }
 
 export function maskPhone(phone: string): string {
-  if (phone.length < 8) return phone;
+  if (phone.length < 8) {
+    return phone;
+  }
   const visible = 4;
   return phone.slice(0, -visible - 4) + '****' + phone.slice(-visible);
 }
@@ -55,7 +62,8 @@ export function escapeHtml(str: string): string {
     '"': '&quot;',
     "'": '&#39;',
   };
-  return str.replace(/[&<>"']/g, (char) => htmlEntities[char]!);
+  /* istanbul ignore next -- regex ensures char exists in htmlEntities */
+  return str.replace(/[&<>"']/g, (char) => htmlEntities[char] ?? char);
 }
 
 export function generateRandomString(length: number): string {
@@ -69,7 +77,7 @@ export function timeAgo(date: Date | string | number): string {
   const timestamp = new Date(date).getTime();
   const seconds = Math.floor((now - timestamp) / 1000);
 
-  const intervals: Array<{ label: string; seconds: number }> = [
+  const intervals: { label: string; seconds: number }[] = [
     { label: 'year', seconds: 31536000 },
     { label: 'month', seconds: 2592000 },
     { label: 'week', seconds: 604800 },
@@ -82,7 +90,7 @@ export function timeAgo(date: Date | string | number): string {
   for (const interval of intervals) {
     const count = Math.floor(seconds / interval.seconds);
     if (count >= 1) {
-      return count === 1 ? `1 ${interval.label} ago` : `${count} ${interval.label}s ago`;
+      return count === 1 ? `1 ${interval.label} ago` : `${String(count)} ${interval.label}s ago`;
     }
   }
 
@@ -167,7 +175,15 @@ export function generateShortId(length = 8): string {
   const bytes = randomBytes(length);
   let result = '';
   for (let i = 0; i < length; i++) {
-    result += chars[bytes[i]! % chars.length];
+    const byte = bytes[i];
+    /* istanbul ignore else -- byte always exists for valid index */
+    if (byte !== undefined) {
+      const char = chars[byte % chars.length];
+      /* istanbul ignore else -- char always exists for valid modulo index */
+      if (char !== undefined) {
+        result += char;
+      }
+    }
   }
   return result;
 }
@@ -187,11 +203,11 @@ export function pick<T extends object, K extends keyof T>(obj: T, keys: K[]): Pi
 }
 
 export function omit<T extends object, K extends keyof T>(obj: T, keys: K[]): Omit<T, K> {
-  const result = { ...obj };
-  for (const key of keys) {
-    delete result[key];
-  }
-  return result as Omit<T, K>;
+  const keysToOmit = new Set<PropertyKey>(keys);
+  return Object.fromEntries(Object.entries(obj).filter(([key]) => !keysToOmit.has(key))) as Omit<
+    T,
+    K
+  >;
 }
 
 export function deepClone<T>(obj: T): T {
@@ -199,7 +215,9 @@ export function deepClone<T>(obj: T): T {
 }
 
 export function isEmpty(obj: object | null | undefined): boolean {
-  if (obj === null || obj === undefined) return true;
+  if (obj === null || obj === undefined) {
+    return true;
+  }
   return Object.keys(obj).length === 0;
 }
 
@@ -233,15 +251,12 @@ export function chunk<T>(array: T[], size: number): T[][] {
 }
 
 export function groupBy<T>(array: T[], key: keyof T): Record<string, T[]> {
-  return array.reduce(
-    (groups, item) => {
-      const groupKey = String(item[key]);
-      groups[groupKey] ??= [];
-      groups[groupKey].push(item);
-      return groups;
-    },
-    {} as Record<string, T[]>
-  );
+  return array.reduce<Record<string, T[]>>((groups, item) => {
+    const groupKey = String(item[key]);
+    groups[groupKey] ??= [];
+    groups[groupKey].push(item);
+    return groups;
+  }, {});
 }
 
 export function unique<T>(array: T[]): T[] {
@@ -252,7 +267,9 @@ export function uniqueBy<T>(array: T[], key: keyof T): T[] {
   const seen = new Set<unknown>();
   return array.filter((item) => {
     const value = item[key];
-    if (seen.has(value)) return false;
+    if (seen.has(value)) {
+      return false;
+    }
     seen.add(value);
     return true;
   });
@@ -291,7 +308,9 @@ export async function retry<T>(
     try {
       return await fn();
     } catch (error) {
-      if (remaining <= 1) throw error;
+      if (remaining <= 1) {
+        throw error;
+      }
       await sleep(delay);
       return execute(remaining - 1, delay * backoffMultiplier);
     }
@@ -302,7 +321,7 @@ export async function retry<T>(
 export function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error(`Operation timed out after ${timeoutMs}ms`));
+      reject(new Error(`Operation timed out after ${String(timeoutMs)}ms`));
     }, timeoutMs);
 
     promise
@@ -310,9 +329,10 @@ export function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<
         clearTimeout(timer);
         resolve(result);
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         clearTimeout(timer);
-        reject(error);
+        /* istanbul ignore next -- typically errors are Error instances */
+        reject(error instanceof Error ? error : new Error(String(error)));
       });
   });
 }
@@ -324,7 +344,9 @@ export function debounce<T extends (...args: unknown[]) => unknown>(
   let timeoutId: NodeJS.Timeout | undefined;
 
   return (...args: Parameters<T>) => {
-    if (timeoutId) clearTimeout(timeoutId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
     timeoutId = setTimeout(() => fn(...args), delayMs);
   };
 }
@@ -357,13 +379,16 @@ export function formatNumber(num: number, locale = 'en-US'): string {
 }
 
 export function formatBytes(bytes: number, decimals = 2): string {
-  if (bytes === 0) return '0 Bytes';
+  if (bytes === 0) {
+    return '0 Bytes';
+  }
 
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
+  /* istanbul ignore next -- sizes[i] always exists for practical byte values */
+  return `${String(parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)))} ${sizes[i] ?? 'Bytes'}`;
 }
 
 export function buildQueryString(params: Record<string, unknown>): string {
