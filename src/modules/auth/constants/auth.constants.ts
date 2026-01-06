@@ -1,2 +1,10 @@
 export const PASSWORD_RESET_PREFIX = 'password_reset:';
 export const PASSWORD_RESET_TTL = 3600;
+
+export const AUTH_CONSTANTS = {
+  PASSWORD_RESET_PREFIX,
+  PASSWORD_RESET_TTL,
+  ACCESS_TOKEN_EXPIRY: '15m',
+  REFRESH_TOKEN_EXPIRY: '7d',
+  BCRYPT_ROUNDS: 12,
+} as const;
