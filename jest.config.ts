@@ -34,6 +34,7 @@ const config: Config = {
         tsconfig: 'tsconfig.test.json',
       },
     ],
+    '^.+\\.js$': 'babel-jest',
   },
   transformIgnorePatterns: ['/node_modules/(?!(uuid)/)'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
