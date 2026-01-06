@@ -39,7 +39,17 @@ export class AppError extends Error {
   }
 
   public static isAppError(error: unknown): error is AppError {
-    return error instanceof AppError;
+    if (error === null || typeof error !== 'object') {
+      return false;
+    }
+    const err = error as Record<string, unknown>;
+    return (
+      typeof err.statusCode === 'number' &&
+      typeof err.code === 'string' &&
+      typeof err.message === 'string' &&
+      typeof err.isOperational === 'boolean' &&
+      err.timestamp instanceof Date
+    );
   }
 
   public static badRequest(message: string, details?: ErrorDetails[]): AppError {
