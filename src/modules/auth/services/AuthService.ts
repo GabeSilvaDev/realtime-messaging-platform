@@ -15,6 +15,15 @@ import type { IUserRepository } from '../interfaces';
 import { AuthEvents } from '../events/AuthEvents';
 import { redis } from '@/shared/database';
 import { PASSWORD_RESET_PREFIX, PASSWORD_RESET_TTL } from '../constants/auth.constants';
+import {
+  EmailAlreadyExistsException,
+  UsernameAlreadyExistsException,
+  InvalidCredentialsException,
+  InvalidTokenException,
+  UserNotFoundException,
+  InvalidPasswordException,
+  SamePasswordException,
+} from '../exceptions';
 
 export class AuthService {
   constructor(
@@ -32,10 +41,10 @@ export class AuthService {
     ]);
 
     if (emailExists) {
-      throw new Error('Email já cadastrado');
+      throw new EmailAlreadyExistsException();
     }
     if (usernameExists) {
-      throw new Error('Username já em uso');
+      throw new UsernameAlreadyExistsException();
     }
 
     const hashedPassword = await this.passwords.hash(data.password);
@@ -63,13 +72,13 @@ export class AuthService {
     const user = await this.users.findByEmail(data.email);
     if (!user) {
       this.events.emitLoginFailed(data.email, 'User not found');
-      throw new Error('Credenciais inválidas');
+      throw new InvalidCredentialsException();
     }
 
     const isValid = await this.passwords.compare(data.password, user.password);
     if (!isValid) {
       this.events.emitLoginFailed(data.email, 'Invalid password');
-      throw new Error('Credenciais inválidas');
+      throw new InvalidCredentialsException();
     }
 
     const tokens = await this.createTokens(user.id, user.email, user.username, ctx);
@@ -100,13 +109,13 @@ export class AuthService {
 
     const storedToken = await this.refreshTokens.findByToken(refreshToken);
     if (storedToken?.isValid() !== true) {
-      throw new Error('Token inválido ou expirado');
+      throw new InvalidTokenException();
     }
 
     const user = await this.users.findById(decoded.userId);
     if (!user) {
       await this.refreshTokens.revoke(storedToken);
-      throw new Error('Usuário não encontrado');
+      throw new UserNotFoundException();
     }
 
     await this.refreshTokens.revoke(storedToken);
@@ -137,7 +146,7 @@ export class AuthService {
 
     const userId = await redis.get(key);
     if (userId === null) {
-      throw new Error('Token inválido ou expirado');
+      throw new InvalidTokenException();
     }
 
     const hashedPassword = await this.passwords.hash(data.newPassword);
@@ -154,17 +163,17 @@ export class AuthService {
   async changePassword(userId: string, data: ChangePasswordDTO): Promise<void> {
     const user = await this.users.findById(userId);
     if (!user) {
-      throw new Error('Usuário não encontrado');
+      throw new UserNotFoundException();
     }
 
     const isValid = await this.passwords.compare(data.currentPassword, user.password);
     if (!isValid) {
-      throw new Error('Senha atual incorreta');
+      throw new InvalidPasswordException();
     }
 
     const isSame = await this.passwords.compare(data.newPassword, user.password);
     if (isSame) {
-      throw new Error('Nova senha deve ser diferente da atual');
+      throw new SamePasswordException();
     }
 
     const hashedPassword = await this.passwords.hash(data.newPassword);
