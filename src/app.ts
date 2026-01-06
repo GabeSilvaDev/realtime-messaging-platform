@@ -9,6 +9,7 @@ import {
   errorHandler,
 } from './shared/middlewares';
 import type { Environment } from './shared/types';
+import { authRoutes } from './modules/auth/routes';
 
 const env: Environment = (process.env.NODE_ENV as Environment | undefined) ?? 'development';
 
@@ -32,7 +33,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(requestLogger);
 
-// Routes will be registered here
+app.use('/api/auth', authRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
