@@ -20,7 +20,7 @@ jest.mock('@/shared/logger/models/Log.model', () => {
   };
 });
 
-import { Logger, initLogger, getLogger, LogLevel, LogCategory } from '@/shared/logger';
+import { getLogger, initLogger, isLoggerInitialized, LogCategory, Logger, LogLevel } from '@/shared/logger';
 import { LogModel } from '@/shared/logger/models/Log.model';
 
 describe('Logger', () => {
@@ -579,5 +579,58 @@ describe('initLogger and getLogger', () => {
     expect(() => {
       freshModule.getLogger();
     }).toThrow('Logger not initialized. Call initLogger() first.');
+  });
+});
+
+describe('isLoggerInitialized', () => {
+  let stdoutSpy: jest.SpyInstance;
+  let stderrSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    Logger.resetInstance();
+    stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    Logger.resetInstance();
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+  });
+
+  it('should return false when logger is not initialized', () => {
+    jest.resetModules();
+
+    jest.doMock('@/shared/logger/models/Log.model', () => ({
+      LogModel: {
+        insertMany: jest.fn().mockResolvedValue([]),
+        find: jest.fn(() => ({
+          sort: jest.fn(() => ({
+            skip: jest.fn(() => ({
+              limit: jest.fn(() => ({
+                lean: jest.fn(() => ({
+                  exec: jest.fn().mockResolvedValue([]),
+                })),
+              })),
+            })),
+          })),
+        })),
+      },
+    }));
+
+    const freshModule = require('@/shared/logger');
+
+    expect(freshModule.isLoggerInitialized()).toBe(false);
+  });
+
+  it('should return true when logger is initialized', () => {
+    initLogger({
+      service: 'test-service',
+      environment: 'test',
+      enableConsole: false,
+      enableMongo: false,
+    });
+
+    expect(isLoggerInitialized()).toBe(true);
   });
 });

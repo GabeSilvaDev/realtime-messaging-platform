@@ -1,5 +1,5 @@
 import { AppError } from '@/shared/errors/AppError';
-import { HttpStatus, ErrorCode } from '@/shared/types';
+import { ErrorCode, HttpStatus } from '@/shared/types';
 
 describe('AppError', () => {
   describe('constructor', () => {
@@ -49,6 +49,20 @@ describe('AppError', () => {
     it('should return false for regular Error instances', () => {
       const error = new Error('Test error');
       expect(AppError.isAppError(error)).toBe(false);
+    });
+
+    it('should return false for null', () => {
+      expect(AppError.isAppError(null)).toBe(false);
+    });
+
+    it('should return false for undefined', () => {
+      expect(AppError.isAppError(undefined)).toBe(false);
+    });
+
+    it('should return false for non-object types', () => {
+      expect(AppError.isAppError('string')).toBe(false);
+      expect(AppError.isAppError(123)).toBe(false);
+      expect(AppError.isAppError(true)).toBe(false);
     });
   });
 
