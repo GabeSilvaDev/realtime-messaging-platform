@@ -44,7 +44,7 @@ export type RefreshTokenCreation = Omit<
 };
 
 export interface AuthContext {
-  userId: string;
+  userId?: string;
   ipAddress: string | null;
   userAgent: string | null;
 }
