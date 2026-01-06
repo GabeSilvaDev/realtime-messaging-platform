@@ -266,6 +266,10 @@ export function initLogger(options: LoggerOptions): Logger {
   return loggerInstance;
 }
 
+export function isLoggerInitialized(): boolean {
+  return loggerInstance !== null;
+}
+
 export function getLogger(): Logger {
   if (loggerInstance === null) {
     throw new Error('Logger not initialized. Call initLogger() first.');
