@@ -349,5 +349,61 @@ describe('AuthController', () => {
         expect.objectContaining({ userAgent: null })
       );
     });
+
+    it('should return null IP when req.ip is undefined and no x-forwarded-for', async () => {
+      mockReq.body = { email: 'test@example.com', password: 'Password123!' };
+      mockReq.headers = {};
+      (mockReq as { ip: string | undefined }).ip = undefined;
+      mockedAuthService.login.mockResolvedValue(mockAuthResponse);
+
+      await controller.login(mockReq as Request, mockRes as Response);
+
+      expect(mockedAuthService.login).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ ipAddress: null })
+      );
+    });
+
+    it('should return null IP when req.ip is empty string', async () => {
+      mockReq.body = { email: 'test@example.com', password: 'Password123!' };
+      mockReq.headers = {};
+      (mockReq as { ip: string }).ip = '';
+      mockedAuthService.login.mockResolvedValue(mockAuthResponse);
+
+      await controller.login(mockReq as Request, mockRes as Response);
+
+      expect(mockedAuthService.login).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ ipAddress: null })
+      );
+    });
+
+    it('should return null IP when x-forwarded-for is an array', async () => {
+      mockReq.body = { email: 'test@example.com', password: 'Password123!' };
+      mockReq.headers = { 'x-forwarded-for': ['192.168.1.1', '10.0.0.1'] };
+      (mockReq as { ip: string | undefined }).ip = undefined;
+      mockedAuthService.login.mockResolvedValue(mockAuthResponse);
+
+      await controller.login(mockReq as Request, mockRes as Response);
+
+      expect(mockedAuthService.login).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ ipAddress: null })
+      );
+    });
+
+    it('should handle empty x-forwarded-for string', async () => {
+      mockReq.body = { email: 'test@example.com', password: 'Password123!' };
+      mockReq.headers = { 'x-forwarded-for': '' };
+      (mockReq as { ip: string | undefined }).ip = undefined;
+      mockedAuthService.login.mockResolvedValue(mockAuthResponse);
+
+      await controller.login(mockReq as Request, mockRes as Response);
+
+      expect(mockedAuthService.login).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ ipAddress: '' })
+      );
+    });
   });
 });
