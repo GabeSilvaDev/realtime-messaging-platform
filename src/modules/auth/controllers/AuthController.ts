@@ -155,6 +155,7 @@ export class AuthController {
 
     if (typeof forwarded === 'string') {
       const firstIp = forwarded.split(',')[0];
+      // istanbul ignore next -- defensive fallback, split always returns a string
       ip = firstIp?.trim() ?? null;
     } else if (req.ip !== undefined && req.ip !== '') {
       ip = req.ip;
