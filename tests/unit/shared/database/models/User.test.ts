@@ -6,10 +6,8 @@ describe('User Model', () => {
   let User: any;
 
   beforeAll(() => {
-    // Reset all modules first
     jest.resetModules();
     
-    // Setup mocks before requiring the module
     jest.doMock('sequelize', () => {
       const actual = jest.requireActual('sequelize');
       return {
@@ -27,7 +25,6 @@ describe('User Model', () => {
       __esModule: true,
     }));
 
-    // Now require the User module
     const userModule = require('@/shared/database/models/User');
     User = userModule.User || userModule.default;
   });

@@ -31,7 +31,6 @@ describe('errorHandler', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Reset the child logger mock
     mockLogger.child.mockReturnValue(mockChildLogger);
     (loggerModule.getLogger as jest.Mock).mockReturnValue(mockLogger);
 
@@ -282,6 +281,163 @@ describe('errorHandler', () => {
           method,
         })
       );
+    });
+  });
+
+  describe('production environment', () => {
+    it('should hide error message in production for generic errors', () => {
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+
+      jest.isolateModules(() => {
+        jest.doMock('@/shared/logger', () => ({
+          getLogger: jest.fn().mockReturnValue({
+            child: jest.fn().mockReturnValue({
+              setCategory: jest.fn(),
+              error: jest.fn(),
+              warn: jest.fn(),
+            }),
+          }),
+          LogCategory: {
+            HTTP: 'HTTP',
+          },
+        }));
+
+        const { errorHandler: prodErrorHandler } = require('@/shared/middlewares/errorHandler');
+
+        const mockJsonProd = jest.fn();
+        const mockStatusProd = jest.fn().mockReturnValue({ json: mockJsonProd });
+
+        const mockReqProd = {
+          headers: { 'x-request-id': 'test-123' },
+          path: '/test',
+          method: 'GET',
+        } as unknown as Request;
+
+        const mockResProd = {
+          status: mockStatusProd,
+        } as unknown as Response;
+
+        const mockNextProd = jest.fn() as NextFunction;
+
+        const genericError = new Error('Sensitive database error details');
+
+        prodErrorHandler(genericError, mockReqProd, mockResProd, mockNextProd);
+
+        expect(mockJsonProd).toHaveBeenCalledWith(
+          expect.objectContaining({
+            error: expect.objectContaining({
+              message: 'An unexpected error occurred',
+            }),
+          })
+        );
+      });
+
+      process.env.NODE_ENV = originalEnv;
+    });
+  });
+
+  describe('environment variable handling', () => {
+    it('should use NODE_ENV when defined', () => {
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'staging';
+
+      jest.isolateModules(() => {
+        jest.doMock('@/shared/logger', () => ({
+          getLogger: jest.fn().mockReturnValue({
+            child: jest.fn().mockReturnValue({
+              setCategory: jest.fn(),
+              error: jest.fn(),
+              warn: jest.fn(),
+            }),
+          }),
+          LogCategory: {
+            HTTP: 'HTTP',
+          },
+        }));
+
+        const { errorHandler: stagingErrorHandler } = require('@/shared/middlewares/errorHandler');
+
+        const mockJsonStaging = jest.fn();
+        const mockStatusStaging = jest.fn().mockReturnValue({ json: mockJsonStaging });
+
+        const mockReqStaging = {
+          headers: { 'x-request-id': 'test-staging' },
+          path: '/test',
+          method: 'GET',
+        } as unknown as Request;
+
+        const mockResStaging = {
+          status: mockStatusStaging,
+        } as unknown as Response;
+
+        const mockNextStaging = jest.fn() as NextFunction;
+
+        const genericError = new Error('Staging error message');
+
+        stagingErrorHandler(genericError, mockReqStaging, mockResStaging, mockNextStaging);
+
+        expect(mockJsonStaging).toHaveBeenCalledWith(
+          expect.objectContaining({
+            error: expect.objectContaining({
+              message: 'Staging error message',
+            }),
+          })
+        );
+      });
+
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    it('should fallback to development when NODE_ENV is undefined', () => {
+      const originalEnv = process.env.NODE_ENV;
+      delete process.env.NODE_ENV;
+
+      jest.isolateModules(() => {
+        jest.doMock('@/shared/logger', () => ({
+          getLogger: jest.fn().mockReturnValue({
+            child: jest.fn().mockReturnValue({
+              setCategory: jest.fn(),
+              error: jest.fn(),
+              warn: jest.fn(),
+            }),
+          }),
+          LogCategory: {
+            HTTP: 'HTTP',
+          },
+        }));
+
+        const { errorHandler: devErrorHandler } = require('@/shared/middlewares/errorHandler');
+
+        const mockJsonDev = jest.fn();
+        const mockStatusDev = jest.fn().mockReturnValue({ json: mockJsonDev });
+
+        const mockReqDev = {
+          headers: { 'x-request-id': 'test-dev' },
+          path: '/test',
+          method: 'GET',
+        } as unknown as Request;
+
+        const mockResDev = {
+          status: mockStatusDev,
+        } as unknown as Response;
+
+        const mockNextDev = jest.fn() as NextFunction;
+
+        const genericError = new Error('Development error message');
+
+        devErrorHandler(genericError, mockReqDev, mockResDev, mockNextDev);
+
+        expect(mockJsonDev).toHaveBeenCalledWith(
+          expect.objectContaining({
+            error: expect.objectContaining({
+              message: 'Development error message',
+            }),
+          })
+        );
+      });
+
+      process.env.NODE_ENV = originalEnv;
     });
   });
 });
