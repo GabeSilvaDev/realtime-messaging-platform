@@ -1,16 +1,16 @@
+import { HttpStatus } from '@/shared/errors';
 import type { Request, Response } from 'express';
+import { UnauthorizedException } from '../exceptions/UnauthorizedException';
 import { authService } from '../services/AuthService';
+import type { AuthContext } from '../types';
 import {
-  registerSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
   loginSchema,
   refreshTokenSchema,
-  forgotPasswordSchema,
+  registerSchema,
   resetPasswordSchema,
-  changePasswordSchema,
 } from '../validation/auth.schemas';
-import { HttpStatus } from '@/shared/errors';
-import { UnauthorizedException } from '../exceptions/UnauthorizedException';
-import type { AuthContext } from '../types';
 
 export class AuthController {
   async register(req: Request, res: Response): Promise<void> {
