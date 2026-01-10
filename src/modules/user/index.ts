@@ -5,26 +5,34 @@ export * from './types';
 export * from './validation';
 
 export {
-  ContactService,
-  contactService,
-  ProfileService,
-  profileService,
+  CannotDeleteSelfException,
+  EmailAlreadyExistsException,
+  UserNotFoundException,
+  UsernameAlreadyExistsException,
   UserService,
   userService,
-} from './services';
-
-export {
-  CannotAddSelfException,
-  CannotBlockSelfException,
-  CannotDeleteSelfException,
-  ContactAlreadyExistsException,
-  ContactNotFoundException,
-  EmailAlreadyExistsException,
+  BioTooLongException,
+  DisplayNameTooLongException,
   InvalidAvatarUrlException,
   ProfileNotFoundException,
+  ProfileService,
+  profileService,
+  type IProfileService,
+  AvatarNotFoundError,
+  AvatarProcessingFailedError,
+  AvatarService,
+  AvatarTooLargeError,
+  InvalidAvatarError,
+  UnsupportedAvatarTypeError,
+  avatarService,
+  type IAvatarService,
+  CannotAddSelfException,
+  CannotBlockSelfException,
+  ContactAlreadyExistsException,
+  ContactNotFoundException,
+  ContactService,
   UserBlockedException,
-  UsernameAlreadyExistsException,
-  UserNotFoundException,
+  contactService,
 } from './services';
 
 export {
@@ -35,3 +43,7 @@ export {
 } from './repositories';
 
 export type { IContactRepository, IUserRepository } from './repositories';
+
+export { ProfileController, profileController, type AuthenticatedRequest } from './controllers';
+
+export { profileRoutes } from './routes';
