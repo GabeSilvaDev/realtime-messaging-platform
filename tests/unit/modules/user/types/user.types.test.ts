@@ -4,9 +4,9 @@ import {
   UserSearchOptions,
   UserSearchResult,
   UserPresence,
-  UserProfile,
   UserStatus,
 } from '@/modules/user/types/user.types';
+import { UserProfile } from '@/modules/user/types/profile.types';
 
 describe('user.types', () => {
   describe('UserStatus re-export', () => {

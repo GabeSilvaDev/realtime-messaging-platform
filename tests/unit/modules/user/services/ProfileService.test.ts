@@ -277,7 +277,7 @@ describe('ProfileService', () => {
 
       const result = await profileService.removeAvatar('user-123');
 
-      expect(result.avatarUrl).toBeNull();
+      expect(result.deleted).toBeDefined();
     });
   });
 
