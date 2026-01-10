@@ -8,11 +8,25 @@ export {
 } from './UserService';
 
 export {
+  BioTooLongException,
+  DisplayNameTooLongException,
   InvalidAvatarUrlException,
   ProfileNotFoundException,
   ProfileService,
   profileService,
+  type IProfileService,
 } from './ProfileService';
+
+export {
+  AvatarNotFoundError,
+  AvatarProcessingFailedError,
+  AvatarService,
+  AvatarTooLargeError,
+  InvalidAvatarError,
+  UnsupportedAvatarTypeError,
+  avatarService,
+  type IAvatarService,
+} from './AvatarService';
 
 export {
   CannotAddSelfException,
