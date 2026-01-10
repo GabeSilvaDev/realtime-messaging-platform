@@ -221,22 +221,18 @@ export function pickSchema<T extends z.core.$ZodShape, K extends keyof T>(
   schema: z.ZodObject<T>,
   keys: K[]
 ): z.ZodObject<Pick<T, K>> {
-  const mask: Partial<Record<K, true>> = {};
-  for (const key of keys) {
-    mask[key] = true;
-  }
-  return schema.pick(mask as Partial<Record<keyof T, true>>) as z.ZodObject<Pick<T, K>>;
+  const mask = Object.fromEntries(keys.map((key) => [key, true]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return schema.pick(mask as any) as unknown as z.ZodObject<Pick<T, K>>;
 }
 
 export function omitSchema<T extends z.core.$ZodShape, K extends keyof T>(
   schema: z.ZodObject<T>,
   keys: K[]
 ): z.ZodObject<Omit<T, K>> {
-  const mask: Partial<Record<K, true>> = {};
-  for (const key of keys) {
-    mask[key] = true;
-  }
-  return schema.omit(mask as Partial<Record<keyof T, true>>) as z.ZodObject<Omit<T, K>>;
+  const mask = Object.fromEntries(keys.map((key) => [key, true]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return schema.omit(mask as any) as unknown as z.ZodObject<Omit<T, K>>;
 }
 
 export { z };
