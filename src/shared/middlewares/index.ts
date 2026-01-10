@@ -10,3 +10,15 @@ export { corsMiddleware, createCorsMiddleware } from './cors';
 export { helmetMiddleware, createHelmetMiddleware } from './helmet';
 export { notFoundHandler } from './notFound';
 export { requestIdMiddleware, createRequestIdMiddleware } from './requestId';
+export {
+  FileUploadError,
+  FileSizeLimitError,
+  InvalidFileTypeError,
+  handleMulterError,
+  requireFile,
+  uploadAvatar,
+  uploadDocument,
+  uploadImage,
+  uploadImages,
+  uploadToDisk,
+} from './upload';
