@@ -41,15 +41,3 @@ export interface UserPresence {
   status: UserStatus;
   lastSeenAt: Date | null;
 }
-
-export interface UserProfile {
-  id: string;
-  username: string;
-  email: string;
-  displayName: string | null;
-  avatarUrl: string | null;
-  bio: string | null;
-  status: UserStatus;
-  lastSeenAt: Date | null;
-  createdAt: Date;
-}
