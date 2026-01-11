@@ -1,19 +1,32 @@
 import { z } from 'zod';
+import { CONTACT_CONSTANTS, CONTACT_ORDER_BY } from '../constants';
 
 export const addContactSchema = z.object({
   contactId: z.uuid({ message: 'ID de contato inválido' }),
   nickname: z
     .string()
-    .min(1, 'Apelido deve ter no mínimo 1 caractere')
-    .max(100, 'Apelido deve ter no máximo 100 caracteres')
+    .min(
+      CONTACT_CONSTANTS.MIN_NICKNAME_LENGTH,
+      `Apelido deve ter no mínimo ${String(CONTACT_CONSTANTS.MIN_NICKNAME_LENGTH)} caractere`
+    )
+    .max(
+      CONTACT_CONSTANTS.MAX_NICKNAME_LENGTH,
+      `Apelido deve ter no máximo ${String(CONTACT_CONSTANTS.MAX_NICKNAME_LENGTH)} caracteres`
+    )
     .optional(),
 });
 
 export const updateContactSchema = z.object({
   nickname: z
     .string()
-    .min(1, 'Apelido deve ter no mínimo 1 caractere')
-    .max(100, 'Apelido deve ter no máximo 100 caracteres')
+    .min(
+      CONTACT_CONSTANTS.MIN_NICKNAME_LENGTH,
+      `Apelido deve ter no mínimo ${String(CONTACT_CONSTANTS.MIN_NICKNAME_LENGTH)} caractere`
+    )
+    .max(
+      CONTACT_CONSTANTS.MAX_NICKNAME_LENGTH,
+      `Apelido deve ter no máximo ${String(CONTACT_CONSTANTS.MAX_NICKNAME_LENGTH)} caracteres`
+    )
     .nullable()
     .optional(),
   isFavorite: z.boolean().optional(),
@@ -28,7 +41,13 @@ export const blockUserSchema = z.object({
 });
 
 export const listContactsSchema = z.object({
-  search: z.string().max(100, 'Termo de busca deve ter no máximo 100 caracteres').optional(),
+  search: z
+    .string()
+    .max(
+      CONTACT_CONSTANTS.MAX_SEARCH_LENGTH,
+      `Termo de busca deve ter no máximo ${String(CONTACT_CONSTANTS.MAX_SEARCH_LENGTH)} caracteres`
+    )
+    .optional(),
   isBlocked: z
     .string()
     .transform((val) => val === 'true')
@@ -37,18 +56,31 @@ export const listContactsSchema = z.object({
     .string()
     .transform((val) => val === 'true')
     .optional(),
-  limit: z.coerce.number().min(1).max(100).optional().default(50),
+  limit: z.coerce
+    .number()
+    .min(1)
+    .max(CONTACT_CONSTANTS.MAX_LIMIT)
+    .optional()
+    .default(CONTACT_CONSTANTS.DEFAULT_LIMIT),
   offset: z.coerce.number().min(0).optional().default(0),
-  orderBy: z.enum(['nickname', 'createdAt', 'lastInteraction']).optional().default('createdAt'),
+  orderBy: z.enum(CONTACT_ORDER_BY).optional().default('createdAt'),
   order: z.enum(['ASC', 'DESC']).optional().default('DESC'),
 });
 
 export const searchUsersForContactSchema = z.object({
   query: z
     .string()
-    .min(1, 'Termo de busca é obrigatório')
-    .max(100, 'Termo de busca deve ter no máximo 100 caracteres'),
-  limit: z.coerce.number().min(1).max(50).optional().default(20),
+    .min(CONTACT_CONSTANTS.MIN_SEARCH_LENGTH, 'Termo de busca é obrigatório')
+    .max(
+      CONTACT_CONSTANTS.MAX_SEARCH_LENGTH,
+      `Termo de busca deve ter no máximo ${String(CONTACT_CONSTANTS.MAX_SEARCH_LENGTH)} caracteres`
+    ),
+  limit: z.coerce
+    .number()
+    .min(1)
+    .max(CONTACT_CONSTANTS.MAX_SEARCH_LIMIT)
+    .optional()
+    .default(CONTACT_CONSTANTS.DEFAULT_SEARCH_LIMIT),
   excludeBlocked: z
     .string()
     .transform((val) => val !== 'false')

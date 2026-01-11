@@ -1,10 +1,14 @@
 import { z } from 'zod';
+import { VALIDATION_CONSTANTS } from '../constants/auth.constants';
 
 const email = z.email({ message: 'Email inválido' }).toLowerCase().trim();
 
 const password = z
   .string()
-  .min(8, 'Senha deve ter pelo menos 8 caracteres')
+  .min(
+    VALIDATION_CONSTANTS.PASSWORD_MIN_LENGTH,
+    `Senha deve ter pelo menos ${String(VALIDATION_CONSTANTS.PASSWORD_MIN_LENGTH)} caracteres`
+  )
   .regex(/[A-Z]/, 'Senha deve conter letra maiúscula')
   .regex(/[a-z]/, 'Senha deve conter letra minúscula')
   .regex(/[0-9]/, 'Senha deve conter número')
@@ -12,8 +16,14 @@ const password = z
 
 const username = z
   .string()
-  .min(3, 'Username deve ter pelo menos 3 caracteres')
-  .max(30, 'Username deve ter no máximo 30 caracteres')
+  .min(
+    VALIDATION_CONSTANTS.USERNAME_MIN_LENGTH,
+    `Username deve ter pelo menos ${String(VALIDATION_CONSTANTS.USERNAME_MIN_LENGTH)} caracteres`
+  )
+  .max(
+    VALIDATION_CONSTANTS.USERNAME_MAX_LENGTH,
+    `Username deve ter no máximo ${String(VALIDATION_CONSTANTS.USERNAME_MAX_LENGTH)} caracteres`
+  )
   .regex(/^[a-zA-Z0-9_]+$/, 'Username deve conter apenas letras, números e _')
   .toLowerCase()
   .trim();
@@ -22,7 +32,12 @@ export const registerSchema = z.object({
   username,
   email,
   password,
-  displayName: z.string().min(2).max(100).trim().optional(),
+  displayName: z
+    .string()
+    .min(VALIDATION_CONSTANTS.DISPLAY_NAME_MIN_LENGTH)
+    .max(VALIDATION_CONSTANTS.DISPLAY_NAME_MAX_LENGTH)
+    .trim()
+    .optional(),
 });
 
 export const loginSchema = z.object({
