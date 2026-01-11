@@ -1,7 +1,8 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import type { IPasswordService } from '../interfaces';
 
-export class PasswordService {
+export class PasswordService implements IPasswordService {
   private readonly saltRounds = 12;
 
   async hash(password: string): Promise<string> {

@@ -1,11 +1,14 @@
-import { AppError, ErrorCode, HttpStatus } from '@/shared/errors';
 import type { UserAttributes } from '@/shared/types';
+import { contactRepository, userRepository } from '../repositories';
+import type { IContactRepository, IContactService, IUserRepository } from '../interfaces';
 import {
-  contactRepository,
-  userRepository,
-  type IContactRepository,
-  type IUserRepository,
-} from '../repositories';
+  ContactNotFoundException,
+  ContactAlreadyExistsException,
+  CannotAddSelfException,
+  UserBlockedException,
+  CannotBlockSelfException,
+  UserNotFoundException,
+} from '../errors';
 import type {
   AddContactDTO,
   ContactListOptions,
@@ -18,43 +21,16 @@ import type {
   UserWithContactInfo,
 } from '../types';
 
-export class ContactNotFoundException extends AppError {
-  constructor(message = 'Contato não encontrado') {
-    super(message, HttpStatus.NOT_FOUND, ErrorCode.NOT_FOUND);
-  }
-}
+export {
+  ContactNotFoundException,
+  ContactAlreadyExistsException,
+  CannotAddSelfException,
+  UserBlockedException,
+  CannotBlockSelfException,
+  UserNotFoundException,
+} from '../errors';
 
-export class UserNotFoundException extends AppError {
-  constructor(message = 'Usuário não encontrado') {
-    super(message, HttpStatus.NOT_FOUND, ErrorCode.USER_NOT_FOUND);
-  }
-}
-
-export class ContactAlreadyExistsException extends AppError {
-  constructor(message = 'Este usuário já está nos seus contatos') {
-    super(message, HttpStatus.CONFLICT, ErrorCode.DUPLICATE_ENTRY);
-  }
-}
-
-export class CannotAddSelfException extends AppError {
-  constructor(message = 'Você não pode adicionar a si mesmo como contato') {
-    super(message, HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
-  }
-}
-
-export class UserBlockedException extends AppError {
-  constructor(message = 'Este usuário está bloqueado') {
-    super(message, HttpStatus.FORBIDDEN, ErrorCode.USER_BLOCKED);
-  }
-}
-
-export class CannotBlockSelfException extends AppError {
-  constructor(message = 'Você não pode bloquear a si mesmo') {
-    super(message, HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
-  }
-}
-
-export class ContactService {
+export class ContactService implements IContactService {
   constructor(
     private readonly contacts: IContactRepository = contactRepository,
     private readonly users: IUserRepository = userRepository

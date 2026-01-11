@@ -1,8 +1,10 @@
 import jwt, { JwtPayload, SignOptions } from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import type { TokenPayload, DecodedToken, TokenPair } from '../types';
 import { TokenType } from '../types';
+import type { ITokenService } from '../interfaces';
 
-export class TokenService {
+export class TokenService implements ITokenService {
   private readonly accessSecret: string;
   private readonly refreshSecret: string;
   private readonly accessExpiresIn: number;
@@ -16,12 +18,12 @@ export class TokenService {
   }
 
   generateAccessToken(payload: Omit<TokenPayload, 'type'>): string {
-    const options: SignOptions = { expiresIn: this.accessExpiresIn };
+    const options: SignOptions = { expiresIn: this.accessExpiresIn, jwtid: randomUUID() };
     return jwt.sign({ ...payload, type: TokenType.ACCESS }, this.accessSecret, options);
   }
 
   generateRefreshToken(payload: Omit<TokenPayload, 'type'>): string {
-    const options: SignOptions = { expiresIn: this.refreshExpiresIn };
+    const options: SignOptions = { expiresIn: this.refreshExpiresIn, jwtid: randomUUID() };
     return jwt.sign({ ...payload, type: TokenType.REFRESH }, this.refreshSecret, options);
   }
 

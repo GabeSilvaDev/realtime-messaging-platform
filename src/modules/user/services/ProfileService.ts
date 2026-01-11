@@ -1,8 +1,17 @@
-import { AppError, ErrorCode, HttpStatus } from '@/shared/errors';
 import { UserStatus } from '@/shared/types';
 import { logger } from '@/shared/logger';
-import { userRepository, type IUserRepository } from '../repositories';
-import { avatarService, type IAvatarService } from './AvatarService';
+import { userRepository } from '../repositories';
+import { avatarService } from './AvatarService';
+import type { IUserRepository } from '../interfaces';
+import type { IAvatarService } from '../interfaces';
+import type { IProfileService } from '../interfaces';
+import {
+  ProfileNotFoundException,
+  InvalidAvatarUrlException,
+  BioTooLongException,
+  DisplayNameTooLongException,
+} from '../errors';
+import { PROFILE_CONSTANTS } from '../constants';
 import type {
   UserProfile,
   PublicProfile,
@@ -15,67 +24,18 @@ import type {
   ProfileSettings,
 } from '../types';
 
-export class ProfileNotFoundException extends AppError {
-  constructor(message = 'Perfil não encontrado') {
-    super(message, HttpStatus.NOT_FOUND, ErrorCode.USER_NOT_FOUND);
-  }
-}
+export {
+  ProfileNotFoundException,
+  InvalidAvatarUrlException,
+  BioTooLongException,
+  DisplayNameTooLongException,
+} from '../errors';
 
-export class InvalidAvatarUrlException extends AppError {
-  constructor(message = 'URL do avatar inválida') {
-    super(message, HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
-  }
-}
-
-export class BioTooLongException extends AppError {
-  constructor(maxLength = 500) {
-    super(
-      `Bio muito longa. Máximo: ${String(maxLength)} caracteres`,
-      HttpStatus.BAD_REQUEST,
-      ErrorCode.VALIDATION_ERROR
-    );
-  }
-}
-
-export class DisplayNameTooLongException extends AppError {
-  constructor(maxLength = 100) {
-    super(
-      `Nome de exibição muito longo. Máximo: ${String(maxLength)} caracteres`,
-      HttpStatus.BAD_REQUEST,
-      ErrorCode.VALIDATION_ERROR
-    );
-  }
-}
-
-export interface IProfileService {
-  getProfile(userId: string): Promise<UserProfile>;
-  getPublicProfile(userId: string): Promise<PublicProfile>;
-  updateProfile(userId: string, data: ProfileUpdateData): Promise<UserProfile>;
-  updateDisplayName(userId: string, displayName: string | null): Promise<UserProfile>;
-  updateBio(userId: string, bio: string | null): Promise<UserProfile>;
-  uploadAvatar(
-    userId: string,
-    file: AvatarFile,
-    options?: AvatarProcessingOptions
-  ): Promise<AvatarUploadResult>;
-  updateAvatar(userId: string, avatarUrl: string | null): Promise<UserProfile>;
-  removeAvatar(userId: string): Promise<DeleteAvatarResult>;
-  updateStatus(userId: string, status: UserStatus): Promise<void>;
-  setOnline(userId: string): Promise<void>;
-  setOffline(userId: string): Promise<void>;
-  setAway(userId: string): Promise<void>;
-  setBusy(userId: string): Promise<void>;
-  getProfileStats(userId: string): Promise<ProfileStats>;
-  getProfileSettings(userId: string): Promise<ProfileSettings>;
-  updateProfileSettings(
-    userId: string,
-    settings: Partial<ProfileSettings>
-  ): Promise<ProfileSettings>;
-}
+export type { IProfileService } from '../interfaces';
 
 export class ProfileService implements IProfileService {
-  private readonly MAX_BIO_LENGTH = 500;
-  private readonly MAX_DISPLAY_NAME_LENGTH = 100;
+  private readonly MAX_BIO_LENGTH = PROFILE_CONSTANTS.MAX_BIO_LENGTH;
+  private readonly MAX_DISPLAY_NAME_LENGTH = PROFILE_CONSTANTS.MAX_DISPLAY_NAME_LENGTH;
 
   constructor(
     private readonly users: IUserRepository = userRepository,

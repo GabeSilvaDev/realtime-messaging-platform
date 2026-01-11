@@ -11,7 +11,7 @@ import { TokenService } from './TokenService';
 import { PasswordService } from './PasswordService';
 import { refreshTokenRepository } from '../repositories/RefreshTokenRepository';
 import { userRepository } from '../repositories/UserRepository';
-import type { IUserRepository } from '../interfaces';
+import type { IUserRepository, IAuthService } from '../interfaces';
 import { AuthEvents } from '../events/AuthEvents';
 import { redis } from '@/shared/database';
 import { PASSWORD_RESET_PREFIX, PASSWORD_RESET_TTL } from '../constants/auth.constants';
@@ -25,7 +25,7 @@ import {
   SamePasswordException,
 } from '../exceptions';
 
-export class AuthService {
+export class AuthService implements IAuthService {
   constructor(
     private readonly tokens: TokenService = new TokenService(),
     private readonly passwords: PasswordService = new PasswordService(),

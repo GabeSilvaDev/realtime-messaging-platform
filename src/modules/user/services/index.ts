@@ -14,8 +14,9 @@ export {
   ProfileNotFoundException,
   ProfileService,
   profileService,
-  type IProfileService,
 } from './ProfileService';
+
+export type { IProfileService } from '../interfaces';
 
 export {
   AvatarNotFoundError,
@@ -25,8 +26,9 @@ export {
   InvalidAvatarError,
   UnsupportedAvatarTypeError,
   avatarService,
-  type IAvatarService,
 } from './AvatarService';
+
+export type { IAvatarService } from '../interfaces';
 
 export {
   CannotAddSelfException,

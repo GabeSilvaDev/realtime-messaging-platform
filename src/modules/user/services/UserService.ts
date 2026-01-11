@@ -1,7 +1,13 @@
 import { PasswordService } from '@/modules/auth/services/PasswordService';
-import { AppError, ErrorCode, HttpStatus } from '@/shared/errors';
 import type { UserAttributes, UserStatus } from '@/shared/types';
-import { userRepository, type IUserRepository } from '../repositories';
+import { userRepository } from '../repositories';
+import type { IUserRepository, IUserService } from '../interfaces';
+import {
+  UserNotFoundException,
+  EmailAlreadyExistsException,
+  UsernameAlreadyExistsException,
+  CannotDeleteSelfException,
+} from '../errors';
 import type {
   CreateUserDTO,
   PaginatedUsers,
@@ -13,31 +19,14 @@ import type {
   UserSearchResult,
 } from '../types';
 
-export class UserNotFoundException extends AppError {
-  constructor(message = 'Usuário não encontrado') {
-    super(message, HttpStatus.NOT_FOUND, ErrorCode.USER_NOT_FOUND);
-  }
-}
+export {
+  UserNotFoundException,
+  EmailAlreadyExistsException,
+  UsernameAlreadyExistsException,
+  CannotDeleteSelfException,
+} from '../errors';
 
-export class EmailAlreadyExistsException extends AppError {
-  constructor(message = 'Email já está em uso') {
-    super(message, HttpStatus.CONFLICT, ErrorCode.EMAIL_ALREADY_EXISTS);
-  }
-}
-
-export class UsernameAlreadyExistsException extends AppError {
-  constructor(message = 'Username já está em uso') {
-    super(message, HttpStatus.CONFLICT, ErrorCode.USERNAME_ALREADY_EXISTS);
-  }
-}
-
-export class CannotDeleteSelfException extends AppError {
-  constructor(message = 'Não é possível excluir sua própria conta por esta rota') {
-    super(message, HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
-  }
-}
-
-export class UserService {
+export class UserService implements IUserService {
   constructor(
     private readonly users: IUserRepository = userRepository,
     private readonly passwords: PasswordService = new PasswordService()

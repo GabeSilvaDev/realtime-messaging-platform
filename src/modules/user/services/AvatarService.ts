@@ -1,6 +1,6 @@
 import path from 'path';
 import crypto from 'crypto';
-import { AppError, ErrorCode, HttpStatus } from '@/shared/errors';
+import { AppError } from '@/shared/errors';
 import { logger } from '@/shared/logger';
 import { uploadConfig, getAvatarPath } from '@/shared/config/upload';
 import { type IStorageService, storageService } from '@/shared/services/StorageService';
@@ -10,6 +10,13 @@ import {
   ImageProcessingError,
   InvalidImageError,
 } from '@/shared/services/ImageProcessorService';
+import type { IAvatarService } from '../interfaces';
+import {
+  InvalidAvatarError,
+  AvatarTooLargeError,
+  UnsupportedAvatarTypeError,
+  AvatarProcessingFailedError,
+} from '../errors';
 import type {
   AvatarFile,
   AvatarUrls,
@@ -18,61 +25,15 @@ import type {
   DeleteAvatarResult,
 } from '../types';
 
-export class InvalidAvatarError extends AppError {
-  constructor(message = 'Avatar inválido') {
-    super(message, HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
-  }
-}
+export {
+  InvalidAvatarError,
+  AvatarTooLargeError,
+  UnsupportedAvatarTypeError,
+  AvatarProcessingFailedError,
+  AvatarNotFoundError,
+} from '../errors';
 
-export class AvatarTooLargeError extends AppError {
-  constructor() {
-    const maxSizeMB = Math.round(uploadConfig.limits.maxAvatarSize / (1024 * 1024));
-    super(
-      `Avatar muito grande. Tamanho máximo: ${String(maxSizeMB)}MB`,
-      HttpStatus.BAD_REQUEST,
-      ErrorCode.VALIDATION_ERROR
-    );
-  }
-}
-
-export class UnsupportedAvatarTypeError extends AppError {
-  constructor(mimeType: string) {
-    super(
-      `Tipo de imagem não suportado: ${mimeType}. Use: JPEG, PNG, WebP ou GIF`,
-      HttpStatus.BAD_REQUEST,
-      ErrorCode.VALIDATION_ERROR
-    );
-  }
-}
-
-export class AvatarProcessingFailedError extends AppError {
-  constructor() {
-    super(
-      'Falha ao processar avatar. Tente novamente com outra imagem.',
-      HttpStatus.UNPROCESSABLE_ENTITY,
-      ErrorCode.VALIDATION_ERROR
-    );
-  }
-}
-
-export class AvatarNotFoundError extends AppError {
-  constructor() {
-    super('Avatar não encontrado', HttpStatus.NOT_FOUND, ErrorCode.NOT_FOUND);
-  }
-}
-
-export interface IAvatarService {
-  upload(
-    userId: string,
-    file: AvatarFile,
-    options?: AvatarProcessingOptions
-  ): Promise<AvatarUploadResult>;
-  delete(userId: string): Promise<DeleteAvatarResult>;
-  deleteOldAvatars(userId: string, excludePrefix?: string): Promise<number>;
-  getAvatarUrls(userId: string, avatarId: string): AvatarUrls;
-  validateAvatarFile(file: AvatarFile): void;
-  exists(userId: string, avatarId: string, size?: string): Promise<boolean>;
-}
+export type { IAvatarService } from '../interfaces';
 
 export class AvatarService implements IAvatarService {
   private readonly allowedMimeTypes = uploadConfig.allowedMimeTypes.avatar;
