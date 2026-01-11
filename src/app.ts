@@ -10,6 +10,7 @@ import {
 } from './shared/middlewares';
 import type { Environment } from './shared/types';
 import { authRoutes } from './modules/auth/routes';
+import { profileRoutes } from './modules/user/routes';
 
 const env: Environment = (process.env.NODE_ENV as Environment | undefined) ?? 'development';
 
@@ -34,6 +35,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
 
 app.use('/api/auth', authRoutes);
+app.use('/api/profile', profileRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
