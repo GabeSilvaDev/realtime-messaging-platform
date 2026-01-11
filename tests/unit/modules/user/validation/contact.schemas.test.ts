@@ -239,7 +239,7 @@ describe('contact.schemas', () => {
         const result = listContactsSchema.safeParse(data);
         expect(result.success).toBe(true);
         if (result.success) {
-          expect(result.data.limit).toBe(50);
+          expect(result.data.limit).toBe(20);
           expect(result.data.offset).toBe(0);
           expect(result.data.orderBy).toBe('createdAt');
           expect(result.data.order).toBe('DESC');

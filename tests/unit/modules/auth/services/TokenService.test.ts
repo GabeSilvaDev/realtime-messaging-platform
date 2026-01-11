@@ -55,7 +55,7 @@ describe('TokenService', () => {
       expect(mockJwt.sign).toHaveBeenCalledWith(
         { ...payload, type: TokenType.ACCESS },
         expect.any(String),
-        { expiresIn: expect.any(Number) }
+        expect.objectContaining({ expiresIn: expect.any(Number), jwtid: expect.any(String) })
       );
       expect(result).toBe(expectedToken);
     });
@@ -73,7 +73,7 @@ describe('TokenService', () => {
       expect(mockJwt.sign).toHaveBeenCalledWith(
         { ...payload, type: TokenType.REFRESH },
         expect.any(String),
-        { expiresIn: expect.any(Number) }
+        expect.objectContaining({ expiresIn: expect.any(Number), jwtid: expect.any(String) })
       );
       expect(result).toBe(expectedToken);
     });
@@ -239,9 +239,11 @@ describe('TokenService', () => {
       mockJwt.sign.mockReturnValue('token' as never);
       newService.generateAccessToken({ userId: '1', email: 'a@b.com', username: 'u' });
 
-      expect(mockJwt.sign).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
-        expiresIn: 30,
-      });
+      expect(mockJwt.sign).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ expiresIn: 30 })
+      );
     });
 
     it('should parse minutes', () => {
@@ -251,9 +253,11 @@ describe('TokenService', () => {
       mockJwt.sign.mockReturnValue('token' as never);
       newService.generateAccessToken({ userId: '1', email: 'a@b.com', username: 'u' });
 
-      expect(mockJwt.sign).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
-        expiresIn: 900,
-      });
+      expect(mockJwt.sign).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ expiresIn: 900 })
+      );
     });
 
     it('should parse hours', () => {
@@ -263,9 +267,11 @@ describe('TokenService', () => {
       mockJwt.sign.mockReturnValue('token' as never);
       newService.generateAccessToken({ userId: '1', email: 'a@b.com', username: 'u' });
 
-      expect(mockJwt.sign).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
-        expiresIn: 7200,
-      });
+      expect(mockJwt.sign).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ expiresIn: 7200 })
+      );
     });
 
     it('should parse days', () => {
@@ -275,9 +281,11 @@ describe('TokenService', () => {
       mockJwt.sign.mockReturnValue('token' as never);
       newService.generateAccessToken({ userId: '1', email: 'a@b.com', username: 'u' });
 
-      expect(mockJwt.sign).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
-        expiresIn: 604800,
-      });
+      expect(mockJwt.sign).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ expiresIn: 604800 })
+      );
     });
 
     it('should return default 900 for invalid format', () => {
@@ -287,9 +295,11 @@ describe('TokenService', () => {
       mockJwt.sign.mockReturnValue('token' as never);
       newService.generateAccessToken({ userId: '1', email: 'a@b.com', username: 'u' });
 
-      expect(mockJwt.sign).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
-        expiresIn: 900,
-      });
+      expect(mockJwt.sign).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ expiresIn: 900 })
+      );
     });
   });
 });
