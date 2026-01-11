@@ -1,68 +1,22 @@
 import type { Request, Response, NextFunction } from 'express';
-import { z } from 'zod';
 import { HttpStatus } from '@/shared/errors';
 import { UserStatus } from '@/shared/types';
 import { handleMulterError } from '@/shared/middlewares';
-import { ProfileService, type IProfileService } from '../services/ProfileService';
+import { ProfileService } from '../services/ProfileService';
+import type { IProfileService } from '../interfaces';
 import type { AvatarFile, ProfileSettings } from '../types/profile.types';
+import type { AuthenticatedRequest, MulterFile } from '../types/controller.types';
+import {
+  updateProfileSchema,
+  updateDisplayNameSchema,
+  updateBioSchema,
+  avatarCropOptionsSchema,
+  updateStatusSchema,
+  updateProfileSettingsSchema,
+  type AvatarCropOptionsInput,
+} from '../validation/profile.schemas';
 
-const updateProfileSchema = z.object({
-  displayName: z.string().min(2).max(50).optional(),
-  bio: z.string().max(500).optional(),
-  avatarUrl: z.url().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-const updateDisplayNameSchema = z.object({
-  displayName: z.string().min(2).max(50),
-});
-
-const updateBioSchema = z.object({
-  bio: z.string().max(500),
-});
-
-const avatarProcessingOptionsSchema = z.object({
-  cropX: z.number().int().min(0).optional(),
-  cropY: z.number().int().min(0).optional(),
-  cropWidth: z.number().int().min(1).optional(),
-  cropHeight: z.number().int().min(1).optional(),
-  rotate: z.number().int().min(-360).max(360).optional(),
-  quality: z.number().int().min(1).max(100).optional(),
-});
-
-const updateStatusSchema = z.object({
-  status: z.enum(['online', 'offline', 'away', 'busy']),
-});
-
-const updateProfileSettingsSchema = z.object({
-  showEmail: z.boolean().optional(),
-  showStatus: z.boolean().optional(),
-  showLastSeen: z.boolean().optional(),
-  allowMessages: z.enum(['everyone', 'contacts', 'none']).optional(),
-  emailNotifications: z.boolean().optional(),
-  pushNotifications: z.boolean().optional(),
-});
-
-type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
-type UpdateDisplayNameInput = z.infer<typeof updateDisplayNameSchema>;
-type UpdateBioInput = z.infer<typeof updateBioSchema>;
-type AvatarProcessingOptionsInput = z.infer<typeof avatarProcessingOptionsSchema>;
-type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
-type UpdateProfileSettingsInput = z.infer<typeof updateProfileSettingsSchema>;
-
-interface MulterFile {
-  fieldname: string;
-  originalname: string;
-  encoding: string;
-  mimetype: string;
-  size: number;
-  buffer: Buffer;
-  destination?: string;
-  filename?: string;
-  path?: string;
-}
-
-export type AuthenticatedRequest = Request;
+export { type AuthenticatedRequest } from '../types/controller.types';
 
 export class ProfileController {
   private readonly profileService: IProfileService;
@@ -114,8 +68,7 @@ export class ProfileController {
       return;
     }
 
-    const data: UpdateProfileInput = parseResult.data;
-    const profile = await this.profileService.updateProfile(userId, data);
+    const profile = await this.profileService.updateProfile(userId, parseResult.data);
 
     res.status(HttpStatus.OK).json({
       success: true,
@@ -138,8 +91,8 @@ export class ProfileController {
       return;
     }
 
-    const validated: UpdateDisplayNameInput = parseResult.data;
-    const profile = await this.profileService.updateDisplayName(userId, validated.displayName);
+    const { displayName } = parseResult.data;
+    const profile = await this.profileService.updateDisplayName(userId, displayName);
 
     res.status(HttpStatus.OK).json({
       success: true,
@@ -162,8 +115,8 @@ export class ProfileController {
       return;
     }
 
-    const validated: UpdateBioInput = parseResult.data;
-    const profile = await this.profileService.updateBio(userId, validated.bio);
+    const { bio } = parseResult.data;
+    const profile = await this.profileService.updateBio(userId, bio);
 
     res.status(HttpStatus.OK).json({
       success: true,
@@ -185,14 +138,14 @@ export class ProfileController {
         return;
       }
 
-      let options: AvatarProcessingOptionsInput = {};
+      let options: AvatarCropOptionsInput | undefined;
       const bodyData = req.body as Record<string, unknown>;
       const rawOptions: unknown = bodyData.options;
 
       if (rawOptions !== undefined) {
         const optionsToParse: unknown =
           typeof rawOptions === 'string' ? (JSON.parse(rawOptions) as unknown) : rawOptions;
-        const parseResult = avatarProcessingOptionsSchema.safeParse(optionsToParse);
+        const parseResult = avatarCropOptionsSchema.safeParse(optionsToParse);
         if (parseResult.success) {
           options = parseResult.data;
         }
@@ -207,7 +160,7 @@ export class ProfileController {
         buffer: file.buffer,
       };
 
-      const result = await this.profileService.uploadAvatar(userId, avatarFile, options);
+      const result = await this.profileService.uploadAvatar(userId, avatarFile, options ?? {});
 
       res.status(HttpStatus.OK).json({
         success: true,
@@ -249,8 +202,7 @@ export class ProfileController {
       return;
     }
 
-    const validated: UpdateStatusInput = parseResult.data;
-    const statusValue = validated.status;
+    const { status: statusValue } = parseResult.data;
 
     let userStatus: UserStatus;
     switch (statusValue) {
@@ -330,10 +282,9 @@ export class ProfileController {
       return;
     }
 
-    const data: UpdateProfileSettingsInput = parseResult.data;
     const settings = await this.profileService.updateProfileSettings(
       userId,
-      data as Partial<ProfileSettings>
+      parseResult.data as Partial<ProfileSettings>
     );
 
     res.status(HttpStatus.OK).json({
