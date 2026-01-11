@@ -17,17 +17,6 @@ router.get(
 );
 
 /**
- * @route GET /profile/:userId
- * @description Obtém o perfil público de um usuário
- * @access Private
- */
-router.get(
-  '/:userId',
-  authenticate,
-  asyncHandler((req, res) => profileController.getPublicProfile(req, res))
-);
-
-/**
  * @route PUT /profile
  * @description Atualiza o perfil do usuário autenticado
  * @access Private
@@ -159,6 +148,18 @@ router.put(
   '/settings',
   authenticate,
   asyncHandler((req, res) => profileController.updateProfileSettings(req, res))
+);
+
+/**
+ * @route GET /profile/:userId
+ * @description Obtém o perfil público de um usuário
+ * @access Private
+ * @note Esta rota deve ficar por último para não capturar outras rotas
+ */
+router.get(
+  '/:userId',
+  authenticate,
+  asyncHandler((req, res) => profileController.getPublicProfile(req, res))
 );
 
 export { router as profileRoutes };
