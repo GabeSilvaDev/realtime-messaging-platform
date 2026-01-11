@@ -7,3 +7,5 @@ export * from './user.dto';
 export * from './profile.types';
 
 export * from './profile.dto';
+
+export * from './controller.types';
