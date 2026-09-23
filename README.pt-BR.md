@@ -104,7 +104,7 @@ Access tokens expiram em 15 min, refresh tokens em 7 dias e são persistidos por
 
 ### Rate limit
 
-Construído sobre `express-rate-limit` com store no Redis (`rate-limit-redis`); um `MemoryStore` é injetado nos testes.
+Construído sobre `express-rate-limit` com store no Redis (`rate-limit-redis`); um `MemoryStore` é injetado nos testes. Todos os limites são identificados pelo IP do cliente (chave padrão do `express-rate-limit`), não por conta — o limiter de login conta tentativas com falha por IP, então também pode limitar várias contas que compartilhem o mesmo IP de origem.
 
 | Escopo | Janela | Limite | Observações |
 |---|---|---|---|
