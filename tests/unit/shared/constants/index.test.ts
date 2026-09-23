@@ -26,6 +26,7 @@ import {
   RATE_LIMIT_AUTH_WINDOW_MS,
   RATE_LIMIT_AUTH_MAX_REQUESTS,
   RATE_LIMIT_AUTH_KEY_PREFIX,
+  RATE_LIMIT_LOGIN_KEY_PREFIX,
   REQUEST_ID_DEFAULT_HEADER_NAME,
   HSTS_DEFAULT_MAX_AGE,
 } from '@/shared/constants';
@@ -145,7 +146,7 @@ describe('Constants Index Exports', () => {
     });
 
     it('should export RATE_LIMIT_AUTH_WINDOW_MS', () => {
-      expect(RATE_LIMIT_AUTH_WINDOW_MS).toBe(60 * 1000);
+      expect(RATE_LIMIT_AUTH_WINDOW_MS).toBe(15 * 60 * 1000);
     });
 
     it('should export RATE_LIMIT_AUTH_MAX_REQUESTS', () => {
@@ -154,6 +155,10 @@ describe('Constants Index Exports', () => {
 
     it('should export RATE_LIMIT_AUTH_KEY_PREFIX', () => {
       expect(RATE_LIMIT_AUTH_KEY_PREFIX).toBe('rl:auth:');
+    });
+
+    it('should export RATE_LIMIT_LOGIN_KEY_PREFIX', () => {
+      expect(RATE_LIMIT_LOGIN_KEY_PREFIX).toBe('rl:login:');
     });
 
     it('should export REQUEST_ID_DEFAULT_HEADER_NAME', () => {

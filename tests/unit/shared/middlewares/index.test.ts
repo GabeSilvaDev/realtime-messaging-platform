@@ -5,6 +5,7 @@ import {
   getRateLimiter,
   getStrictRateLimiter,
   getAuthRateLimiter,
+  getLoginRateLimiter,
   corsMiddleware,
   createCorsMiddleware,
   helmetMiddleware,
@@ -35,6 +36,7 @@ describe('shared/middlewares index', () => {
     expect(getRateLimiter).toBeDefined();
     expect(getStrictRateLimiter).toBeDefined();
     expect(getAuthRateLimiter).toBeDefined();
+    expect(getLoginRateLimiter).toBeDefined();
   });
 
   it('deve exportar middlewares de cors', () => {

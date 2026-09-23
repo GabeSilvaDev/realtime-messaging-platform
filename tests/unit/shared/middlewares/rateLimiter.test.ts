@@ -89,12 +89,22 @@ const buildApp = (limiter: RequestHandler): express.Application => {
 };
 
 describe('rateLimiter middleware', () => {
+  const originalEnv = process.env.NODE_ENV;
+
   beforeEach(() => {
+    // Fora do subprojeto 0, NODE_ENV=test passou a selecionar MemoryStore por padrão;
+    // este arquivo cobre o caminho do RedisStore, então força 'development' aqui.
+    process.env.NODE_ENV = 'development';
     // resetMocks zera a implementação do jest.fn do mock a cada teste
     (RedisStore as unknown as jest.Mock).mockImplementation(
       (options: MockStoreOptions) => new MockRedisStore(options)
     );
     mockRedisCall.fn = jest.fn().mockResolvedValue('OK');
+    mockCreatedStores.length = 0;
+  });
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalEnv;
   });
 
   describe('createRateLimiter', () => {
@@ -249,7 +259,7 @@ describe('rateLimiter middleware', () => {
       expect(store.options.prefix).toBe(RATE_LIMIT_AUTH_KEY_PREFIX);
       expect(response.status).toBe(HttpStatus.TOO_MANY_REQUESTS);
       expect(response.body.error.message).toBe(
-        'Too many authentication attempts, please try again in a minute'
+        'Too many authentication attempts, please try again later'
       );
       expect(response.headers['ratelimit-policy']).toBe(
         `${RATE_LIMIT_AUTH_MAX_REQUESTS};w=${RATE_LIMIT_AUTH_WINDOW_MS / 1000}`
