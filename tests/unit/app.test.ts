@@ -15,6 +15,7 @@ jest.mock('sequelize', () => {
       static create = jest.fn();
       static update = jest.fn();
       static destroy = jest.fn();
+      static belongsTo = jest.fn();
     },
   };
 });
@@ -125,6 +126,27 @@ describe('app', () => {
 
     it('monta o router de profile em /api/profile (todas as rotas exigem autenticação real)', async () => {
       const response = await request(app).get('/api/profile');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    it('monta o router de contacts em /api/contacts (todas as rotas exigem autenticação real)', async () => {
+      const response = await request(app).get('/api/contacts');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    it('monta o router de blocks em /api/blocks (todas as rotas exigem autenticação real)', async () => {
+      const response = await request(app).get('/api/blocks');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    it('monta o router de users em /api/users (todas as rotas exigem autenticação real)', async () => {
+      const response = await request(app).get('/api/users/search?query=ana');
 
       expect(response.status).toBe(401);
       expect(response.body.success).toBe(false);

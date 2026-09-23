@@ -55,6 +55,18 @@ describe('user module index', () => {
       expect(userModuleIndex.UserRepository).toBeDefined();
       expect(userModuleIndex.userRepository).toBeDefined();
     });
+
+    it('deve exportar controllers e rotas de contatos, bloqueios e usuários', () => {
+      expect(userModuleIndex.ContactController).toBeDefined();
+      expect(userModuleIndex.contactController).toBeDefined();
+      expect(userModuleIndex.BlockController).toBeDefined();
+      expect(userModuleIndex.blockController).toBeDefined();
+      expect(userModuleIndex.UserController).toBeDefined();
+      expect(userModuleIndex.userController).toBeDefined();
+      expect(userModuleIndex.contactRoutes).toBeDefined();
+      expect(userModuleIndex.blockRoutes).toBeDefined();
+      expect(userModuleIndex.userRoutes).toBeDefined();
+    });
   });
 
   describe('types index exports', () => {

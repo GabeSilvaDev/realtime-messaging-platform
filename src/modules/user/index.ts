@@ -28,6 +28,15 @@ export {
   userRepository,
 } from './repositories';
 
-export { ProfileController, profileController } from './controllers';
+export {
+  ProfileController,
+  profileController,
+  ContactController,
+  contactController,
+  BlockController,
+  blockController,
+  UserController,
+  userController,
+} from './controllers';
 
-export { profileRoutes } from './routes';
+export { profileRoutes, contactRoutes, blockRoutes, userRoutes } from './routes';
