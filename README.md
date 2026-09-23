@@ -13,7 +13,7 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com)
 [![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.17-005571?logo=elasticsearch&logoColor=white)](https://www.elastic.co)
-[![Tests](https://img.shields.io/badge/tests-1316%20Jest-C21325?logo=jest&logoColor=white)](#development)
+[![Tests](https://img.shields.io/badge/tests-1834%20Jest-C21325?logo=jest&logoColor=white)](#development)
 [![License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
 **English** · [Português (Brasil)](README.pt-BR.md)
@@ -104,15 +104,34 @@ docker exec rtm-app npx sequelize-cli db:seed:all   # optional demo users
 
 The API listens on `http://localhost:3000/api`.
 
-| Service | Container | Port |
-|---|---|---|
-| API (`tsx watch`) | `rtm-app` | 3000 |
-| PostgreSQL 17 | `rtm-postgres` | 5432 |
-| Redis 7 | `rtm-redis` | 6379 |
-| MongoDB 8 | `rtm-mongodb` | 27017 |
-| Elasticsearch 8.17 | `rtm-elasticsearch` | 9200 · 9300 |
+| Service | Container | Port | Host port variable |
+|---|---|---|---|
+| API (`tsx watch`) | `rtm-app` | 3000 | `APP_HOST_PORT` |
+| PostgreSQL 17 | `rtm-postgres` | 5432 | `POSTGRES_HOST_PORT` |
+| Redis 7 | `rtm-redis` | 6379 | `REDIS_HOST_PORT` |
+| MongoDB 8 | `rtm-mongodb` | 27017 | `MONGO_HOST_PORT` |
+| Elasticsearch 8.17 | `rtm-elasticsearch` | 9200 · 9300 | `ELASTIC_HOST_PORT` · `ELASTIC_TRANSPORT_HOST_PORT` |
 
-Without Docker: `npm install`, set the variables from `.env.example`, then `npm run dev`.
+Every container port is mapped from a `*_HOST_PORT` variable (defaults shown above); set them in `.env` if those ports are already taken on the host.
+
+### Running on the host (app outside Docker)
+
+`npm install`, set the variables from `.env.example`, start only the databases (`docker compose up -d postgres redis mongodb elasticsearch`) and run the app against the host ports above — or against the `*_HOST_PORT` values from `.env` if you changed them:
+
+```bash
+set -a && source .env && set +a
+
+MONGO_USER_ENC=$(node -e "console.log(encodeURIComponent(process.env.MONGO_USER))")
+MONGO_PASSWORD_ENC=$(node -e "console.log(encodeURIComponent(process.env.MONGO_PASSWORD))")
+
+DB_HOST=localhost DB_PORT=${POSTGRES_HOST_PORT:-5432} \
+REDIS_HOST=localhost REDIS_PORT=${REDIS_HOST_PORT:-6379} \
+MONGODB_URL="mongodb://${MONGO_USER_ENC}:${MONGO_PASSWORD_ENC}@localhost:${MONGO_HOST_PORT:-27017}/${MONGO_DB}?authSource=admin" \
+ELASTICSEARCH_URL="http://localhost:${ELASTIC_HOST_PORT:-9200}" \
+PORT=${APP_HOST_PORT:-3000} npm run dev
+```
+
+`MONGO_USER`/`MONGO_PASSWORD` are URL-encoded before building `MONGODB_URL`: a password with URI-reserved characters (`@`, `:`, `[`, `]`, …) left un-encoded breaks the connection string, and `bootstrap()` fails without ever logging why.
 
 ## Development
 
@@ -124,11 +143,13 @@ npm run lint           # eslint src --fix
 npm run format         # prettier --write (src + tests)
 npm run format:check   # prettier --check, as in CI
 npm test               # jest --coverage --all
-npx sequelize-cli db:migrate      # migrations (paths in .sequelizerc)
-npx sequelize-cli db:seed:all     # seeders
+npm run test:watch     # jest --watch --coverage=false
+npm run db:migrate         # sequelize-cli db:migrate (via tsx, paths in .sequelizerc)
+npm run db:migrate:undo    # sequelize-cli db:migrate:undo
+npm run db:seed             # sequelize-cli db:seed:all
 ```
 
-**Tests** — 1,316 Jest tests in 73 suites (unit under `tests/unit`, HTTP feature tests with supertest under `tests/feature`). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below its current level (statements 76%, branches 62%, functions 72%, lines 75% — see `jest.config.ts`).
+**Tests** — 1,834 Jest tests in 97 suites (unit under `tests/unit`, HTTP feature tests with supertest under `tests/feature`). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below the `coverageThreshold` in `jest.config.ts` — statements, branches, functions and lines all set to 90% (current coverage is 100% across the board).
 
 ## Project structure
 
