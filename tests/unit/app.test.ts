@@ -64,10 +64,22 @@ jest.mock('@/shared/middlewares/rateLimiter', () => {
   const passThrough = (_req: unknown, _res: unknown, next: () => void): void => {
     next();
   };
+  // Função nomeada (não jest.fn) porque resetMocks:true apagaria a implementação de um
+  // jest.fn() antes de cada teste. Marca a resposta com um header identificável para que
+  // os testes consigam comprovar, via supertest, que é ESTE middleware (e não outro
+  // pass-through) quem roda no pipeline montado em app.use('/api', getRateLimiter()).
+  function globalLimiterMock(
+    _req: unknown,
+    res: { setHeader: (name: string, value: string) => void },
+    next: () => void
+  ): void {
+    res.setHeader('x-test-global-limiter', '1');
+    next();
+  }
   return {
     getAuthRateLimiter: () => passThrough,
     getLoginRateLimiter: () => passThrough,
-    getRateLimiter: () => passThrough,
+    getRateLimiter: () => globalLimiterMock,
     getStrictRateLimiter: () => passThrough,
     createRateLimiter: () => passThrough,
   };
@@ -120,6 +132,21 @@ describe('app', () => {
 
       expect(response.status).toBe(201);
       expect(response.body).toEqual({ success: true, data: 'registered' });
+    });
+
+    it('monta o rate limiter global (getRateLimiter) em /api, antes das rotas', async () => {
+      const limiters = jest.requireMock('@/shared/middlewares/rateLimiter') as {
+        getRateLimiter: () => unknown;
+      };
+      expect(typeof limiters.getRateLimiter()).toBe('function');
+
+      const apiResponse = await request(app).get('/api/rota-inexistente-sob-api');
+      expect(apiResponse.headers['x-test-global-limiter']).toBe('1');
+    });
+
+    it('não aplica o rate limiter global fora do prefixo /api', async () => {
+      const response = await request(app).get('/rota-inexistente');
+      expect(response.headers['x-test-global-limiter']).toBeUndefined();
     });
   });
 
