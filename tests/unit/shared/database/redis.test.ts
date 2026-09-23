@@ -1,6 +1,8 @@
 const mockRedisConnect = jest.fn().mockResolvedValue(undefined);
 const mockRedisQuit = jest.fn().mockResolvedValue(undefined);
+const mockRedisOnce = jest.fn();
 let capturedRetryStrategy: (times: number) => number;
+let mockStatus: string;
 
 jest.mock('ioredis', () => {
   return jest.fn().mockImplementation((config) => {
@@ -8,6 +10,10 @@ jest.mock('ioredis', () => {
     return {
       connect: mockRedisConnect,
       quit: mockRedisQuit,
+      once: mockRedisOnce,
+      get status(): string {
+        return mockStatus;
+      },
     };
   });
 });
@@ -28,6 +34,7 @@ import { redis, connectRedis, disconnectRedis } from '@/shared/database/redis';
 describe('Redis', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockStatus = 'wait';
   });
 
   describe('redis client', () => {
@@ -43,10 +50,35 @@ describe('Redis', () => {
   });
 
   describe('connectRedis', () => {
-    it('should connect to Redis', async () => {
+    it('should connect to Redis when idle', async () => {
+      mockStatus = 'wait';
+
       await connectRedis();
 
       expect(mockRedisConnect).toHaveBeenCalled();
+    });
+
+    it('should not call connect again when already ready', async () => {
+      mockStatus = 'ready';
+
+      await connectRedis();
+
+      expect(mockRedisConnect).not.toHaveBeenCalled();
+    });
+
+    it('should wait for the ready event when a connection is already in progress', async () => {
+      mockStatus = 'connecting';
+      mockRedisOnce.mockImplementation((event: string, listener: () => void) => {
+        if (event === 'ready') {
+          listener();
+        }
+      });
+
+      await connectRedis();
+
+      expect(mockRedisConnect).not.toHaveBeenCalled();
+      expect(mockRedisOnce).toHaveBeenCalledWith('ready', expect.any(Function));
+      expect(mockRedisOnce).toHaveBeenCalledWith('error', expect.any(Function));
     });
   });
 
