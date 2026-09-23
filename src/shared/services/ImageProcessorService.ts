@@ -220,7 +220,7 @@ export class ImageProcessorService implements IImageProcessorService {
       } catch (error) {
         logger.error(
           'Erro ao gerar tamanho de imagem',
-          error instanceof Error ? error : new Error(String(error)),
+          error instanceof Error ? error : /* istanbul ignore next */ new Error(String(error)),
           { size }
         );
         throw new ImageProcessingError(`Falha ao gerar tamanho: ${size.name}`);

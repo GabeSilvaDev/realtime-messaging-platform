@@ -41,7 +41,11 @@
     "lint": "eslint src --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "test": "jest --coverage --all"
+    "test": "jest --coverage --all",
+    "test:watch": "jest --watch --coverage=false",
+    "db:migrate": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:migrate",
+    "db:migrate:undo": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:migrate:undo",
+    "db:seed": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:seed:all"
   },
   "repository": {
     "type": "git",

@@ -13,7 +13,7 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com)
 [![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.17-005571?logo=elasticsearch&logoColor=white)](https://www.elastic.co)
-[![Testes](https://img.shields.io/badge/testes-1316%20Jest-C21325?logo=jest&logoColor=white)](#desenvolvimento)
+[![Testes](https://img.shields.io/badge/testes-1959%20Jest-C21325?logo=jest&logoColor=white)](#desenvolvimento)
 [![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-555)](LICENSE)
 
 [English](README.md) · **Português (Brasil)**
@@ -90,29 +90,56 @@ Um service e um repository de contatos (tabela `contacts`) estão implementados 
 
 ## Como rodar
 
-Requer Docker e Docker Compose (ou Node.js 22 com os quatro bancos disponíveis).
+Requer Docker e Docker Compose (para os quatro bancos) e Node.js 22 (para rodar a API no host — veja a [limitação conhecida](#limitacao-conhecida-container-da-app) abaixo).
 
 ```bash
 git clone https://github.com/GabeSilvaDev/realtime-messaging-platform.git
 cd realtime-messaging-platform
 cp .env.example .env          # preencha as senhas — veja Configuração
 
-docker compose up -d          # app + PostgreSQL + Redis + MongoDB + Elasticsearch
-docker exec rtm-app npx sequelize-cli db:migrate
-docker exec rtm-app npx sequelize-cli db:seed:all   # usuários de demonstração, opcional
+docker compose up -d postgres redis mongodb elasticsearch
+npm install
 ```
 
-A API escuta em `http://localhost:3000/api`.
+| Serviço | Container | Porta | Variável de porta no host |
+|---|---|---|---|
+| PostgreSQL 17 | `rtm-postgres` | 5432 | `POSTGRES_HOST_PORT` |
+| Redis 7 | `rtm-redis` | 6379 | `REDIS_HOST_PORT` |
+| MongoDB 8 | `rtm-mongodb` | 27017 | `MONGO_HOST_PORT` |
+| Elasticsearch 8.17 | `rtm-elasticsearch` | 9200 · 9300 | `ELASTIC_HOST_PORT` · `ELASTIC_TRANSPORT_HOST_PORT` |
 
-| Serviço | Container | Porta |
-|---|---|---|
-| API (`tsx watch`) | `rtm-app` | 3000 |
-| PostgreSQL 17 | `rtm-postgres` | 5432 |
-| Redis 7 | `rtm-redis` | 6379 |
-| MongoDB 8 | `rtm-mongodb` | 27017 |
-| Elasticsearch 8.17 | `rtm-elasticsearch` | 9200 · 9300 |
+Toda porta do container é mapeada a partir de uma variável `*_HOST_PORT` (padrões acima); defina-as no `.env` se essas portas já estiverem em uso na máquina.
 
-Sem Docker: `npm install`, defina as variáveis do `.env.example` e rode `npm run dev`.
+### Rodando a app (no host)
+
+<a id="limitacao-conhecida-container-da-app"></a>
+**Limitação conhecida:** o container `rtm-app` do `docker-compose.yml` ainda não funciona — ele monta o repositório como bind mount (`.:/app`), mas o Dockerfile nunca roda `npm install` dentro da imagem, e um build do `sharp` feito no host gera binários glibc que não rodam na imagem base Alpine do container. Até isso ser corrigido (acompanhe no [roadmap](#roadmap)), rode a app no host contra os bancos containerizados acima.
+
+Migrations e seed, a partir do host:
+
+```bash
+set -a && source .env && set +a
+
+DB_HOST=localhost DB_PORT=${POSTGRES_HOST_PORT:-5432} npm run db:migrate
+DB_HOST=localhost DB_PORT=${POSTGRES_HOST_PORT:-5432} npm run db:seed   # usuários de demonstração, opcional
+```
+
+Depois suba a app em si:
+
+```bash
+MONGO_USER_ENC=$(node -e "console.log(encodeURIComponent(process.env.MONGO_USER))")
+MONGO_PASSWORD_ENC=$(node -e "console.log(encodeURIComponent(process.env.MONGO_PASSWORD))")
+
+DB_HOST=localhost DB_PORT=${POSTGRES_HOST_PORT:-5432} \
+REDIS_HOST=localhost REDIS_PORT=${REDIS_HOST_PORT:-6379} \
+MONGODB_URL="mongodb://${MONGO_USER_ENC}:${MONGO_PASSWORD_ENC}@localhost:${MONGO_HOST_PORT:-27017}/${MONGO_DB}?authSource=admin" \
+ELASTICSEARCH_URL="http://localhost:${ELASTIC_HOST_PORT:-9200}" \
+PORT=${APP_HOST_PORT:-3000} npm run dev
+```
+
+A API escuta em `http://localhost:${APP_HOST_PORT:-3000}/api` (`3000` por padrão).
+
+`MONGO_USER`/`MONGO_PASSWORD` são URL-encoded antes de montar a `MONGODB_URL`: uma senha com caracteres reservados de URI (`@`, `:`, `[`, `]`, …) sem codificar quebra a connection string, e o `bootstrap()` falha sem nunca logar o motivo.
 
 ## Desenvolvimento
 
@@ -124,11 +151,13 @@ npm run lint           # eslint src --fix
 npm run format         # prettier --write (src + tests)
 npm run format:check   # prettier --check, igual ao CI
 npm test               # jest --coverage --all
-npx sequelize-cli db:migrate      # migrations (caminhos no .sequelizerc)
-npx sequelize-cli db:seed:all     # seeders
+npm run test:watch     # jest --watch --coverage=false
+npm run db:migrate         # sequelize-cli db:migrate (via tsx, caminhos no .sequelizerc)
+npm run db:migrate:undo    # sequelize-cli db:migrate:undo
+npm run db:seed             # sequelize-cli db:seed:all
 ```
 
-**Testes** — 1.316 testes Jest em 73 suítes (unitários em `tests/unit`, testes de feature HTTP com supertest em `tests/feature`). O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e, a cada push e pull request, roda ESLint, uma checagem do Prettier, `tsc --noEmit` e a suíte. O build falha se a cobertura cair abaixo do nível atual (statements 76%, branches 62%, funções 72%, linhas 75% — veja `jest.config.ts`).
+**Testes** — 1.959 testes Jest em 111 suítes (unitários em `tests/unit`, testes de feature HTTP com supertest em `tests/feature`). O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e, a cada push e pull request, roda ESLint, uma checagem do Prettier, `tsc --noEmit` e a suíte. O build falha se a cobertura cair abaixo do `coverageThreshold` em `jest.config.ts` — statements, branches, funções e linhas todos em 90%. A cobertura é medida sobre todo arquivo em `src/`, não só os que algum teste importa; medida com `node node_modules/.bin/jest --coverage --all`, a cobertura atual é 100% statements, 100% branches, 100% funções, 100% linhas.
 
 ## Estrutura do projeto
 

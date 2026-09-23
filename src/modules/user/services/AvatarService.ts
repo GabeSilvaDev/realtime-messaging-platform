@@ -7,8 +7,6 @@ import { type IStorageService, storageService } from '@/shared/services/StorageS
 import {
   type IImageProcessorService,
   imageProcessorService,
-  ImageProcessingError,
-  InvalidImageError,
 } from '@/shared/services/ImageProcessorService';
 import type { IAvatarService } from '../interfaces';
 import {
@@ -144,10 +142,6 @@ export class AvatarService implements IAvatarService {
 
       if (error instanceof AppError) {
         throw error;
-      }
-
-      if (error instanceof ImageProcessingError || error instanceof InvalidImageError) {
-        throw new AvatarProcessingFailedError();
       }
 
       throw new AvatarProcessingFailedError();

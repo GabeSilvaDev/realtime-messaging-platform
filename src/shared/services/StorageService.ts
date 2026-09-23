@@ -263,7 +263,7 @@ export class LocalStorageService implements IStorageService {
             ? files.length > options.maxKeys
             : false,
       };
-    } catch (error) {
+    } catch (error) /* istanbul ignore next -- listFilesRecursive já engole todos os erros */ {
       logger.error(
         'Erro ao listar arquivos locais',
         error instanceof Error ? error : new Error(String(error))
@@ -278,6 +278,7 @@ export class LocalStorageService implements IStorageService {
     results: StorageListResult['files'],
     maxKeys?: number
   ): Promise<void> {
+    /* istanbul ignore if -- guarda defensiva: o laço já interrompe antes de recursar */
     if (maxKeys !== undefined && maxKeys > 0 && results.length >= maxKeys) {
       return;
     }

@@ -23,7 +23,11 @@ import {
   ProfileService,
   ProfileNotFoundException,
   InvalidAvatarUrlException,
+  BioTooLongException,
+  DisplayNameTooLongException,
 } from '@/modules/user/services/ProfileService';
+import type { IAvatarService } from '@/modules/user/interfaces';
+import type { AvatarFile, AvatarUploadResult } from '@/modules/user/types';
 import { userRepository } from '@/modules/user/repositories';
 import { UserStatus } from '@/shared/types';
 import { HttpStatus, ErrorCode } from '@/shared/errors';
@@ -362,6 +366,316 @@ describe('ProfileService', () => {
       await profileService.setBusy('user-123');
 
       expect(mockUserRepository.updateStatus).toHaveBeenCalledWith('user-123', UserStatus.BUSY);
+    });
+  });
+
+  describe('com avatar service mockado', () => {
+    let mockAvatarService: jest.Mocked<IAvatarService>;
+    let service: ProfileService;
+
+    const avatarFile: AvatarFile = {
+      fieldname: 'avatar',
+      originalname: 'avatar.png',
+      encoding: '7bit',
+      mimetype: 'image/png',
+      buffer: Buffer.from('fake-image'),
+      size: 1024,
+    };
+
+    const uploadResult: AvatarUploadResult = {
+      urls: {
+        original: '/uploads/avatars/original/user-123/a.webp',
+        large: '/uploads/avatars/large/user-123/a.webp',
+        medium: '/uploads/avatars/medium/user-123/a.webp',
+        small: '/uploads/avatars/small/user-123/a.webp',
+        thumbnail: '/uploads/avatars/thumbnail/user-123/a.webp',
+      },
+      metadata: {
+        originalName: 'avatar.png',
+        mimeType: 'image/png',
+        originalSize: 1024,
+        processedSizes: [],
+        uploadedAt: new Date('2026-01-01'),
+      },
+    };
+
+    beforeEach(() => {
+      mockAvatarService = {
+        upload: jest.fn(),
+        delete: jest.fn(),
+        deleteOldAvatars: jest.fn(),
+        getAvatarUrls: jest.fn(),
+        validateAvatarFile: jest.fn(),
+        exists: jest.fn(),
+      };
+      service = new ProfileService(mockUserRepository, mockAvatarService);
+    });
+
+    describe('uploadAvatar', () => {
+      it('deve fazer upload e atualizar avatarUrl com a URL medium', async () => {
+        mockUserRepository.findById.mockResolvedValue(mockUser);
+        mockAvatarService.upload.mockResolvedValue(uploadResult);
+        mockUserRepository.update.mockResolvedValue({
+          ...mockUser,
+          avatarUrl: uploadResult.urls.medium,
+        });
+
+        const result = await service.uploadAvatar('user-123', avatarFile, { format: 'png' });
+
+        expect(mockAvatarService.upload).toHaveBeenCalledWith('user-123', avatarFile, {
+          format: 'png',
+        });
+        expect(mockUserRepository.update).toHaveBeenCalledWith('user-123', {
+          avatarUrl: uploadResult.urls.medium,
+        });
+        expect(result).toBe(uploadResult);
+      });
+
+      it('deve lançar ProfileNotFoundException quando usuário não existe', async () => {
+        mockUserRepository.findById.mockResolvedValue(null);
+
+        await expect(service.uploadAvatar('nonexistent', avatarFile)).rejects.toThrow(
+          ProfileNotFoundException
+        );
+        expect(mockAvatarService.upload).not.toHaveBeenCalled();
+      });
+
+      it('deve propagar erro do avatar service sem atualizar o usuário', async () => {
+        mockUserRepository.findById.mockResolvedValue(mockUser);
+        mockAvatarService.upload.mockRejectedValue(new Error('upload failed'));
+
+        await expect(service.uploadAvatar('user-123', avatarFile)).rejects.toThrow('upload failed');
+        expect(mockUserRepository.update).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('removeAvatar', () => {
+      it('deve deletar arquivos e limpar avatarUrl', async () => {
+        const deleteResult = { deleted: true, deletedFiles: ['avatars/medium/user-123/a.webp'] };
+        mockUserRepository.findById.mockResolvedValue(mockUser);
+        mockAvatarService.delete.mockResolvedValue(deleteResult);
+        mockUserRepository.update.mockResolvedValue({ ...mockUser, avatarUrl: null });
+
+        const result = await service.removeAvatar('user-123');
+
+        expect(mockAvatarService.delete).toHaveBeenCalledWith('user-123');
+        expect(mockUserRepository.update).toHaveBeenCalledWith('user-123', { avatarUrl: null });
+        expect(result).toBe(deleteResult);
+      });
+
+      it('deve lançar ProfileNotFoundException quando usuário não existe', async () => {
+        mockUserRepository.findById.mockResolvedValue(null);
+
+        await expect(service.removeAvatar('nonexistent')).rejects.toThrow(ProfileNotFoundException);
+        expect(mockAvatarService.delete).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('getPublicProfile', () => {
+    it('deve retornar perfil público com bio null quando usuário não possui bio', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+
+      const result = await profileService.getPublicProfile('user-123');
+
+      expect(result).toEqual({
+        id: mockUser.id,
+        username: mockUser.username,
+        displayName: mockUser.displayName,
+        avatarUrl: mockUser.avatarUrl,
+        bio: null,
+        status: mockUser.status,
+        lastSeenAt: mockUser.lastSeenAt,
+      });
+      expect(result).not.toHaveProperty('email');
+    });
+
+    it('deve retornar bio quando presente', async () => {
+      mockUserRepository.findById.mockResolvedValue({ ...mockUser, bio: 'Minha bio' } as never);
+
+      const result = await profileService.getPublicProfile('user-123');
+
+      expect(result.bio).toBe('Minha bio');
+    });
+
+    it('deve lançar ProfileNotFoundException quando usuário não existe', async () => {
+      mockUserRepository.findById.mockResolvedValue(null);
+
+      await expect(profileService.getPublicProfile('nonexistent')).rejects.toThrow(
+        ProfileNotFoundException
+      );
+    });
+  });
+
+  describe('getProfile (mapeamento de campos opcionais)', () => {
+    it('deve normalizar campos ausentes para null', async () => {
+      mockUserRepository.findById.mockResolvedValue({
+        ...mockUser,
+        displayName: undefined,
+        avatarUrl: undefined,
+        lastSeenAt: undefined,
+      } as never);
+
+      const result = await profileService.getProfile('user-123');
+
+      expect(result.displayName).toBeNull();
+      expect(result.avatarUrl).toBeNull();
+      expect(result.lastSeenAt).toBeNull();
+      expect(result.bio).toBeNull();
+    });
+
+    it('deve mapear bio quando presente', async () => {
+      mockUserRepository.findById.mockResolvedValue({ ...mockUser, bio: 'Minha bio' } as never);
+
+      const result = await profileService.getProfile('user-123');
+
+      expect(result.bio).toBe('Minha bio');
+    });
+  });
+
+  describe('updateProfile (validações de tamanho)', () => {
+    it('deve lançar DisplayNameTooLongException quando displayName excede 100 caracteres', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+
+      await expect(
+        profileService.updateProfile('user-123', { displayName: 'a'.repeat(101) })
+      ).rejects.toThrow(DisplayNameTooLongException);
+      expect(mockUserRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('deve aceitar displayName com exatamente 100 caracteres', async () => {
+      const displayName = 'a'.repeat(100);
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+      mockUserRepository.update.mockResolvedValue({ ...mockUser, displayName });
+
+      const result = await profileService.updateProfile('user-123', { displayName });
+
+      expect(result.displayName).toBe(displayName);
+    });
+
+    it('deve lançar BioTooLongException quando bio excede 500 caracteres', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+
+      await expect(
+        profileService.updateProfile('user-123', { bio: 'a'.repeat(501) })
+      ).rejects.toThrow(BioTooLongException);
+      expect(mockUserRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('deve incluir bio no updateData quando informada', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+      mockUserRepository.update.mockResolvedValue({ ...mockUser, bio: 'Nova bio' } as never);
+
+      const result = await profileService.updateProfile('user-123', { bio: 'Nova bio' });
+
+      expect(mockUserRepository.update).toHaveBeenCalledWith('user-123', { bio: 'Nova bio' });
+      expect(result.bio).toBe('Nova bio');
+    });
+  });
+
+  describe('updateBio', () => {
+    it('deve atualizar bio', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+      mockUserRepository.update.mockResolvedValue({ ...mockUser, bio: 'Nova bio' } as never);
+
+      const result = await profileService.updateBio('user-123', 'Nova bio');
+
+      expect(mockUserRepository.update).toHaveBeenCalledWith('user-123', { bio: 'Nova bio' });
+      expect(result.bio).toBe('Nova bio');
+    });
+
+    it('deve permitir remover bio com null', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+      mockUserRepository.update.mockResolvedValue({ ...mockUser, bio: null } as never);
+
+      const result = await profileService.updateBio('user-123', null);
+
+      expect(mockUserRepository.update).toHaveBeenCalledWith('user-123', { bio: null });
+      expect(result.bio).toBeNull();
+    });
+  });
+
+  describe('getProfileStats', () => {
+    it('deve retornar estatísticas com lastActive igual a lastSeenAt', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+
+      const result = await profileService.getProfileStats('user-123');
+
+      expect(result).toEqual({
+        contactsCount: 0,
+        blockedCount: 0,
+        favoritesCount: 0,
+        memberSince: mockUser.createdAt,
+        lastActive: mockUser.lastSeenAt,
+      });
+    });
+
+    it('deve usar createdAt como lastActive quando lastSeenAt é null', async () => {
+      const createdAt = new Date('2025-06-01');
+      mockUserRepository.findById.mockResolvedValue({ ...mockUser, lastSeenAt: null, createdAt });
+
+      const result = await profileService.getProfileStats('user-123');
+
+      expect(result.lastActive).toBe(createdAt);
+    });
+
+    it('deve lançar ProfileNotFoundException quando usuário não existe', async () => {
+      mockUserRepository.findById.mockResolvedValue(null);
+
+      await expect(profileService.getProfileStats('nonexistent')).rejects.toThrow(
+        ProfileNotFoundException
+      );
+    });
+  });
+
+  describe('getProfileSettings', () => {
+    it('deve retornar configurações padrão', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+
+      const result = await profileService.getProfileSettings('user-123');
+
+      expect(result).toEqual({
+        visibility: {
+          showEmail: false,
+          showLastSeen: true,
+          showStatus: true,
+          showBio: true,
+        },
+        notifications: {
+          email: true,
+          push: true,
+          sound: true,
+        },
+        theme: 'system',
+        language: 'pt-BR',
+      });
+    });
+
+    it('deve lançar ProfileNotFoundException quando usuário não existe', async () => {
+      mockUserRepository.findById.mockResolvedValue(null);
+
+      await expect(profileService.getProfileSettings('nonexistent')).rejects.toThrow(
+        ProfileNotFoundException
+      );
+    });
+  });
+
+  describe('updateProfileSettings', () => {
+    it('deve retornar as configurações atuais após atualização', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+
+      const result = await profileService.updateProfileSettings('user-123', { theme: 'dark' });
+
+      expect(mockUserRepository.findById).toHaveBeenCalledTimes(2);
+      expect(result.theme).toBe('system');
+    });
+
+    it('deve lançar ProfileNotFoundException quando usuário não existe', async () => {
+      mockUserRepository.findById.mockResolvedValue(null);
+
+      await expect(
+        profileService.updateProfileSettings('nonexistent', { theme: 'dark' })
+      ).rejects.toThrow(ProfileNotFoundException);
     });
   });
 });

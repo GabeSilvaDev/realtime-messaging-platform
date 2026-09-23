@@ -15,6 +15,8 @@
 - Branch: `feature/user-contacts-blocks` criada a partir da `main` **depois** do merge do subprojeto 0.
 - Commits: gitmoji + Conventional Commits em PT-BR (ex.: `✨ feat: adiciona ContactController`). NUNCA mencionar Claude/Anthropic/IA nem adicionar `Co-Authored-By`.
 - Cobertura: 100% (linhas/branches/functions/statements) em todo arquivo novo ou alterado; threshold global de 90% (configurado no subprojeto 0) deve continuar passando.
+- Prettier é verificado no CI (`npm run format:check` cobre `src/**/*.ts` e `tests/**/*.ts`): rodar `node node_modules/.bin/prettier --write <arquivos>` antes de cada commit.
+- `.github/SRS.md` é documento local (não versionado): pode ser editado, mas NUNCA commitado.
 - Rodar jest SEMPRE como `node node_modules/.bin/jest ...` (um hook reescreve `npx jest` e filtra a saída).
 - Rotas estáticas declaradas ANTES de rotas com parâmetro (`/favorites` antes de `/:contactId`).
 - Resposta de sucesso: `{ success: true, data?, message? }`. Falha de validação: HTTP 400 `{ success: false, message: 'Dados inválidos', errors: issues }` (mesmo formato do `ProfileController`).
@@ -2431,6 +2433,7 @@ git commit -m "🔒 feat: aplica rate limit em login, registro e recuperação d
 ```bash
 node node_modules/.bin/jest
 npm run lint
+npm run format:check
 npm run build
 ```
 
@@ -2478,15 +2481,17 @@ Expected: `bob=<uuid>`, `add=201`, `block=201`, primeira busca com `"data":[]`, 
 
 Se o caminho do access token no JSON de login for diferente de `data.tokens.accessToken`, ajustar o `node -pe` conforme a resposta real de `/auth/login`. Se a busca após o bloqueio ainda retornar o usuário, é bug em `UserRepository.search` com `excludeBlocked` — corrigir com TDD (teste em `tests/unit/modules/user/repositories/UserRepository.test.ts`) antes de seguir.
 
-- [ ] **Step 4: Atualizar SRS**
+- [ ] **Step 4: Atualizar SRS (local, não commitar) e READMEs**
 
-Em `.github/SRS.md`, na Sprint 4, marcar todas as tarefas como `[x]`, alterar o título para `### 📅 Sprint 4 (Semana 4): Módulo de Usuários ✅` e trocar `- [ ] Implementar testes completos` por `- [x] Implementar testes completos (controllers, rotas, feature tests; 100% nos arquivos novos)`.
+Atualizar `README.md` e `README.pt-BR.md` (seção "What exists today"/equivalente e roadmap) com os endpoints novos (`/api/contacts`, `/api/blocks`, `/api/users/search`) e o rate limit, no mesmo estilo das tabelas existentes.
+
+Em `.github/SRS.md` (arquivo local, fora do git), na Sprint 4, marcar todas as tarefas como `[x]`, alterar o título para `### 📅 Sprint 4 (Semana 4): Módulo de Usuários ✅` e trocar `- [ ] Implementar testes completos` por `- [x] Implementar testes completos (controllers, rotas, feature tests; 100% nos arquivos novos)`.
 
 - [ ] **Step 5: Commit e PR**
 
 ```bash
-git add .github/SRS.md
-git commit -m "📝 docs: marca Sprint 4 como concluída no SRS"
+git add README.md README.pt-BR.md
+git commit -m "📝 docs: documenta endpoints de contatos, bloqueios, busca e rate limit"
 git push -u origin feature/user-contacts-blocks
 gh pr create --base main --title "✨ Sprint 4: contatos, bloqueios, busca de usuários e rate limit" --body "$(cat <<'EOF'
 ## Resumo

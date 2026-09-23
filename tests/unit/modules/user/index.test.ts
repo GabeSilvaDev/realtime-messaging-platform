@@ -7,6 +7,23 @@ describe('user module index', () => {
       expect(userModuleIndex.Contact).toBeDefined();
     });
 
+    it('deve exportar ProfileController, profileController e profileRoutes', () => {
+      expect(userModuleIndex.ProfileController).toBeDefined();
+      expect(userModuleIndex.profileController).toBeDefined();
+      expect(userModuleIndex.profileRoutes).toBeDefined();
+    });
+
+    it('deve re-exportar validation via barrel', () => {
+      expect(userModuleIndex.updateProfileSchema).toBeDefined();
+      expect(userModuleIndex.addContactSchema).toBeDefined();
+    });
+
+    it('deve re-exportar constants via barrel', () => {
+      expect(userModuleIndex.PROFILE_CONSTANTS).toBeDefined();
+      expect(userModuleIndex.USER_CONSTANTS).toBeDefined();
+      expect(userModuleIndex.CONTACT_CONSTANTS).toBeDefined();
+    });
+
     it('deve exportar services', () => {
       expect(userModuleIndex.ContactService).toBeDefined();
       expect(userModuleIndex.contactService).toBeDefined();
@@ -14,6 +31,8 @@ describe('user module index', () => {
       expect(userModuleIndex.profileService).toBeDefined();
       expect(userModuleIndex.UserService).toBeDefined();
       expect(userModuleIndex.userService).toBeDefined();
+      expect(userModuleIndex.AvatarService).toBeDefined();
+      expect(userModuleIndex.avatarService).toBeDefined();
     });
 
     it('deve exportar exceptions de services', () => {
