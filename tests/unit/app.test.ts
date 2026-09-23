@@ -244,4 +244,71 @@ describe('app', () => {
       expect(typeof freshApp).toBe('function');
     });
   });
+
+  describe('TRUST_PROXY', () => {
+    const originalTrustProxy = process.env.TRUST_PROXY;
+
+    afterEach(() => {
+      if (originalTrustProxy === undefined) {
+        delete process.env.TRUST_PROXY;
+      } else {
+        process.env.TRUST_PROXY = originalTrustProxy;
+      }
+      jest.resetModules();
+    });
+
+    it('não define trust proxy quando TRUST_PROXY não está definido (mantém o padrão do Express)', () => {
+      jest.resetModules();
+      delete process.env.TRUST_PROXY;
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(false);
+    });
+
+    it('trata TRUST_PROXY vazio como não definido', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = '';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(false);
+    });
+
+    it('define trust proxy como boolean quando TRUST_PROXY=true', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = 'true';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(true);
+    });
+
+    it('define trust proxy como boolean quando TRUST_PROXY=false', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = 'false';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(false);
+    });
+
+    it('define trust proxy como número de hops quando TRUST_PROXY=2', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = '2';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(2);
+    });
+
+    it('define trust proxy como string (preset) quando TRUST_PROXY=loopback', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = 'loopback';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe('loopback');
+    });
+  });
 });

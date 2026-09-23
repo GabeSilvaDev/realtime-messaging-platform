@@ -15,6 +15,30 @@ import { profileRoutes, contactRoutes, blockRoutes, userRoutes } from './modules
 
 const env: Environment = (process.env.NODE_ENV as Environment | undefined) ?? 'development';
 
+/**
+ * Interpreta a variável de ambiente TRUST_PROXY para `app.set('trust proxy', …)`.
+ * - não definida / vazia → `undefined` (não altera o padrão do Express)
+ * - "true" / "false" → boolean
+ * - um número (ex.: "1", "2") → quantidade de hops de proxy confiáveis
+ * - qualquer outra string (ex.: "loopback", "linklocal", um IP/CIDR) → repassada como está,
+ *   interpretada pelo Express/proxy-addr
+ */
+function parseTrustProxy(raw: string | undefined): boolean | number | string | undefined {
+  if (raw === undefined || raw === '') {
+    return undefined;
+  }
+  if (raw === 'true') {
+    return true;
+  }
+  if (raw === 'false') {
+    return false;
+  }
+  if (/^\d+$/.test(raw)) {
+    return Number(raw);
+  }
+  return raw;
+}
+
 initLogger({
   service: 'real-time-messaging-platform',
   environment: env,
@@ -25,6 +49,11 @@ initLogger({
 });
 
 const app: Application = express();
+
+const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
+if (trustProxy !== undefined) {
+  app.set('trust proxy', trustProxy);
+}
 
 app.use(createHelmetMiddleware());
 app.use(createCorsMiddleware());

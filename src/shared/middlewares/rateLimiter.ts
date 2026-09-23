@@ -65,7 +65,6 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimitRe
     skipSuccessfulRequests,
     skip,
     keyGenerator,
-    validate: { xForwardedForHeader: false },
     handler: (req: Request, res: Response): void => {
       const requestId = String(req.headers['x-request-id'] ?? 'unknown');
       const error = new AppError(message, HttpStatus.TOO_MANY_REQUESTS, ErrorCode.RATE_LIMITED);
