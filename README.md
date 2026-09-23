@@ -121,13 +121,14 @@ npm run dev            # tsx watch src/server.ts
 npm run build          # tsc → dist/
 npm start              # node dist/server.js
 npm run lint           # eslint src --fix
-npm run format         # prettier
+npm run format         # prettier --write (src + tests)
+npm run format:check   # prettier --check, as in CI
 npm test               # jest --coverage --all
 npx sequelize-cli db:migrate      # migrations (paths in .sequelizerc)
 npx sequelize-cli db:seed:all     # seeders
 ```
 
-**Tests** — 1,316 Jest tests in 73 suites (unit under `tests/unit`, HTTP feature tests with supertest under `tests/feature`). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and runs ESLint, `tsc --noEmit` and the suite on every push.
+**Tests** — 1,316 Jest tests in 73 suites (unit under `tests/unit`, HTTP feature tests with supertest under `tests/feature`). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below its current level (statements 76%, branches 62%, functions 72%, lines 75% — see `jest.config.ts`).
 
 ## Project structure
 

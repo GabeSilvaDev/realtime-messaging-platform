@@ -121,13 +121,14 @@ npm run dev            # tsx watch src/server.ts
 npm run build          # tsc → dist/
 npm start              # node dist/server.js
 npm run lint           # eslint src --fix
-npm run format         # prettier
+npm run format         # prettier --write (src + tests)
+npm run format:check   # prettier --check, igual ao CI
 npm test               # jest --coverage --all
 npx sequelize-cli db:migrate      # migrations (caminhos no .sequelizerc)
 npx sequelize-cli db:seed:all     # seeders
 ```
 
-**Testes** — 1.316 testes Jest em 73 suítes (unitários em `tests/unit`, testes de feature HTTP com supertest em `tests/feature`). O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e roda ESLint, `tsc --noEmit` e a suíte a cada push.
+**Testes** — 1.316 testes Jest em 73 suítes (unitários em `tests/unit`, testes de feature HTTP com supertest em `tests/feature`). O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e, a cada push e pull request, roda ESLint, uma checagem do Prettier, `tsc --noEmit` e a suíte. O build falha se a cobertura cair abaixo do nível atual (statements 76%, branches 62%, funções 72%, linhas 75% — veja `jest.config.ts`).
 
 ## Estrutura do projeto
 
