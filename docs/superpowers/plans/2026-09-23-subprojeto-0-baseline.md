@@ -18,6 +18,9 @@
 - `jest.config.ts` usa `resetMocks`/`restoreMocks`/`clearMocks`: implementações de `jest.fn(impl)` criadas em factories de `jest.mock` são apagadas antes de cada teste. Os testes fornecidos já tratam isso — não "simplificar" para `jest.fn(impl)` em factory.
 - `tsc` inclui `tests/**`: todo teste deve passar em `node node_modules/.bin/tsc --noEmit -p tsconfig.json`.
 - Não parar nem alterar containers de outros projetos na máquina (portas 3000, 5432, 6379 do host estão ocupadas por eles).
+- Prettier é verificado no CI (`npm run format:check`, cobre `src/**/*.ts` e `tests/**/*.ts`): todo arquivo novo/alterado deve passar. Rodar `node node_modules/.bin/prettier --write <arquivos>` antes de commitar.
+- `.github/SRS.md` é documento local (não versionado, listado em `.git/info/exclude`): pode ser editado como controle local, mas NUNCA commitado.
+- A `main` já tem CI (`.github/workflows/ci.yml`: eslint, format:check, tsc, jest --coverage --all), README honesto em `README.md` (EN) e `README.pt-BR.md`, e `coverageThreshold` = baseline (62/72/75/76).
 - Baseline medida em 2026-09-23: 73 suítes / 1316 testes passando; cobertura global lines 75.48 / branches 62.03 / functions 72.31 / statements 76.42.
 
 ## Fontes dos testes
@@ -170,6 +173,7 @@ mkdir -p tests/unit/shared/config tests/unit/shared/services
 cp $SCRATCH/tests/upload.test.ts tests/unit/shared/config/upload.test.ts
 cp $SCRATCH/tests/ImageProcessorService.test.ts tests/unit/shared/services/ImageProcessorService.test.ts
 cp $SCRATCH/tests/StorageService.test.ts tests/unit/shared/services/StorageService.test.ts
+node node_modules/.bin/prettier --write tests/unit/shared/config/upload.test.ts tests/unit/shared/services/*.test.ts
 ```
 
 - [ ] **Step 2: Rodar e medir**
@@ -253,7 +257,11 @@ for f in controllers/ProfileController services/AvatarService errors/avatar.erro
   mkdir -p "tests/unit/modules/user/$(dirname $f)"
   cp "$SCRATCH/testsB/tests/unit/modules/user/$f.test.ts" "tests/unit/modules/user/$f.test.ts"
 done
+node node_modules/.bin/prettier --write tests/unit/modules/user
+git diff --stat tests/unit/modules/user/services/ProfileService.test.ts
 ```
+
+O `ProfileService.test.ts` de origem foi gerado a partir de uma versão anterior do arquivo (antes de um commit de formatação na `main`). Após o prettier, `git diff tests/unit/modules/user/services/ProfileService.test.ts` deve mostrar apenas: imports novos (`BioTooLongException`, `DisplayNameTooLongException`, `IAvatarService`, `AvatarFile`, `AvatarUploadResult`) e blocos `describe` adicionados. Se mostrar remoção/alteração de testes existentes, restaurar o arquivo (`git checkout -- <arquivo>`) e aplicar só as adições manualmente.
 
 - [ ] **Step 2: Rodar e medir**
 
@@ -322,6 +330,7 @@ done
 cp "$SCRATCH/testsC/tests/unit/shared/logger/lazyLogger.test.ts" tests/unit/shared/logger/lazyLogger.test.ts
 cp "$SCRATCH/testsC/tests/feature/shared/middlewares/requestId.test.ts" tests/feature/shared/middlewares/requestId.test.ts
 cp "$SCRATCH/testsC/tests/feature/shared/middlewares/notFound.test.ts" tests/feature/shared/middlewares/notFound.test.ts
+node node_modules/.bin/prettier --write tests/unit/shared/middlewares tests/unit/shared/logger tests/feature/shared/middlewares
 ```
 
 - [ ] **Step 2: Rodar e medir**
@@ -384,6 +393,7 @@ Em `jest.config.ts`:
 node node_modules/.bin/jest
 node node_modules/.bin/tsc --noEmit -p tsconfig.json
 npm run lint
+npm run format:check
 npm run build
 ```
 
@@ -398,54 +408,39 @@ git commit -m "🔧 chore: ativa threshold global de cobertura de 90%"
 
 ---
 
-### Task 6: README, SRS e PR
+### Task 6: README e PR
 
 **Files:**
 - Modify: `README.md`
-- Modify: `.github/SRS.md`
+- Modify: `README.pt-BR.md`
 
-- [ ] **Step 1: README honesto** (nas duas línguas)
+- [ ] **Step 1: Atualizar os dois READMEs** (já são honestos; ajustar só o que mudou neste subprojeto)
 
-- Badge `Coverage-100%25` → valor real medido na Task 5 arredondado para baixo (ex.: `Coverage-95%25`).
-- Seção "Key Features"/"Principais Funcionalidades": marcar como `(planejado)` / `(planned)` os itens ainda não implementados: Real-Time Messaging (Socket.IO), Push Notifications, Full-Text Search, Online Presence.
-- Tabela "Coverage Report"/"Relatório de Cobertura": valores reais da Task 5.
-- "Available Scripts"/"Scripts Disponíveis": incluir `test:watch`, `db:migrate`, `db:migrate:undo`, `db:seed` (agora existem).
-- Quick Start: acrescentar nota de portas (`*_HOST_PORT` no `.env`) e o comando validado na Task 1 Step 6 para rodar a app no host.
-- Remover "100% Test Coverage" das features; trocar por "Test coverage ≥ 90% enforced in CI" / "Cobertura de testes ≥ 90% garantida".
+- Badge `tests-1316%20Jest` → contagem real de testes após a Task 5 (`node node_modules/.bin/jest --coverage=false 2>&1 | grep '^Tests:'`).
+- Seção de desenvolvimento / scripts: documentar `npm run test:watch`, `npm run db:migrate`, `npm run db:migrate:undo`, `npm run db:seed`.
+- Seção de setup local: documentar as variáveis `*_HOST_PORT` do docker compose e o comando validado na Task 1 para rodar a app no host (ver `.superpowers/sdd/2026-09-23-subprojeto-0-baseline/task-1-report.md`), incluindo a observação de que senhas com caracteres reservados de URI precisam ser codificadas (`encodeURIComponent`) no `MONGODB_URL`.
+- Se o README mencionar a cobertura/threshold de CI, atualizar para o threshold de 90%.
+- Manter conteúdo equivalente nas duas línguas.
 
-- [ ] **Step 2: SRS**
-
-Em `.github/SRS.md`, Sprint 4, marcar `[x]` em: `Implementar ProfileService (atualização, avatar)`, `Implementar upload de avatar (multer)`, `Criar processamento de imagem (sharp)`. Deixar `[ ]` os demais (feitos no subprojeto 1).
-
-- [ ] **Step 3: Verificação final**
+- [ ] **Step 2: Verificação final**
 
 ```bash
-node node_modules/.bin/jest && npm run lint && npm run build && git status --short
+node node_modules/.bin/jest && npm run lint && npm run format:check && npm run build && git status --short
 ```
 
-Expected: verde; working tree só com os arquivos desta task.
+Expected: verde; working tree só com os READMEs.
 
-- [ ] **Step 4: Commit, push e PR**
+- [ ] **Step 3: Commit, push e PR**
 
 ```bash
-git add README.md .github/SRS.md
-git commit -m "📝 docs: alinha README e SRS ao estado real do projeto"
+git add README.md README.pt-BR.md
+git commit -m "📝 docs: documenta scripts de banco, portas do compose e threshold de cobertura"
 git push -u origin chore/baseline
-gh pr create --base main --title "🔧 Baseline: ambiente, scripts de banco e cobertura ≥ 90%" --body "$(cat <<'EOF'
-## Resumo
-- Scripts `db:migrate`, `db:migrate:undo`, `db:seed` (sequelize-cli via tsx) e `test:watch`
-- Portas do host parametrizadas no docker-compose (`*_HOST_PORT`)
-- Testes para upload config, ImageProcessorService, StorageService, ProfileController, AvatarService, ProfileService, profile.routes, erros, middlewares compartilhados e logger
-- Feature tests de requestId/notFound agora usam as implementações reais
-- Remove branch morto no AvatarService; marca 3 trechos defensivos com istanbul ignore
-- `coverageThreshold` global 90%
-- README e SRS refletem o estado real
-
-## Cobertura
-Antes: lines 75.48 / branches 62.03 / functions 72.31 / statements 76.42
-Depois: (preencher com os valores da Task 5)
-EOF
-)"
 ```
+
+Criar o PR com `gh pr create --base main --title "🔧 Baseline: scripts de banco, portas parametrizadas e cobertura ≥ 90%"` e corpo (via `--body-file`) contendo:
+
+- Resumo: scripts `db:migrate`, `db:migrate:undo`, `db:seed` (sequelize-cli via tsx) e `test:watch`; portas do host parametrizadas (`*_HOST_PORT`); migration de refresh tokens reordenada; testes para upload config, ImageProcessorService, StorageService, ProfileController, AvatarService, ProfileService, profile.routes, erros, middlewares compartilhados e logger; feature tests de requestId/notFound usando implementações reais; branch morto removido no AvatarService; 3 trechos defensivos com istanbul ignore; `coverageThreshold` global 90%.
+- Cobertura antes: lines 75.48 / branches 62.03 / functions 72.31 / statements 76.42; depois: valores reais da Task 5.
 
 Expected: URL do PR.
