@@ -1,20 +1,26 @@
+import { EventEmitter } from 'events';
+
 const mockRedisConnect = jest.fn().mockResolvedValue(undefined);
 const mockRedisQuit = jest.fn().mockResolvedValue(undefined);
-const mockRedisOnce = jest.fn();
 let capturedRetryStrategy: (times: number) => number;
 let mockStatus: string;
+let mockRedisInstance: EventEmitter;
 
 jest.mock('ioredis', () => {
-  return jest.fn().mockImplementation((config) => {
+  const { EventEmitter: MockEventEmitter } = jest.requireActual('events');
+
+  return jest.fn().mockImplementation((config: { retryStrategy: (times: number) => number }) => {
     capturedRetryStrategy = config.retryStrategy;
-    return {
-      connect: mockRedisConnect,
-      quit: mockRedisQuit,
-      once: mockRedisOnce,
-      get status(): string {
-        return mockStatus;
-      },
-    };
+
+    const instance = new MockEventEmitter();
+    instance.connect = mockRedisConnect;
+    instance.quit = mockRedisQuit;
+    Object.defineProperty(instance, 'status', {
+      get: () => mockStatus,
+    });
+
+    mockRedisInstance = instance;
+    return instance;
   });
 });
 
@@ -50,14 +56,6 @@ describe('Redis', () => {
   });
 
   describe('connectRedis', () => {
-    it('should connect to Redis when idle', async () => {
-      mockStatus = 'wait';
-
-      await connectRedis();
-
-      expect(mockRedisConnect).toHaveBeenCalled();
-    });
-
     it('should not call connect again when already ready', async () => {
       mockStatus = 'ready';
 
@@ -66,19 +64,45 @@ describe('Redis', () => {
       expect(mockRedisConnect).not.toHaveBeenCalled();
     });
 
-    it('should wait for the ready event when a connection is already in progress', async () => {
+    it.each(['wait', 'end', 'close'])(
+      'should connect to Redis when status is %s',
+      async (status) => {
+        mockStatus = status;
+
+        await connectRedis();
+
+        expect(mockRedisConnect).toHaveBeenCalled();
+      }
+    );
+
+    it.each(['connecting', 'connect', 'reconnecting'])(
+      'should wait for the ready event without reconnecting when status is %s',
+      async (status) => {
+        mockStatus = status;
+
+        const pending = connectRedis();
+        expect(mockRedisConnect).not.toHaveBeenCalled();
+
+        mockRedisInstance.emit('ready');
+        await pending;
+
+        expect(mockRedisConnect).not.toHaveBeenCalled();
+        expect(mockRedisInstance.listenerCount('ready')).toBe(0);
+        expect(mockRedisInstance.listenerCount('error')).toBe(0);
+      }
+    );
+
+    it('should reject and clean up listeners when the in-progress connection errors', async () => {
       mockStatus = 'connecting';
-      mockRedisOnce.mockImplementation((event: string, listener: () => void) => {
-        if (event === 'ready') {
-          listener();
-        }
-      });
+      const failure = new Error('connection refused');
 
-      await connectRedis();
+      const pending = connectRedis();
+      mockRedisInstance.emit('error', failure);
 
+      await expect(pending).rejects.toThrow(failure);
       expect(mockRedisConnect).not.toHaveBeenCalled();
-      expect(mockRedisOnce).toHaveBeenCalledWith('ready', expect.any(Function));
-      expect(mockRedisOnce).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(mockRedisInstance.listenerCount('ready')).toBe(0);
+      expect(mockRedisInstance.listenerCount('error')).toBe(0);
     });
   });
 
