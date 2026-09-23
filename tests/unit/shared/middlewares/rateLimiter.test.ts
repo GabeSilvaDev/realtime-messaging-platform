@@ -3,6 +3,7 @@ import request from 'supertest';
 import {
   RATE_LIMIT_AUTH_KEY_PREFIX,
   RATE_LIMIT_AUTH_MAX_REQUESTS,
+  RATE_LIMIT_AUTH_WINDOW_MS,
   RATE_LIMIT_DEFAULT_KEY_PREFIX,
   RATE_LIMIT_DEFAULT_MAX_REQUESTS,
   RATE_LIMIT_STRICT_KEY_PREFIX,
@@ -249,6 +250,9 @@ describe('rateLimiter middleware', () => {
       expect(response.status).toBe(HttpStatus.TOO_MANY_REQUESTS);
       expect(response.body.error.message).toBe(
         'Too many authentication attempts, please try again in a minute'
+      );
+      expect(response.headers['ratelimit-policy']).toBe(
+        `${RATE_LIMIT_AUTH_MAX_REQUESTS};w=${RATE_LIMIT_AUTH_WINDOW_MS / 1000}`
       );
       expect(getAuthRateLimiter()).toBe(limiter);
       expect(authRateLimiter).toBe(getAuthRateLimiter);
