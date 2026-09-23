@@ -171,7 +171,9 @@ describe('UserService', () => {
     it('deve lançar UserNotFoundException quando usuário não encontrado', async () => {
       mockUserRepository.findById.mockResolvedValue(null);
 
-      await expect(userService.findByIdPublic('nonexistent')).rejects.toThrow(UserNotFoundException);
+      await expect(userService.findByIdPublic('nonexistent')).rejects.toThrow(
+        UserNotFoundException
+      );
     });
   });
 

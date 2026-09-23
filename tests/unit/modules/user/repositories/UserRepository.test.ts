@@ -358,8 +358,14 @@ describe('UserRepository', () => {
 
     it('deve filtrar usuários bloqueados quando excludeBlocked=true', async () => {
       const usersWithBlocked = [
-        { ...mockSearchUsers[0], get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-1' }) },
-        { ...mockSearchUsers[1], get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-2' }) },
+        {
+          ...mockSearchUsers[0],
+          get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-1' }),
+        },
+        {
+          ...mockSearchUsers[1],
+          get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-2' }),
+        },
       ];
       MockUser.findAndCountAll.mockResolvedValue({
         count: 2,
@@ -378,8 +384,14 @@ describe('UserRepository', () => {
 
     it('deve filtrar apenas contatos quando onlyContacts=true', async () => {
       const usersWithContacts = [
-        { ...mockSearchUsers[0], get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-1' }) },
-        { ...mockSearchUsers[1], get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-2' }) },
+        {
+          ...mockSearchUsers[0],
+          get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-1' }),
+        },
+        {
+          ...mockSearchUsers[1],
+          get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-2' }),
+        },
       ];
       MockUser.findAndCountAll.mockResolvedValue({
         count: 2,
@@ -403,7 +415,12 @@ describe('UserRepository', () => {
     it('deve adicionar informações de contato aos resultados', async () => {
       MockUser.findAndCountAll.mockResolvedValue({
         count: 1,
-        rows: [{ ...mockSearchUsers[0], get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-1' }) }],
+        rows: [
+          {
+            ...mockSearchUsers[0],
+            get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-1' }),
+          },
+        ],
       } as any);
       MockContact.findAll.mockResolvedValue([
         { contactId: 'user-1', isBlocked: false, isFavorite: true, nickname: 'Meu Amigo' },

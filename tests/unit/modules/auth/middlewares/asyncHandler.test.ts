@@ -42,7 +42,11 @@ describe('asyncHandler', () => {
 
   describe('error handling', () => {
     it('should pass AppError to next middleware', async () => {
-      const appError = new AppError('Test error', HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_ERROR);
+      const appError = new AppError(
+        'Test error',
+        HttpStatus.BAD_REQUEST,
+        ErrorCode.VALIDATION_ERROR
+      );
       const handler = jest.fn().mockRejectedValue(appError);
       const wrapped = asyncHandler(handler);
 

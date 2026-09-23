@@ -7,7 +7,7 @@ describe('User Model', () => {
 
   beforeAll(() => {
     jest.resetModules();
-    
+
     jest.doMock('sequelize', () => {
       const actual = jest.requireActual('sequelize');
       return {
