@@ -39,7 +39,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint src --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
     "test": "jest --coverage --all"
   },
   "repository": {
