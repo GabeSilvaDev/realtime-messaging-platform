@@ -1,4 +1,6 @@
 import type { UserAttributes } from '@/shared/types';
+import { eventBus, type EventBus } from '@/shared/event-bus';
+import { UserEvents } from '@/shared/types';
 import { contactRepository, userRepository } from '../repositories';
 import type { IContactRepository, IContactService, IUserRepository } from '../interfaces';
 import {
@@ -33,7 +35,8 @@ export {
 export class ContactService implements IContactService {
   constructor(
     private readonly contacts: IContactRepository = contactRepository,
-    private readonly users: IUserRepository = userRepository
+    private readonly users: IUserRepository = userRepository,
+    private readonly events: Pick<EventBus, 'publish'> = eventBus
   ) {}
 
   async addContact(userId: string, data: AddContactDTO): Promise<ContactResponseDTO> {
@@ -159,6 +162,7 @@ export class ContactService implements IContactService {
     }
 
     await this.contacts.block(userId, targetId);
+    await this.events.publish(UserEvents.BLOCKED, { userId, blockedUserId: targetId });
   }
 
   async unblockUser(userId: string, targetId: string): Promise<void> {
@@ -166,6 +170,8 @@ export class ContactService implements IContactService {
     if (!unblocked) {
       throw new ContactNotFoundException();
     }
+
+    await this.events.publish(UserEvents.UNBLOCKED, { userId, unblockedUserId: targetId });
   }
 
   async listBlocked(userId: string): Promise<ContactWithUser[]> {
