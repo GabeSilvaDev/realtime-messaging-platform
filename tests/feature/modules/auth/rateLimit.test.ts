@@ -58,6 +58,50 @@ describe('Rate limit de autenticação — Feature', () => {
     expect(blocked.headers['ratelimit-limit']).toBeDefined();
   });
 
+  it('logins bem-sucedidos não consomem a cota de tentativas falhas de login', async () => {
+    // O limiter de login é um singleton por processo (getLoginRateLimiter), com o mesmo
+    // MemoryStore compartilhado por todos os testes deste arquivo. O teste acima já esgotou
+    // o bucket do IP padrão do supertest (loopback). Para não depender da ordem dos testes,
+    // isolamos este cenário com um IP dedicado: habilitamos trust proxy (1 hop, não o valor
+    // permissivo `true` — que o express-rate-limit rejeita com ERR_ERL_PERMISSIVE_TRUST_PROXY)
+    // nesta app local e enviamos um X-Forwarded-For próprio, o que dá a este teste sua própria
+    // chave de rate limit (o keyGenerator padrão do express-rate-limit usa req.ip).
+    const isolatedApp = express();
+    isolatedApp.set('trust proxy', 1);
+    isolatedApp.use(express.json());
+    isolatedApp.use('/api/auth', authRoutes);
+    isolatedApp.use(errorHandler);
+    const dedicatedIp = '203.0.113.42';
+
+    mockAuthService.login.mockResolvedValue({ accessToken: 'token', refreshToken: 'refresh' });
+
+    for (let i = 0; i < 10; i++) {
+      const response = await request(isolatedApp)
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', dedicatedIp)
+        .send(credentials);
+      expect(response.status).toBe(HttpStatus.OK);
+    }
+
+    mockAuthService.login.mockRejectedValue(
+      new AppError('Credenciais inválidas', HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_CREDENTIALS)
+    );
+
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const response = await request(isolatedApp)
+        .post('/api/auth/login')
+        .set('X-Forwarded-For', dedicatedIp)
+        .send(credentials);
+      expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
+    }
+
+    const blocked = await request(isolatedApp)
+      .post('/api/auth/login')
+      .set('X-Forwarded-For', dedicatedIp)
+      .send(credentials);
+    expect(blocked.status).toBe(HttpStatus.TOO_MANY_REQUESTS);
+  });
+
   it('forgot-password deve limitar a 5 requisições', async () => {
     mockAuthService.forgotPassword.mockResolvedValue(undefined);
 
