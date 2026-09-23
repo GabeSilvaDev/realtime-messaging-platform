@@ -258,15 +258,15 @@ describe('ProfileService', () => {
     });
 
     it('deve lançar InvalidAvatarUrlException para URL inválida', async () => {
-      await expect(
-        profileService.updateAvatar('user-123', 'invalid-url')
-      ).rejects.toThrow(InvalidAvatarUrlException);
+      await expect(profileService.updateAvatar('user-123', 'invalid-url')).rejects.toThrow(
+        InvalidAvatarUrlException
+      );
     });
 
     it('deve lançar InvalidAvatarUrlException para URL com protocolo file', async () => {
-      await expect(
-        profileService.updateAvatar('user-123', 'file:///etc/passwd')
-      ).rejects.toThrow(InvalidAvatarUrlException);
+      await expect(profileService.updateAvatar('user-123', 'file:///etc/passwd')).rejects.toThrow(
+        InvalidAvatarUrlException
+      );
     });
   });
 
@@ -317,9 +317,9 @@ describe('ProfileService', () => {
     it('deve lançar ProfileNotFoundException quando usuário não existe', async () => {
       mockUserRepository.findById.mockResolvedValue(null);
 
-      await expect(
-        profileService.updateStatus('nonexistent', UserStatus.ONLINE)
-      ).rejects.toThrow(ProfileNotFoundException);
+      await expect(profileService.updateStatus('nonexistent', UserStatus.ONLINE)).rejects.toThrow(
+        ProfileNotFoundException
+      );
     });
   });
 

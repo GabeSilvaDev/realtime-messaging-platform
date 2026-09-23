@@ -52,7 +52,9 @@ describe('errorHandler', () => {
 
   describe('when error is an AppError', () => {
     it('should respond with the AppError status code and details', () => {
-      const appError = AppError.badRequest('Invalid input', [{ field: 'email', message: 'Invalid email' }]);
+      const appError = AppError.badRequest('Invalid input', [
+        { field: 'email', message: 'Invalid email' },
+      ]);
 
       errorHandler(appError, mockReq as Request, mockRes as Response, mockNext);
 
@@ -237,7 +239,10 @@ describe('errorHandler', () => {
 
   describe('error details handling', () => {
     it('should include error details when present in AppError', () => {
-      const details = [{ field: 'email', message: 'Invalid email' }, { field: 'password', message: 'Too short' }];
+      const details = [
+        { field: 'email', message: 'Invalid email' },
+        { field: 'password', message: 'Too short' },
+      ];
       const appError = AppError.badRequest('Validation failed', details);
 
       errorHandler(appError, mockReq as Request, mockRes as Response, mockNext);
@@ -252,7 +257,11 @@ describe('errorHandler', () => {
     });
 
     it('should handle AppError without details', () => {
-      const appError = new AppError('Not authenticated', HttpStatus.UNAUTHORIZED, ErrorCode.UNAUTHORIZED);
+      const appError = new AppError(
+        'Not authenticated',
+        HttpStatus.UNAUTHORIZED,
+        ErrorCode.UNAUTHORIZED
+      );
 
       errorHandler(appError, mockReq as Request, mockRes as Response, mockNext);
 
@@ -269,19 +278,22 @@ describe('errorHandler', () => {
   });
 
   describe('different HTTP methods', () => {
-    it.each(['POST', 'PUT', 'DELETE', 'PATCH'])('should log correct method for %s requests', (method) => {
-      mockReq.method = method;
-      const appError = AppError.badRequest('Test');
+    it.each(['POST', 'PUT', 'DELETE', 'PATCH'])(
+      'should log correct method for %s requests',
+      (method) => {
+        mockReq.method = method;
+        const appError = AppError.badRequest('Test');
 
-      errorHandler(appError, mockReq as Request, mockRes as Response, mockNext);
+        errorHandler(appError, mockReq as Request, mockRes as Response, mockNext);
 
-      expect(mockChildLogger.warn).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          method,
-        })
-      );
-    });
+        expect(mockChildLogger.warn).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            method,
+          })
+        );
+      }
+    );
   });
 
   describe('production environment', () => {

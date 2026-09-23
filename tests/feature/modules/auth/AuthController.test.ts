@@ -84,7 +84,11 @@ const createUserNotFoundError = () =>
 const createInvalidPasswordError = () =>
   new AppError('Senha atual incorreta', HttpStatus.BAD_REQUEST, ErrorCode.INVALID_PASSWORD);
 const createSamePasswordError = () =>
-  new AppError('Nova senha deve ser diferente da atual', HttpStatus.BAD_REQUEST, ErrorCode.SAME_PASSWORD);
+  new AppError(
+    'Nova senha deve ser diferente da atual',
+    HttpStatus.BAD_REQUEST,
+    ErrorCode.SAME_PASSWORD
+  );
 
 describe('AuthController Feature Tests', () => {
   let app: Application;
@@ -134,10 +138,7 @@ describe('AuthController Feature Tests', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.user).toEqual(mockUser);
       expect(response.body.data.tokens).toEqual(mockTokens);
-      expect(mockAuthService.register).toHaveBeenCalledWith(
-        validRegisterData,
-        expect.any(Object)
-      );
+      expect(mockAuthService.register).toHaveBeenCalledWith(validRegisterData, expect.any(Object));
     });
 
     it('should return 409 when email already exists', async () => {
@@ -542,9 +543,7 @@ describe('AuthController Protected Routes', () => {
 
   describe('GET /api/v1/auth/me', () => {
     it('should return current user data', async () => {
-      const response = await request(app)
-        .get('/api/v1/auth/me')
-        .set('Authorization', validToken);
+      const response = await request(app).get('/api/v1/auth/me').set('Authorization', validToken);
 
       expect(response.status).toBe(HttpStatus.OK);
       expect(response.body.success).toBe(true);
@@ -618,10 +617,7 @@ describe('AuthController Protected Routes', () => {
 
       expect(response.status).toBe(HttpStatus.OK);
       expect(response.body.data.revokedCount).toBe(2);
-      expect(mockAuthService.revokeAllSessions).toHaveBeenCalledWith(
-        mockUser.id,
-        'token-123'
-      );
+      expect(mockAuthService.revokeAllSessions).toHaveBeenCalledWith(mockUser.id, 'token-123');
     });
 
     it('should not keep current session when keepCurrent=false', async () => {

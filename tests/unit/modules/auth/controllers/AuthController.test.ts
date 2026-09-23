@@ -53,7 +53,12 @@ describe('AuthController', () => {
     it('should register user successfully', async () => {
       mockReq.body = validRegisterData;
       const result = {
-        user: { id: '1', username: 'testuser', email: 'test@example.com', displayName: 'Test User' },
+        user: {
+          id: '1',
+          username: 'testuser',
+          email: 'test@example.com',
+          displayName: 'Test User',
+        },
         tokens: { accessToken: 'token', refreshToken: 'refresh', expiresIn: 900 },
       };
       mockedAuthService.register.mockResolvedValue(result);
@@ -74,7 +79,12 @@ describe('AuthController', () => {
         'user-agent': 'Test Agent',
       };
       mockedAuthService.register.mockResolvedValue({
-        user: { id: '1', username: 'testuser', email: 'test@example.com', displayName: 'Test User' },
+        user: {
+          id: '1',
+          username: 'testuser',
+          email: 'test@example.com',
+          displayName: 'Test User',
+        },
         tokens: { accessToken: 'token', refreshToken: 'refresh', expiresIn: 900 },
       });
 
@@ -99,7 +109,12 @@ describe('AuthController', () => {
     it('should login user successfully', async () => {
       mockReq.body = validLoginData;
       const result = {
-        user: { id: '1', username: 'testuser', email: 'test@example.com', displayName: 'Test User' },
+        user: {
+          id: '1',
+          username: 'testuser',
+          email: 'test@example.com',
+          displayName: 'Test User',
+        },
         tokens: { accessToken: 'token', refreshToken: 'refresh', expiresIn: 900 },
       };
       mockedAuthService.login.mockResolvedValue(result);
@@ -208,8 +223,18 @@ describe('AuthController', () => {
     it('should return active sessions', async () => {
       mockReq.user = { id: 'user-123', email: 'test@example.com', username: 'testuser' };
       const sessions = [
-        { id: 'session-1', userAgent: 'Mozilla/5.0', ipAddress: '127.0.0.1', createdAt: new Date() },
-        { id: 'session-2', userAgent: 'Chrome/100.0', ipAddress: '192.168.1.1', createdAt: new Date() },
+        {
+          id: 'session-1',
+          userAgent: 'Mozilla/5.0',
+          ipAddress: '127.0.0.1',
+          createdAt: new Date(),
+        },
+        {
+          id: 'session-2',
+          userAgent: 'Chrome/100.0',
+          ipAddress: '192.168.1.1',
+          createdAt: new Date(),
+        },
       ];
       mockedAuthService.getActiveSessions.mockResolvedValue(sessions);
 
@@ -225,9 +250,9 @@ describe('AuthController', () => {
     it('should throw UnauthorizedException when user is not authenticated', async () => {
       mockReq.user = undefined;
 
-      await expect(
-        controller.getSessions(mockReq as Request, mockRes as Response)
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(controller.getSessions(mockReq as Request, mockRes as Response)).rejects.toThrow(
+        UnauthorizedException
+      );
     });
   });
 

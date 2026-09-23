@@ -485,10 +485,7 @@ describe('ContactRepository', () => {
 
   describe('getStats', () => {
     it('deve retornar estatísticas de contatos', async () => {
-      MockContact.count
-        .mockResolvedValueOnce(10)
-        .mockResolvedValueOnce(3)
-        .mockResolvedValueOnce(2);
+      MockContact.count.mockResolvedValueOnce(10).mockResolvedValueOnce(3).mockResolvedValueOnce(2);
 
       const result = await repository.getStats('user-123');
 

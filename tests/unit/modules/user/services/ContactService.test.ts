@@ -473,9 +473,7 @@ describe('ContactService', () => {
 
   describe('listBlocked', () => {
     it('deve listar usuários bloqueados', async () => {
-      const blockedContacts = [
-        { ...mockContact, isBlocked: true, contact: mockContactUser },
-      ];
+      const blockedContacts = [{ ...mockContact, isBlocked: true, contact: mockContactUser }];
       mockContactRepository.findBlockedByUser.mockResolvedValue(blockedContacts);
 
       const result = await contactService.listBlocked('user-123');
@@ -505,9 +503,7 @@ describe('ContactService', () => {
 
   describe('isBlockedByEither', () => {
     it('deve retornar true quando userId bloqueou targetId', async () => {
-      mockContactRepository.isBlocked
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false);
+      mockContactRepository.isBlocked.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
       const result = await contactService.isBlockedByEither('user-123', 'contact-456');
 
@@ -515,9 +511,7 @@ describe('ContactService', () => {
     });
 
     it('deve retornar true quando targetId bloqueou userId', async () => {
-      mockContactRepository.isBlocked
-        .mockResolvedValueOnce(false)
-        .mockResolvedValueOnce(true);
+      mockContactRepository.isBlocked.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
 
       const result = await contactService.isBlockedByEither('user-123', 'contact-456');
 
