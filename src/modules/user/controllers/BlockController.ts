@@ -4,7 +4,7 @@ import { contactService } from '../services/ContactService';
 import type { IContactService } from '../interfaces';
 import { blockUserSchema } from '../validation/contact.schemas';
 import { userIdParamSchema } from '../validation/user.schemas';
-import { getAuthenticatedUserId, sendValidationError } from './helpers';
+import { getAuthenticatedUserId, sendValidationError } from '@/shared/http/controller.helpers';
 
 export class BlockController {
   private readonly contacts: IContactService;

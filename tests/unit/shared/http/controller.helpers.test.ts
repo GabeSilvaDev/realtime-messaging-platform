@@ -1,9 +1,9 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { HttpStatus, UnauthorizedError } from '@/shared/errors';
-import { getAuthenticatedUserId, sendValidationError } from '@/modules/user/controllers/helpers';
+import { getAuthenticatedUserId, sendValidationError } from '@/shared/http/controller.helpers';
 
-describe('controllers/helpers', () => {
+describe('shared/http/controller.helpers', () => {
   describe('getAuthenticatedUserId', () => {
     it('deve retornar o id do usuário autenticado', () => {
       const req = { user: { id: 'user-1' } } as unknown as Request;

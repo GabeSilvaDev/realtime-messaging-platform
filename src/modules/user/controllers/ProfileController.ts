@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { HttpStatus } from '@/shared/errors';
 import { UserStatus } from '@/shared/types';
 import { handleMulterError } from '@/shared/middlewares';
+import { getAuthenticatedUserId, sendValidationError } from '@/shared/http/controller.helpers';
 import { ProfileService } from '../services/ProfileService';
 import type { IProfileService } from '../interfaces';
 import type { AvatarFile, ProfileSettings } from '../types/profile.types';
@@ -59,12 +60,7 @@ export class ProfileController {
     const parseResult = updateProfileSchema.safeParse(req.body);
 
     if (!parseResult.success) {
-      const issues = parseResult.error.issues;
-      res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        message: 'Dados inválidos',
-        errors: issues,
-      });
+      sendValidationError(res, parseResult.error.issues);
       return;
     }
 
@@ -82,12 +78,7 @@ export class ProfileController {
     const parseResult = updateDisplayNameSchema.safeParse(req.body);
 
     if (!parseResult.success) {
-      const issues = parseResult.error.issues;
-      res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        message: 'Dados inválidos',
-        errors: issues,
-      });
+      sendValidationError(res, parseResult.error.issues);
       return;
     }
 
@@ -106,12 +97,7 @@ export class ProfileController {
     const parseResult = updateBioSchema.safeParse(req.body);
 
     if (!parseResult.success) {
-      const issues = parseResult.error.issues;
-      res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        message: 'Dados inválidos',
-        errors: issues,
-      });
+      sendValidationError(res, parseResult.error.issues);
       return;
     }
 
@@ -295,11 +281,7 @@ export class ProfileController {
   }
 
   private getUserId(req: AuthenticatedRequest): string {
-    const user = req.user as { id: string } | undefined;
-    if (user?.id === undefined || user.id === '') {
-      throw new Error('Usuário não autenticado');
-    }
-    return user.id;
+    return getAuthenticatedUserId(req);
   }
 }
 

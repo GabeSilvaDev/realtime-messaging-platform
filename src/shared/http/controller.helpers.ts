@@ -3,11 +3,10 @@ import type { ZodError } from 'zod';
 import { HttpStatus, UnauthorizedError } from '@/shared/errors';
 
 export function getAuthenticatedUserId(req: Request): string {
-  const user = req.user as { id: string } | undefined;
-  if (user?.id === undefined || user.id === '') {
+  if (req.user?.id === undefined || req.user.id === '') {
     throw UnauthorizedError.missingToken();
   }
-  return user.id;
+  return req.user.id;
 }
 
 export function sendValidationError(res: Response, issues: ZodError['issues']): void {

@@ -3,7 +3,7 @@ import { HttpStatus } from '@/shared/errors';
 import { contactService } from '../services/ContactService';
 import type { IContactService } from '../interfaces';
 import { searchUsersForContactSchema } from '../validation/contact.schemas';
-import { getAuthenticatedUserId, sendValidationError } from './helpers';
+import { getAuthenticatedUserId, sendValidationError } from '@/shared/http/controller.helpers';
 
 export class UserController {
   private readonly contacts: IContactService;

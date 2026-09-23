@@ -8,7 +8,7 @@ import {
   listContactsSchema,
   updateContactSchema,
 } from '../validation/contact.schemas';
-import { getAuthenticatedUserId, sendValidationError } from './helpers';
+import { getAuthenticatedUserId, sendValidationError } from '@/shared/http/controller.helpers';
 
 export class ContactController {
   private readonly contacts: IContactService;
