@@ -18,6 +18,7 @@ describe('ContactService — eventos de bloqueio', () => {
   const contacts = {
     block: jest.fn(),
     unblock: jest.fn(),
+    isBlocked: jest.fn(),
   } as unknown as jest.Mocked<IContactRepository>;
   const users = {
     findById: jest.fn(),
@@ -34,6 +35,7 @@ describe('ContactService — eventos de bloqueio', () => {
 
   it('deve publicar user:blocked após bloquear', async () => {
     (users.findById as jest.Mock).mockResolvedValue({ id: 'target-1' });
+    (contacts.isBlocked as jest.Mock).mockResolvedValue(false);
     (contacts.block as jest.Mock).mockResolvedValue(undefined);
 
     await service.blockUser('user-1', 'target-1');
@@ -43,6 +45,16 @@ describe('ContactService — eventos de bloqueio', () => {
       userId: 'user-1',
       blockedUserId: 'target-1',
     });
+  });
+
+  it('não deve bloquear novamente nem publicar quando já está bloqueado', async () => {
+    (users.findById as jest.Mock).mockResolvedValue({ id: 'target-1' });
+    (contacts.isBlocked as jest.Mock).mockResolvedValue(true);
+
+    await service.blockUser('user-1', 'target-1');
+
+    expect(contacts.block).not.toHaveBeenCalled();
+    expect(events.publish).not.toHaveBeenCalled();
   });
 
   it('não deve publicar quando o alvo não existe', async () => {

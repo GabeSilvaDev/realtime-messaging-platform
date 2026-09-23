@@ -49,14 +49,14 @@ export class ContactService implements IContactService {
       throw new UserNotFoundException();
     }
 
+    const isBlocked = await this.isBlockedByEither(userId, data.contactId);
+    if (isBlocked) {
+      throw new UserBlockedException();
+    }
+
     const existingContact = await this.contacts.findByUserAndContact(userId, data.contactId);
     if (existingContact) {
       throw new ContactAlreadyExistsException();
-    }
-
-    const isBlocked = await this.contacts.isBlocked(userId, data.contactId);
-    if (isBlocked) {
-      throw new UserBlockedException();
     }
 
     const contact = await this.contacts.create({
@@ -161,6 +161,11 @@ export class ContactService implements IContactService {
       throw new UserNotFoundException();
     }
 
+    const alreadyBlocked = await this.contacts.isBlocked(userId, targetId);
+    if (alreadyBlocked) {
+      return;
+    }
+
     await this.contacts.block(userId, targetId);
     await this.events.publish(UserEvents.BLOCKED, { userId, blockedUserId: targetId });
   }
@@ -168,7 +173,7 @@ export class ContactService implements IContactService {
   async unblockUser(userId: string, targetId: string): Promise<void> {
     const unblocked = await this.contacts.unblock(userId, targetId);
     if (!unblocked) {
-      throw new ContactNotFoundException();
+      throw new ContactNotFoundException('Usuário não está bloqueado');
     }
 
     await this.events.publish(UserEvents.UNBLOCKED, { userId, unblockedUserId: targetId });

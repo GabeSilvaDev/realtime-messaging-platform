@@ -20,6 +20,7 @@ describe('contact.types', () => {
         isBlocked: false,
         isFavorite: true,
         blockedAt: null,
+        createdByBlock: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -39,6 +40,7 @@ describe('contact.types', () => {
         isBlocked: false,
         isFavorite: false,
         blockedAt: null,
+        createdByBlock: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -56,12 +58,14 @@ describe('contact.types', () => {
         isBlocked: true,
         isFavorite: false,
         blockedAt,
+        createdByBlock: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
       expect(contact.isBlocked).toBe(true);
       expect(contact.blockedAt).toBe(blockedAt);
+      expect(contact.createdByBlock).toBe(true);
     });
   });
 
@@ -84,10 +88,12 @@ describe('contact.types', () => {
         isBlocked: false,
         isFavorite: true,
         blockedAt: null,
+        createdByBlock: true,
       };
 
       expect(attrs.nickname).toBe('Apelido');
       expect(attrs.isFavorite).toBe(true);
+      expect(attrs.createdByBlock).toBe(true);
     });
 
     it('deve aceitar nickname null', () => {
@@ -111,6 +117,7 @@ describe('contact.types', () => {
         isBlocked: false,
         isFavorite: true,
         blockedAt: null,
+        createdByBlock: false,
         createdAt: new Date(),
         updatedAt: new Date(),
         contact: {
@@ -137,6 +144,7 @@ describe('contact.types', () => {
         isBlocked: false,
         isFavorite: false,
         blockedAt: null,
+        createdByBlock: false,
         createdAt: new Date(),
         updatedAt: new Date(),
         contact: {
@@ -236,6 +244,7 @@ describe('contact.types', () => {
             isBlocked: false,
             isFavorite: true,
             blockedAt: null,
+            createdByBlock: false,
             createdAt: new Date(),
             updatedAt: new Date(),
             contact: {
