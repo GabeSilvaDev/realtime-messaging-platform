@@ -5,16 +5,19 @@ import {
   UserService,
   UsernameAlreadyExistsException,
   userService,
-} from '@/modules/user/services/UserService';
-
-import {
+  BioTooLongException,
+  DisplayNameTooLongException,
   InvalidAvatarUrlException,
   ProfileNotFoundException,
   ProfileService,
   profileService,
-} from '@/modules/user/services/ProfileService';
-
-import {
+  AvatarNotFoundError,
+  AvatarProcessingFailedError,
+  AvatarService,
+  AvatarTooLargeError,
+  InvalidAvatarError,
+  UnsupportedAvatarTypeError,
+  avatarService,
   CannotAddSelfException,
   CannotBlockSelfException,
   ContactAlreadyExistsException,
@@ -22,7 +25,7 @@ import {
   ContactService,
   UserBlockedException,
   contactService,
-} from '@/modules/user/services/ContactService';
+} from '@/modules/user/services';
 
 describe('services/index exports', () => {
   describe('UserService exports', () => {
@@ -82,6 +85,55 @@ describe('services/index exports', () => {
       expect(InvalidAvatarUrlException).toBeDefined();
       const exception = new InvalidAvatarUrlException();
       expect(exception.message).toBe('URL do avatar inválida');
+    });
+
+    it('deve exportar BioTooLongException', () => {
+      expect(BioTooLongException).toBeDefined();
+      expect(new BioTooLongException()).toBeInstanceOf(BioTooLongException);
+    });
+
+    it('deve exportar DisplayNameTooLongException', () => {
+      expect(DisplayNameTooLongException).toBeDefined();
+      expect(new DisplayNameTooLongException()).toBeInstanceOf(DisplayNameTooLongException);
+    });
+  });
+
+  describe('AvatarService exports', () => {
+    it('deve exportar AvatarService', () => {
+      expect(AvatarService).toBeDefined();
+      expect(typeof AvatarService).toBe('function');
+    });
+
+    it('deve exportar avatarService instance', () => {
+      expect(avatarService).toBeDefined();
+      expect(avatarService).toBeInstanceOf(AvatarService);
+    });
+
+    it('deve exportar AvatarNotFoundError', () => {
+      expect(AvatarNotFoundError).toBeDefined();
+      expect(new AvatarNotFoundError()).toBeInstanceOf(AvatarNotFoundError);
+    });
+
+    it('deve exportar AvatarProcessingFailedError', () => {
+      expect(AvatarProcessingFailedError).toBeDefined();
+      expect(new AvatarProcessingFailedError()).toBeInstanceOf(AvatarProcessingFailedError);
+    });
+
+    it('deve exportar AvatarTooLargeError', () => {
+      expect(AvatarTooLargeError).toBeDefined();
+      expect(new AvatarTooLargeError()).toBeInstanceOf(AvatarTooLargeError);
+    });
+
+    it('deve exportar InvalidAvatarError', () => {
+      expect(InvalidAvatarError).toBeDefined();
+      expect(new InvalidAvatarError()).toBeInstanceOf(InvalidAvatarError);
+    });
+
+    it('deve exportar UnsupportedAvatarTypeError', () => {
+      expect(UnsupportedAvatarTypeError).toBeDefined();
+      expect(new UnsupportedAvatarTypeError('image/bmp')).toBeInstanceOf(
+        UnsupportedAvatarTypeError
+      );
     });
   });
 

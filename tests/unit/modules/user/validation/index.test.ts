@@ -56,4 +56,62 @@ describe('validation index', () => {
       expect(validationIndex.searchUsersForContactSchema).toBeDefined();
     });
   });
+
+  describe('profile schemas exports', () => {
+    it('deve exportar updateProfileDataSchema', () => {
+      expect(validationIndex.updateProfileDataSchema).toBeDefined();
+    });
+
+    it('deve exportar updateDisplayNameSchema', () => {
+      expect(validationIndex.updateDisplayNameSchema).toBeDefined();
+    });
+
+    it('deve exportar updateBioSchema', () => {
+      expect(validationIndex.updateBioSchema).toBeDefined();
+    });
+
+    it('deve exportar updatePresenceStatusSchema', () => {
+      expect(validationIndex.updatePresenceStatusSchema).toBeDefined();
+    });
+
+    it('deve exportar avatarFileSchema', () => {
+      expect(validationIndex.avatarFileSchema).toBeDefined();
+    });
+
+    it('deve exportar uploadAvatarSchema', () => {
+      expect(validationIndex.uploadAvatarSchema).toBeDefined();
+    });
+
+    it('deve exportar avatarProcessingOptionsSchema', () => {
+      expect(validationIndex.avatarProcessingOptionsSchema).toBeDefined();
+    });
+
+    it('deve exportar avatarCropOptionsSchema', () => {
+      expect(validationIndex.avatarCropOptionsSchema).toBeDefined();
+    });
+
+    it('deve exportar profileVisibilitySchema', () => {
+      expect(validationIndex.profileVisibilitySchema).toBeDefined();
+    });
+
+    it('deve exportar notificationSettingsSchema', () => {
+      expect(validationIndex.notificationSettingsSchema).toBeDefined();
+    });
+
+    it('deve exportar updateProfileSettingsSchema', () => {
+      expect(validationIndex.updateProfileSettingsSchema).toBeDefined();
+    });
+
+    it('deve exportar updatePresenceSchema', () => {
+      expect(validationIndex.updatePresenceSchema).toBeDefined();
+    });
+
+    it('deve exportar bulkPresenceQuerySchema', () => {
+      expect(validationIndex.bulkPresenceQuerySchema).toBeDefined();
+    });
+
+    it('deve exportar profileIdParamSchema', () => {
+      expect(validationIndex.profileIdParamSchema).toBeDefined();
+    });
+  });
 });
