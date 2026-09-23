@@ -60,6 +60,19 @@ jest.mock('@/modules/auth/controllers', () => ({
   },
 }));
 
+jest.mock('@/shared/middlewares/rateLimiter', () => {
+  const passThrough = (_req: unknown, _res: unknown, next: () => void): void => {
+    next();
+  };
+  return {
+    getAuthRateLimiter: () => passThrough,
+    getLoginRateLimiter: () => passThrough,
+    getRateLimiter: () => passThrough,
+    getStrictRateLimiter: () => passThrough,
+    createRateLimiter: () => passThrough,
+  };
+});
+
 jest.mock('@/modules/user/controllers', () => ({
   profileController: {
     getProfile: jest.fn(),

@@ -7,6 +7,7 @@ import {
   requestLogger,
   notFoundHandler,
   errorHandler,
+  getRateLimiter,
 } from './shared/middlewares';
 import type { Environment } from './shared/types';
 import { authRoutes } from './modules/auth/routes';
@@ -33,6 +34,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(requestLogger);
+
+app.use('/api', getRateLimiter());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/profile', profileRoutes);
