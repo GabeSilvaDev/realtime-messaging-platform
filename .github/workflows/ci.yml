@@ -5,9 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: Lint, typecheck & test
+    name: Lint, format, typecheck & test
     runs-on: ubuntu-latest
     env:
       NODE_ENV: test
@@ -27,5 +31,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx eslint src
+      - run: npm run format:check
       - run: npx tsc --noEmit
       - run: npx jest --coverage --all
