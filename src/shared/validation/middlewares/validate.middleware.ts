@@ -88,7 +88,15 @@ export function validateRequest(schemas: ValidationSchemas): RequestHandler {
     if (schemas.query) {
       const result = validateTarget(schemas.query, req.query, 'query');
       if (result.success) {
-        req.query = result.data as typeof req.query;
+        // No Express 5, req.query é um getter somente-leitura (calculado a partir de req.url);
+        // atribuir diretamente (req.query = ...) lança TypeError. Precisamos redefinir a
+        // propriedade na instância da requisição para conseguir expor os dados validados/coercionados.
+        Object.defineProperty(req, 'query', {
+          value: result.data,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
       } else {
         allErrors.push(...result.errors);
       }
