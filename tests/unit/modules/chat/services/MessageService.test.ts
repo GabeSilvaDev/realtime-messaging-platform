@@ -27,14 +27,17 @@ import type {
   IParticipantRepository,
 } from '@/modules/chat/interfaces';
 import { MessageService, messageService } from '@/modules/chat/services/MessageService';
+import { ParticipantDirectory } from '@/modules/chat/services/ParticipantDirectory';
 import type {
   ConversationAttributes,
   CreateMessageResult,
   MessageRecord,
   ParticipantAttributes,
 } from '@/modules/chat/types';
+import { CacheService } from '@/shared/cache';
 import { logger } from '@/shared/logger';
 import { ChatEvents } from '@/shared/types';
+import { FakeRedis } from '../../../../support/redis/fakeRedis';
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
 
@@ -136,6 +139,7 @@ describe('MessageService', () => {
       listByConversation: jest.fn(),
       listByConversations: jest.fn(),
       listConversationIdsByUser: jest.fn(),
+      listDirectPartnerIds: jest.fn(),
       addMembers: jest.fn(),
       remove: jest.fn(),
       setRole: jest.fn(),
@@ -144,7 +148,14 @@ describe('MessageService', () => {
     };
     contacts = { isBlockedByEither: jest.fn().mockResolvedValue(false) };
     events = { publish: jest.fn().mockResolvedValue('event-id') };
-    service = new MessageService(messages, conversations, participants, contacts, events);
+    service = new MessageService(
+      messages,
+      conversations,
+      participants,
+      contacts,
+      events,
+      new ParticipantDirectory(participants, new CacheService(new FakeRedis()))
+    );
   });
 
   it('deve exportar a instância padrão', () => {
@@ -406,12 +417,10 @@ describe('MessageService', () => {
 
   describe('list', () => {
     beforeEach(() => {
-      participants.find.mockResolvedValue(participant(USER_A));
+      participants.listByConversation.mockResolvedValue([participant(USER_A), participant(USER_B)]);
     });
 
     it('deve responder 404 para não participante', async () => {
-      participants.find.mockResolvedValue(null);
-
       await expect(service.list(USER_C, CONVERSATION_ID)).rejects.toThrow(
         ConversationNotFoundException
       );
@@ -538,7 +547,7 @@ describe('MessageService', () => {
 
   describe('markDelivered', () => {
     beforeEach(() => {
-      participants.find.mockResolvedValue(participant(USER_B));
+      participants.listByConversation.mockResolvedValue([participant(USER_A), participant(USER_B)]);
       messages.findById.mockResolvedValue(record());
     });
 
@@ -547,7 +556,7 @@ describe('MessageService', () => {
 
       await service.markDelivered(USER_B, CONVERSATION_ID, MESSAGE_ID);
 
-      expect(participants.find).toHaveBeenCalledWith(CONVERSATION_ID, USER_B);
+      expect(participants.listByConversation).toHaveBeenCalledWith(CONVERSATION_ID);
       expect(messages.markDelivered).toHaveBeenCalledWith(MESSAGE_ID, USER_B, expect.any(Date));
       const at = messages.markDelivered.mock.calls[0]![2];
       expect(events.publish).toHaveBeenCalledWith(ChatEvents.MESSAGE_DELIVERED, {
@@ -568,8 +577,6 @@ describe('MessageService', () => {
     });
 
     it('o autor não marca a própria mensagem (no-op, sem evento)', async () => {
-      participants.find.mockResolvedValue(participant(USER_A));
-
       await service.markDelivered(USER_A, CONVERSATION_ID, MESSAGE_ID);
 
       expect(messages.markDelivered).not.toHaveBeenCalled();
@@ -577,7 +584,6 @@ describe('MessageService', () => {
     });
 
     it('404 para não participante e para mensagem inexistente ou de outra conversa', async () => {
-      participants.find.mockResolvedValueOnce(null);
       await expect(service.markDelivered(USER_C, CONVERSATION_ID, MESSAGE_ID)).rejects.toThrow(
         ConversationNotFoundException
       );
@@ -693,7 +699,7 @@ describe('MessageService', () => {
 
   describe('delete', () => {
     beforeEach(() => {
-      participants.find.mockResolvedValue(participant(USER_A));
+      participants.listByConversation.mockResolvedValue([participant(USER_A), participant(USER_B)]);
     });
 
     it('deve fazer soft delete e publicar MESSAGE_DELETED', async () => {
@@ -719,7 +725,6 @@ describe('MessageService', () => {
     });
 
     it('deve responder 403 para quem não é o autor', async () => {
-      participants.find.mockResolvedValue(participant(USER_B));
       messages.findById.mockResolvedValue(record());
 
       await expect(service.delete(USER_B, CONVERSATION_ID, MESSAGE_ID)).rejects.toThrow(
@@ -741,11 +746,38 @@ describe('MessageService', () => {
     });
 
     it('deve responder 404 para não participante', async () => {
-      participants.find.mockResolvedValue(null);
-
       await expect(service.delete(USER_C, CONVERSATION_ID, MESSAGE_ID)).rejects.toThrow(
         ConversationNotFoundException
       );
+    });
+  });
+
+  describe('cache de participantes (cache:conv:participants:<id>)', () => {
+    beforeEach(() => {
+      participants.listByConversation.mockResolvedValue([participant(USER_A), participant(USER_B)]);
+      conversations.findById.mockResolvedValue(conversation());
+      messages.create.mockResolvedValue(created(record()));
+      messages.findByConversation.mockResolvedValue([]);
+    });
+
+    it('envios e listagens seguidos leem os participantes do Postgres uma vez só', async () => {
+      await service.send(USER_A, CONVERSATION_ID, { text: 'um' }, META);
+      await service.send(USER_A, CONVERSATION_ID, { text: 'dois' }, META);
+      await service.list(USER_B, CONVERSATION_ID);
+
+      expect(participants.listByConversation).toHaveBeenCalledTimes(1);
+      expect(participants.find).not.toHaveBeenCalled();
+    });
+
+    it('markRead lê a participação do Postgres (last_read_at muda a cada leitura)', async () => {
+      participants.find.mockResolvedValue(participant(USER_B));
+      messages.findById.mockResolvedValue(record());
+      messages.markReadUpTo.mockResolvedValue(0);
+
+      await service.markRead(USER_B, CONVERSATION_ID, MESSAGE_ID);
+
+      expect(participants.find).toHaveBeenCalledWith(CONVERSATION_ID, USER_B);
+      expect(participants.listByConversation).not.toHaveBeenCalled();
     });
   });
 });

@@ -9,7 +9,7 @@ jest.mock('@/modules/chat/models/Participant', () => ({
   },
 }));
 
-import { Op } from 'sequelize';
+import { Op, literal } from 'sequelize';
 import Participant from '@/modules/chat/models/Participant';
 import {
   ParticipantRepository,
@@ -112,6 +112,30 @@ describe('ParticipantRepository', () => {
         attributes: ['conversationId'],
       });
       expect(result).toEqual([CONVERSATION_ID, OTHER_CONVERSATION_ID]);
+    });
+  });
+
+  describe('listDirectPartnerIds', () => {
+    it('deve listar o outro participante de cada conversa direct do usuário', async () => {
+      MockParticipant.findAll.mockResolvedValue([{ userId: USER_B }] as never);
+
+      const result = await repository.listDirectPartnerIds(USER_A);
+
+      expect(MockParticipant.findAll).toHaveBeenCalledWith({
+        where: {
+          userId: { [Op.ne]: USER_A },
+          conversationId: {
+            [Op.in]: literal(
+              '(SELECT p.conversation_id FROM participants p ' +
+                'JOIN conversations c ON c.id = p.conversation_id ' +
+                "WHERE p.user_id = :userId AND c.type = 'direct')"
+            ),
+          },
+        },
+        attributes: ['userId'],
+        replacements: { userId: USER_A },
+      });
+      expect(result).toEqual([USER_B]);
     });
   });
 

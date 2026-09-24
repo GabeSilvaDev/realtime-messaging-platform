@@ -1,5 +1,6 @@
 jest.mock('@/modules/user/services/ContactService', () => ({ contactService: {} }));
 jest.mock('@/modules/chat/repositories', () => ({ messageRepository: {} }));
+jest.mock('@/shared/database/redis', () => ({ redis: {} }));
 jest.mock('@/shared/logger', () => ({
   logger: {
     debug: jest.fn(),
@@ -9,11 +10,13 @@ jest.mock('@/shared/logger', () => ({
   },
 }));
 
-import { registerChatListeners } from '@/modules/chat/listeners';
+import { registerChatCacheListeners, registerChatListeners } from '@/modules/chat/listeners';
+import { CacheService } from '@/shared/cache';
 import { EventBus } from '@/shared/event-bus/EventBus';
 import type { EventPayload } from '@/shared/interfaces';
 import { logger } from '@/shared/logger';
 import { ChatEvents } from '@/shared/types';
+import { FakeRedis } from '../../../../support/redis/fakeRedis';
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
 
@@ -222,5 +225,67 @@ describe('registerChatListeners', () => {
         expect.objectContaining({ conversationId: CONVERSATION_ID })
       );
     });
+  });
+});
+
+describe('registerChatCacheListeners', () => {
+  const CONVERSATION = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const KEY = `cache:conv:participants:${CONVERSATION}`;
+  const USER = '11111111-1111-4111-8111-111111111111';
+  let bus: EventBus;
+  let redis: FakeRedis;
+  let unregister: () => void;
+
+  beforeEach(async () => {
+    EventBus.resetInstance();
+    bus = EventBus.getInstance();
+    redis = new FakeRedis();
+    unregister = registerChatCacheListeners(bus, new CacheService(redis));
+    await redis.set(KEY, '[]');
+  });
+
+  afterEach(() => {
+    unregister();
+    EventBus.resetInstance();
+  });
+
+  it.each([
+    [
+      ChatEvents.CONVERSATION_CREATED,
+      { conversationId: CONVERSATION, type: 'group', creatorId: USER, participantIds: [USER] },
+    ],
+    [
+      ChatEvents.CONVERSATION_UPDATED,
+      {
+        conversationId: CONVERSATION,
+        change: 'member_left',
+        actorId: USER,
+        participantIds: [USER],
+        affectedUserIds: [USER],
+      },
+    ],
+    [
+      ChatEvents.CONVERSATION_DELETED,
+      { conversationId: CONVERSATION, actorId: USER, participantIds: [USER] },
+    ],
+  ] as const)(
+    '%s apaga os participantes cacheados antes de o publish resolver',
+    async (event, payload) => {
+      await bus.publish(event, payload as never);
+
+      expect(await redis.get(KEY)).toBeNull();
+    }
+  );
+
+  it('a função devolvida cancela as inscrições; o padrão usa o EventBus e o cache da aplicação', async () => {
+    unregister();
+    await bus.publish(ChatEvents.CONVERSATION_DELETED, {
+      conversationId: CONVERSATION,
+      actorId: USER,
+      participantIds: [USER],
+    });
+
+    expect(await redis.get(KEY)).toBe('[]');
+    expect(registerChatCacheListeners()).toBeInstanceOf(Function);
   });
 });

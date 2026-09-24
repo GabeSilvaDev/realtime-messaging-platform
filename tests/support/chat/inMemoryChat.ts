@@ -225,6 +225,20 @@ export class InMemoryParticipantRepository implements IParticipantRepository {
     return this.store.participants.filter((p) => p.userId === userId).map((p) => p.conversationId);
   }
 
+  async listDirectPartnerIds(userId: string): Promise<string[]> {
+    const direct = new Set(
+      this.store.participants
+        .filter(
+          (p) =>
+            p.userId === userId && this.store.conversations.get(p.conversationId)?.type === 'direct'
+        )
+        .map((p) => p.conversationId)
+    );
+    return this.store.participants
+      .filter((p) => direct.has(p.conversationId) && p.userId !== userId)
+      .map((p) => p.userId);
+  }
+
   async addMembers(conversationId: string, userIds: string[]): Promise<void> {
     const bulkJoinedAt = this.store.now();
     for (const userId of userIds) {

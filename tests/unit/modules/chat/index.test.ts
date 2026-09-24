@@ -17,6 +17,7 @@ describe('chat module index', () => {
     expect(chatModule.conversationService).toBeInstanceOf(chatModule.ConversationService);
     expect(chatModule.messageService).toBeInstanceOf(chatModule.MessageService);
     expect(typeof chatModule.buildDirectKey).toBe('function');
+    expect(chatModule.ParticipantDirectory).toBeDefined();
   });
 
   it('deve exportar controllers, rotas e listeners', () => {
@@ -24,5 +25,6 @@ describe('chat module index', () => {
     expect(chatModule.messageController).toBeInstanceOf(chatModule.MessageController);
     expect(chatModule.conversationRoutes).toBeDefined();
     expect(typeof chatModule.registerChatListeners).toBe('function');
+    expect(typeof chatModule.registerChatCacheListeners).toBe('function');
   });
 });

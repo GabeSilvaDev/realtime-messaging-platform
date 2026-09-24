@@ -1,4 +1,6 @@
 import {
+  CHAT_CACHE_KEYS,
+  CHAT_CACHE_TTL_SECONDS,
   CHAT_CONSTANTS,
   CONVERSATION_TYPES,
   MESSAGE_CONTENT_TYPES,
@@ -23,5 +25,10 @@ describe('chat constants', () => {
     expect(CONVERSATION_TYPES).toEqual(['direct', 'group']);
     expect(PARTICIPANT_ROLES).toEqual(['admin', 'member']);
     expect(MESSAGE_CONTENT_TYPES).toEqual(['text']);
+  });
+
+  it('deve definir a chave e o TTL do cache de participantes', () => {
+    expect(CHAT_CACHE_KEYS.participants('c1')).toBe('conv:participants:c1');
+    expect(CHAT_CACHE_TTL_SECONDS).toBe(300);
   });
 });

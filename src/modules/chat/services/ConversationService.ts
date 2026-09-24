@@ -21,6 +21,7 @@ import type {
   IParticipantRepository,
 } from '../interfaces';
 import { conversationRepository, participantRepository } from '../repositories';
+import { ParticipantDirectory } from './ParticipantDirectory';
 import type {
   ChatTransaction,
   ConversationChange,
@@ -51,7 +52,11 @@ export class ConversationService implements IConversationService {
     private readonly participants: IParticipantRepository = participantRepository,
     private readonly users: Pick<IUserService, 'exists' | 'getMultiple'> = userService,
     private readonly contacts: Pick<IContactService, 'isBlockedByEither'> = contactService,
-    private readonly events: Pick<EventBus, 'publish'> = eventBus
+    private readonly events: Pick<EventBus, 'publish'> = eventBus,
+    private readonly directory: Pick<
+      ParticipantDirectory,
+      'userIds' | 'isParticipant'
+    > = new ParticipantDirectory(participants)
   ) {}
 
   async createDirect(userId: string, otherUserId: string): Promise<CreateDirectResult> {
@@ -272,17 +277,22 @@ export class ConversationService implements IConversationService {
     await this.publishRemoval(conversationId, userId, memberId, 'member_removed', removal);
   }
 
+  /** Via cache de participantes (`cache:conv:participants:<id>`). */
   async isParticipant(conversationId: string, userId: string): Promise<boolean> {
-    return (await this.participants.find(conversationId, userId)) !== null;
+    return this.directory.isParticipant(conversationId, userId);
   }
 
+  /** Via cache de participantes (`cache:conv:participants:<id>`). */
   async getParticipantIds(conversationId: string): Promise<string[]> {
-    const participants = await this.participants.listByConversation(conversationId);
-    return participants.map((p) => p.userId);
+    return this.directory.userIds(conversationId);
   }
 
   async getUserConversationIds(userId: string): Promise<string[]> {
     return this.participants.listConversationIdsByUser(userId);
+  }
+
+  async getDirectPartnerIds(userId: string): Promise<string[]> {
+    return this.participants.listDirectPartnerIds(userId);
   }
 
   async getTypeForParticipant(userId: string, conversationId: string): Promise<ConversationType> {

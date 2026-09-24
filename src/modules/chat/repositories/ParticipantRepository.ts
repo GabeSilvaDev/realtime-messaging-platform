@@ -1,4 +1,4 @@
-import { Op } from 'sequelize';
+import { Op, literal } from 'sequelize';
 import Participant from '../models/Participant';
 import type { IParticipantRepository } from '../interfaces';
 import type { ChatTransaction, ParticipantAttributes, ParticipantRole } from '../types';
@@ -7,6 +7,14 @@ const OLDEST_FIRST: [string, string][] = [
   ['joinedAt', 'ASC'],
   ['id', 'ASC'],
 ];
+
+/**
+ * Conversas `direct` de `:userId`. O valor entra por `replacements` (nunca por interpolação).
+ */
+const DIRECT_CONVERSATIONS_OF_USER =
+  '(SELECT p.conversation_id FROM participants p ' +
+  'JOIN conversations c ON c.id = p.conversation_id ' +
+  "WHERE p.user_id = :userId AND c.type = 'direct')";
 
 export class ParticipantRepository implements IParticipantRepository {
   async find(
@@ -47,6 +55,18 @@ export class ParticipantRepository implements IParticipantRepository {
   async listConversationIdsByUser(userId: string): Promise<string[]> {
     const rows = await Participant.findAll({ where: { userId }, attributes: ['conversationId'] });
     return rows.map((row) => row.conversationId);
+  }
+
+  async listDirectPartnerIds(userId: string): Promise<string[]> {
+    const rows = await Participant.findAll({
+      where: {
+        userId: { [Op.ne]: userId },
+        conversationId: { [Op.in]: literal(DIRECT_CONVERSATIONS_OF_USER) },
+      },
+      attributes: ['userId'],
+      replacements: { userId },
+    });
+    return rows.map((row) => row.userId);
   }
 
   async addMembers(

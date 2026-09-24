@@ -17,4 +17,8 @@ describe('chat services index', () => {
   it('deve exportar MessageService e a instância padrão', () => {
     expect(services.messageService).toBeInstanceOf(services.MessageService);
   });
+
+  it('deve exportar o ParticipantDirectory', () => {
+    expect(typeof services.ParticipantDirectory).toBe('function');
+  });
 });
