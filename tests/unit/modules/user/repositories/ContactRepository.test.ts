@@ -471,7 +471,7 @@ describe('ContactRepository', () => {
       const result = await repository.isContact('user-123', 'contact-456');
 
       expect(MockContact.findOne).toHaveBeenCalledWith({
-        where: { userId: 'user-123', contactId: 'contact-456' },
+        where: { userId: 'user-123', contactId: 'contact-456', isBlocked: false },
       });
       expect(result).toBe(true);
     });

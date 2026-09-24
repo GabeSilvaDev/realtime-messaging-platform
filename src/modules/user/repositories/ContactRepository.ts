@@ -174,7 +174,7 @@ export class ContactRepository implements IContactRepository {
 
   async isContact(userId: string, contactId: string): Promise<boolean> {
     const contact = await Contact.findOne({
-      where: { userId, contactId },
+      where: { userId, contactId, isBlocked: false },
     });
     return contact !== null;
   }

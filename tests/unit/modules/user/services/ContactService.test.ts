@@ -354,6 +354,48 @@ describe('ContactService', () => {
     });
   });
 
+  describe('linhas bloqueadas não são contatos', () => {
+    const blockedRow = { ...mockContact, isBlocked: true, blockedAt: new Date() };
+
+    it('getContact deve responder ContactNotFoundException para linha bloqueada', async () => {
+      mockContactRepository.findByUserAndContact.mockResolvedValue(blockedRow);
+
+      await expect(contactService.getContact('user-123', 'contact-456')).rejects.toThrow(
+        ContactNotFoundException
+      );
+      expect(mockUserRepository.findById).not.toHaveBeenCalled();
+    });
+
+    it('updateContact deve responder ContactNotFoundException para linha bloqueada', async () => {
+      mockContactRepository.findByUserAndContact.mockResolvedValue(blockedRow);
+
+      await expect(
+        contactService.updateContact('user-123', 'contact-456', { isFavorite: true })
+      ).rejects.toThrow(ContactNotFoundException);
+      expect(mockContactRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('setFavorite/setNickname herdam o 404 de updateContact', async () => {
+      mockContactRepository.findByUserAndContact.mockResolvedValue(blockedRow);
+
+      await expect(contactService.setFavorite('user-123', 'contact-456', true)).rejects.toThrow(
+        ContactNotFoundException
+      );
+      await expect(contactService.setNickname('user-123', 'contact-456', 'x')).rejects.toThrow(
+        ContactNotFoundException
+      );
+    });
+
+    it('removeContact deve responder ContactNotFoundException e não apagar o bloqueio', async () => {
+      mockContactRepository.findByUserAndContact.mockResolvedValue(blockedRow);
+
+      await expect(contactService.removeContact('user-123', 'contact-456')).rejects.toThrow(
+        ContactNotFoundException
+      );
+      expect(mockContactRepository.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('listContacts', () => {
     it('deve listar contatos com opções padrão', async () => {
       const paginatedContacts = {

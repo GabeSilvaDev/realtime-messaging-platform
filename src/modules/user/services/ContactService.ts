@@ -13,6 +13,7 @@ import {
 } from '../errors';
 import type {
   AddContactDTO,
+  ContactAttributes,
   ContactListOptions,
   ContactResponseDTO,
   ContactStats,
@@ -76,10 +77,7 @@ export class ContactService implements IContactService {
     contactId: string,
     data: UpdateContactDTO
   ): Promise<ContactResponseDTO> {
-    const contact = await this.contacts.findByUserAndContact(userId, contactId);
-    if (!contact) {
-      throw new ContactNotFoundException();
-    }
+    const contact = await this.findVisibleContact(userId, contactId);
 
     const contactUser = await this.users.findById(contactId);
     if (!contactUser) {
@@ -102,19 +100,13 @@ export class ContactService implements IContactService {
   }
 
   async removeContact(userId: string, contactId: string): Promise<void> {
-    const contact = await this.contacts.findByUserAndContact(userId, contactId);
-    if (!contact) {
-      throw new ContactNotFoundException();
-    }
+    const contact = await this.findVisibleContact(userId, contactId);
 
     await this.contacts.delete(contact.id);
   }
 
   async getContact(userId: string, contactId: string): Promise<ContactResponseDTO> {
-    const contact = await this.contacts.findByUserAndContact(userId, contactId);
-    if (!contact) {
-      throw new ContactNotFoundException();
-    }
+    const contact = await this.findVisibleContact(userId, contactId);
 
     const contactUser = await this.users.findById(contactId);
     if (!contactUser) {
@@ -217,6 +209,18 @@ export class ContactService implements IContactService {
     });
 
     return result.users.map((u: UserWithContactInfo): PublicUserDTO => this.toPublicUser(u));
+  }
+
+  /**
+   * Para o usuário, uma linha bloqueada não é um contato: get/update/remove respondem 404.
+   * O desbloqueio acontece apenas por `DELETE /api/blocks/:userId`.
+   */
+  private async findVisibleContact(userId: string, contactId: string): Promise<ContactAttributes> {
+    const contact = await this.contacts.findByUserAndContact(userId, contactId);
+    if (!contact || contact.isBlocked) {
+      throw new ContactNotFoundException();
+    }
+    return contact;
   }
 
   private toPublicUser(user: UserAttributes | UserWithContactInfo): PublicUserDTO {
