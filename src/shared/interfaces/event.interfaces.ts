@@ -44,8 +44,18 @@ export interface EventMap {
   [ChatEvents.MESSAGE_SENT]: {
     messageId: string;
     conversationId: string;
+    conversationType: 'direct' | 'group';
     senderId: string;
-    content: string;
+    text: string;
+    mentions: string[];
+    replyTo: string | null;
+    createdAt: Date;
+    participantIds: string[];
+  };
+  [ChatEvents.MESSAGE_DELETED]: {
+    messageId: string;
+    conversationId: string;
+    deletedBy: string;
   };
   [ChatEvents.MESSAGE_DELIVERED]: {
     messageId: string;
@@ -61,7 +71,19 @@ export interface EventMap {
   [ChatEvents.TYPING_STOPPED]: { conversationId: string; userId: string };
   [ChatEvents.CONVERSATION_CREATED]: {
     conversationId: string;
+    type: 'direct' | 'group';
     creatorId: string;
+    participantIds: string[];
+  };
+  /**
+   * `participantIds` inclui todos os afetados: em `members_added`, os participantes após a
+   * mudança; em `member_removed`/`member_left`, os participantes antes da mudança (o removido
+   * ou quem saiu também é notificado).
+   */
+  [ChatEvents.CONVERSATION_UPDATED]: {
+    conversationId: string;
+    change: 'renamed' | 'members_added' | 'member_removed' | 'member_left';
+    actorId: string;
     participantIds: string[];
   };
 
