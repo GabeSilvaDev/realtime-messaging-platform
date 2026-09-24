@@ -108,6 +108,10 @@ describe('createRealtimeServer', () => {
       });
 
       expect(redisClient.duplicate).toHaveBeenCalledTimes(2);
+      // Sem limite de tentativas por comando: com o Redis fora, os publishes do adapter ficam
+      // na fila do ioredis em vez de rejeitar (o adapter não trata a rejeição).
+      expect(redisClient.duplicate).toHaveBeenNthCalledWith(1, { maxRetriesPerRequest: null });
+      expect(redisClient.duplicate).toHaveBeenNthCalledWith(2, { maxRetriesPerRequest: null });
       expect(mockCreateAdapter).toHaveBeenCalledWith(pub, sub);
       await handle.close();
       expect(pub.quit).toHaveBeenCalledTimes(1);

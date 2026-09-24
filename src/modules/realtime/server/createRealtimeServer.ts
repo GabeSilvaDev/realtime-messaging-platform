@@ -72,8 +72,11 @@ export function createRealtimeServer(
 
   const pubSubClients: Pick<Redis, 'quit'>[] = [];
   if (shouldUseRedisAdapter(env)) {
-    const pubClient = redisClient.duplicate();
-    const subClient = redisClient.duplicate();
+    // `maxRetriesPerRequest: null`: com o Redis fora do ar, os comandos do adapter ficam na fila
+    // do ioredis até a reconexão em vez de rejeitar após 3 tentativas — o adapter publica sem
+    // `catch`, e uma rejeição não tratada derrubaria o processo.
+    const pubClient = redisClient.duplicate({ maxRetriesPerRequest: null });
+    const subClient = redisClient.duplicate({ maxRetriesPerRequest: null });
     logRedisClientErrors(pubClient, 'pub');
     logRedisClientErrors(subClient, 'sub');
     pubSubClients.push(pubClient, subClient);

@@ -2,7 +2,7 @@ import { createServer } from 'http';
 import app from './app';
 import { bootstrap, shutdown } from './bootstrap';
 import { createRealtimeServer } from './modules/realtime';
-import { createStopHandler } from './serverLifecycle';
+import { createStopHandler, registerProcessErrorHandlers } from './serverLifecycle';
 import { logger } from './shared/logger';
 
 const PORT = process.env.PORT ?? 3000;
@@ -24,8 +24,14 @@ async function startServer(): Promise<void> {
       },
       logger,
     });
-    process.once('SIGTERM', stop);
-    process.once('SIGINT', stop);
+    // Wrappers explícitos: o Node passa o número do sinal como 2º argumento do listener.
+    process.once('SIGTERM', () => {
+      stop('SIGTERM');
+    });
+    process.once('SIGINT', () => {
+      stop('SIGINT');
+    });
+    registerProcessErrorHandlers({ proc: process, logger, stop });
   } catch (error) {
     logger.error(
       'Falha ao iniciar o servidor',

@@ -13,6 +13,14 @@ export interface StopHandlerDeps {
   timeoutMs?: number;
 }
 
+/** Opções de um pedido de encerramento; `exitCode` é o código mínimo de saída. */
+export interface StopOptions {
+  exitCode?: number;
+}
+
+/** Dispara o encerramento gracioso; `reason` é o sinal ou o motivo (ex.: `uncaughtException`). */
+export type StopHandler = (reason: string, options?: StopOptions) => void;
+
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
@@ -47,24 +55,26 @@ async function closeGracefully(
 }
 
 /**
- * Cria o handler de `SIGTERM`/`SIGINT`: encerra o realtime e os bancos (via `closeGracefully`,
- * sempre os dois) e sai do processo com o código resultante. Reentrante-safe — um segundo sinal
+ * Cria o handler de `SIGTERM`/`SIGINT` (e de falhas fatais, com `exitCode: 1`): encerra o realtime
+ * e os bancos (via `closeGracefully`, sempre os dois) e sai do processo com o código resultante —
+ * o maior entre o do encerramento e `options.exitCode`. Reentrante-safe — um segundo sinal
  * recebido enquanto o encerramento está em andamento é ignorado. Um timeout (`timeoutMs`, padrão
  * `SHUTDOWN_TIMEOUT_MS`) força `exit(1)` com log se o encerramento gracioso travar (por exemplo,
  * `httpServer.close()` aguardando requisições em andamento); o timer fica `unref`'d desde a
  * criação e é cancelado assim que o encerramento gracioso termina, sem deixar handles abertos.
  */
-export function createStopHandler(deps: StopHandlerDeps): (signal: NodeJS.Signals) => void {
+export function createStopHandler(deps: StopHandlerDeps): StopHandler {
   const { realtime, shutdown, exit, logger, timeoutMs = SHUTDOWN_TIMEOUT_MS } = deps;
   let stopping = false;
 
-  return (signal: NodeJS.Signals): void => {
+  return (reason: string, options: StopOptions = {}): void => {
     if (stopping) {
       return;
     }
     stopping = true;
+    const minimumExitCode = options.exitCode ?? 0;
 
-    logger.info(`${signal} recebido: encerrando o servidor`);
+    logger.info(`${reason} recebido: encerrando o servidor`);
 
     let settled = false;
     const timer = setTimeout(() => {
@@ -86,7 +96,33 @@ export function createStopHandler(deps: StopHandlerDeps): (signal: NodeJS.Signal
       }
       settled = true;
       clearTimeout(timer);
-      exit(code);
+      exit(Math.max(code, minimumExitCode));
     });
   };
+}
+
+export interface ProcessErrorHandlerDeps {
+  /** O `process` (injetável nos testes). */
+  proc: Pick<NodeJS.EventEmitter, 'on'>;
+  logger: Pick<ILogger, 'error'>;
+  stop: StopHandler;
+}
+
+/**
+ * Última linha de defesa do processo. `unhandledRejection` só é logada (via logger da aplicação)
+ * e o processo segue vivo — uma rejeição solta de uma dependência (ex.: publish do Redis adapter
+ * durante uma queda do Redis) não pode derrubar o nó. `uncaughtException` deixa o processo em
+ * estado indefinido: loga e dispara o encerramento gracioso com código de saída 1.
+ */
+export function registerProcessErrorHandlers(deps: ProcessErrorHandlerDeps): void {
+  const { proc, logger, stop } = deps;
+
+  proc.on('unhandledRejection', (reason: unknown) => {
+    logger.error('Promise rejeitada sem tratamento (processo mantido)', toError(reason));
+  });
+
+  proc.on('uncaughtException', (error: Error) => {
+    logger.error('Exceção não capturada: encerrando o servidor', error);
+    stop('uncaughtException', { exitCode: 1 });
+  });
 }

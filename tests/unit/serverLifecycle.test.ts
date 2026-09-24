@@ -1,4 +1,9 @@
-import { createStopHandler, SHUTDOWN_TIMEOUT_MS } from '@/serverLifecycle';
+import { EventEmitter } from 'events';
+import {
+  createStopHandler,
+  registerProcessErrorHandlers,
+  SHUTDOWN_TIMEOUT_MS,
+} from '@/serverLifecycle';
 
 function flushPromises(): Promise<void> {
   return new Promise((resolve) => {
@@ -179,6 +184,22 @@ describe('createStopHandler', () => {
     clearTimeoutSpy.mockRestore();
   });
 
+  it('motivo de falha (exitCode 1): mesmo com encerramento limpo, sai com 1', async () => {
+    const realtime = { close: jest.fn().mockResolvedValue(undefined) };
+    const shutdown = jest.fn().mockResolvedValue(undefined);
+    const exit = jest.fn();
+    const logger = makeLogger();
+
+    createStopHandler({ realtime, shutdown, exit, logger })('uncaughtException', { exitCode: 1 });
+    await flushPromises();
+    await flushPromises();
+
+    expect(logger.info).toHaveBeenCalledWith('uncaughtException recebido: encerrando o servidor');
+    expect(realtime.close).toHaveBeenCalledTimes(1);
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
   it('cancela o timer de timeout quando o encerramento gracioso termina antes dele', async () => {
     const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
     const realtime = { close: jest.fn().mockResolvedValue(undefined) };
@@ -192,5 +213,56 @@ describe('createStopHandler', () => {
 
     expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
     clearTimeoutSpy.mockRestore();
+  });
+});
+
+describe('registerProcessErrorHandlers', () => {
+  function setup(): {
+    proc: EventEmitter;
+    logger: { error: jest.Mock };
+    stop: jest.Mock;
+  } {
+    const proc = new EventEmitter();
+    const logger = { error: jest.fn() };
+    const stop = jest.fn();
+    registerProcessErrorHandlers({ proc, logger, stop });
+    return { proc, logger, stop };
+  }
+
+  it('unhandledRejection: loga via logger da aplicação e mantém o processo vivo', () => {
+    const { proc, logger, stop } = setup();
+    const reason = new Error('redis caiu');
+
+    proc.emit('unhandledRejection', reason, Promise.resolve());
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Promise rejeitada sem tratamento (processo mantido)',
+      reason
+    );
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it('unhandledRejection com motivo que não é Error: envolve antes de logar', () => {
+    const { proc, logger } = setup();
+
+    proc.emit('unhandledRejection', 'boom', Promise.resolve());
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ message: 'boom' })
+    );
+  });
+
+  it('uncaughtException: loga e dispara o encerramento gracioso com código 1', () => {
+    const { proc, logger, stop } = setup();
+    const error = new Error('bug');
+
+    proc.emit('uncaughtException', error);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Exceção não capturada: encerrando o servidor',
+      error
+    );
+    expect(stop).toHaveBeenCalledWith('uncaughtException', { exitCode: 1 });
   });
 });
