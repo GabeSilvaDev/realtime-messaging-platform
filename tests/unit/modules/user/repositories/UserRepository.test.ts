@@ -417,66 +417,52 @@ describe('UserRepository', () => {
       expect(result.users).toHaveLength(20);
     });
 
-    it('deve excluir via SQL (id NOT IN) quem o próprio usuário bloqueou', async () => {
+    it('deve excluir bloqueados (nos dois sentidos) via subconsulta NOT IN com replacements', async () => {
       MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
-      MockContact.findAll
-        .mockResolvedValueOnce([
-          { contactId: 'user-1', isBlocked: true, isFavorite: false, nickname: null },
-        ] as any)
-        .mockResolvedValueOnce([] as any);
+      MockContact.findAll.mockResolvedValueOnce([] as any);
 
       await repository.search({ filters: { excludeUserId: 'me', excludeBlocked: true } });
 
-      expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            id: { [Op.ne]: 'me', [Op.notIn]: ['user-1'] },
-          }),
-        })
+      const call = MockUser.findAndCountAll.mock.calls[0]![0] as any;
+      const idFilter = call.where.id;
+      expect(idFilter[Op.ne]).toBe('me');
+      expect(idFilter[Op.notIn].val).toBe(
+        '(SELECT contact_id FROM contacts WHERE user_id = :excludeUserId AND is_blocked = true ' +
+          'UNION SELECT user_id FROM contacts WHERE contact_id = :excludeUserId AND is_blocked = true)'
       );
+      expect(call.replacements).toEqual({ excludeUserId: 'me' });
+      expect(MockContact.findAll).toHaveBeenCalledTimes(1);
     });
 
-    it('deve excluir via SQL (id NOT IN) quem bloqueou o usuário (direção reversa)', async () => {
-      MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
-      MockContact.findAll
-        .mockResolvedValueOnce([] as any)
-        .mockResolvedValueOnce([{ userId: 'user-2' }] as any);
-
-      await repository.search({ filters: { excludeUserId: 'me', excludeBlocked: true } });
-
-      expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            id: { [Op.ne]: 'me', [Op.notIn]: ['user-2'] },
-          }),
-        })
-      );
-      expect(MockContact.findAll).toHaveBeenNthCalledWith(2, {
-        where: { contactId: 'me', isBlocked: true },
-        attributes: ['userId'],
-      });
-    });
-
-    it('não deve adicionar NOT IN quando ninguém está bloqueado em nenhuma direção', async () => {
-      MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
-      MockContact.findAll.mockResolvedValueOnce([] as any).mockResolvedValueOnce([] as any);
-
-      await repository.search({ filters: { excludeUserId: 'me', excludeBlocked: true } });
-
-      expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ id: { [Op.ne]: 'me' } }),
-        })
-      );
-    });
-
-    it('não deve consultar bloqueios quando excludeBlocked não é true', async () => {
+    it('não deve enviar replacements quando excludeBlocked não é true', async () => {
       MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
       MockContact.findAll.mockResolvedValueOnce([] as any);
 
       await repository.search({ filters: { excludeUserId: 'me' } });
 
-      expect(MockContact.findAll).toHaveBeenCalledTimes(1);
+      const call = MockUser.findAndCountAll.mock.calls[0]![0] as any;
+      expect(call).not.toHaveProperty('replacements');
+      expect(call.where.id).toEqual({ [Op.ne]: 'me' });
+    });
+
+    it('deve marcar isContact=false para linha bloqueada (bloqueado não é contato)', async () => {
+      MockUser.findAndCountAll.mockResolvedValue({
+        count: 1,
+        rows: [
+          {
+            ...mockSearchUsers[0],
+            get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-1' }),
+          },
+        ],
+      } as any);
+      MockContact.findAll.mockResolvedValue([
+        { contactId: 'user-1', isBlocked: true, isFavorite: false, nickname: null },
+      ] as any);
+
+      const result = await repository.search({ filters: { excludeUserId: 'me' } });
+
+      expect(result.users[0]!.isContact).toBe(false);
+      expect(result.users[0]!.isBlocked).toBe(true);
     });
 
     it('mantém o tamanho da página ao excluir bloqueados (filtro aplicado via SQL, não em memória)', async () => {
