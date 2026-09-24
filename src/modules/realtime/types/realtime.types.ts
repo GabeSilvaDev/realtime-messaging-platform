@@ -1,0 +1,113 @@
+import type { Server, Socket } from 'socket.io';
+import type { ConversationChange, ConversationType, MessageDTO } from '@/modules/chat/types';
+
+/** Dados do socket preenchidos pelo middleware de autenticação do handshake. */
+export interface SocketData {
+  userId: string;
+  ip: string | null;
+  device: string | null;
+}
+
+export interface AckErrorDetail {
+  field: string;
+  message: string;
+}
+
+/** Mesmo formato de erro da API REST (`AppError`), sem timestamp. */
+export interface AckError {
+  code: string;
+  message: string;
+  statusCode: number;
+  details?: AckErrorDetail[];
+}
+
+export type AckResponse<T> = { ok: true; data: T } | { ok: false; error: AckError };
+
+export type AckCallback<T> = (response: AckResponse<T>) => void;
+
+/**
+ * Eventos cliente → servidor. Payload e ack chegam sem garantia de formato (qualquer cliente
+ * pode emitir qualquer coisa): os handlers validam o payload com Zod e só chamam o ack se for
+ * uma função.
+ */
+export interface ClientToServerEvents {
+  'message:send': (payload: unknown, ack?: unknown) => void;
+  'message:delivered': (payload: unknown, ack?: unknown) => void;
+  'message:read': (payload: unknown, ack?: unknown) => void;
+  'typing:start': (payload: unknown, ack?: unknown) => void;
+  'typing:stop': (payload: unknown, ack?: unknown) => void;
+}
+
+export interface MessageDeletedPayload {
+  conversationId: string;
+  messageId: string;
+}
+
+export interface MessageDeliveredStatus {
+  type: 'delivered';
+  conversationId: string;
+  messageId: string;
+  userId: string;
+  at: Date;
+}
+
+export interface MessageReadStatus {
+  type: 'read';
+  conversationId: string;
+  userId: string;
+  upToMessageId: string;
+  at: Date;
+}
+
+export type MessageStatusPayload = MessageDeliveredStatus | MessageReadStatus;
+
+export interface TypingIndicatorPayload {
+  conversationId: string;
+  userId: string;
+  isTyping: boolean;
+}
+
+export interface ConversationNewPayload {
+  conversationId: string;
+  type: ConversationType;
+}
+
+export interface ConversationUpdatedPayload {
+  conversationId: string;
+  change: ConversationChange;
+  actorId: string;
+  affectedUserIds: string[];
+  name?: string;
+}
+
+export interface ConversationDeletedPayload {
+  conversationId: string;
+}
+
+/** Eventos servidor → cliente (datas chegam ao cliente como strings ISO). */
+export interface ServerToClientEvents {
+  'message:new': (message: MessageDTO) => void;
+  'message:deleted': (payload: MessageDeletedPayload) => void;
+  'message:status': (payload: MessageStatusPayload) => void;
+  'typing:indicator': (payload: TypingIndicatorPayload) => void;
+  'conversation:new': (payload: ConversationNewPayload) => void;
+  'conversation:updated': (payload: ConversationUpdatedPayload) => void;
+  'conversation:deleted': (payload: ConversationDeletedPayload) => void;
+}
+
+/** Sem eventos entre servidores além dos do próprio adapter. */
+export type InterServerEvents = Record<string, never>;
+
+export type RealtimeServer = Server<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
+
+export type RealtimeSocket = Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>;
