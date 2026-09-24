@@ -126,3 +126,17 @@ export function registerProcessErrorHandlers(deps: ProcessErrorHandlerDeps): voi
     stop('uncaughtException', { exitCode: 1 });
   });
 }
+
+/**
+ * Handler do evento `error` do servidor HTTP (ex.: `EADDRINUSE` no `listen`): sem ele o erro
+ * vira exceção não tratada. Loga e dispara o encerramento gracioso com código de saída 1.
+ */
+export function createServerErrorHandler(
+  deps: Pick<ProcessErrorHandlerDeps, 'logger' | 'stop'>
+): (error: Error) => void {
+  const { logger, stop } = deps;
+  return (error: Error): void => {
+    logger.error('Erro no servidor HTTP: encerrando', error);
+    stop('httpServerError', { exitCode: 1 });
+  };
+}

@@ -2,7 +2,11 @@ import { createServer } from 'http';
 import app from './app';
 import { bootstrap, shutdown } from './bootstrap';
 import { createRealtimeServer } from './modules/realtime';
-import { createStopHandler, registerProcessErrorHandlers } from './serverLifecycle';
+import {
+  createServerErrorHandler,
+  createStopHandler,
+  registerProcessErrorHandlers,
+} from './serverLifecycle';
 import { logger } from './shared/logger';
 
 const PORT = process.env.PORT ?? 3000;
@@ -14,7 +18,6 @@ async function startServer(): Promise<void> {
     // Socket.IO compartilha o servidor HTTP (e a porta) da API Express.
     const httpServer = createServer(app);
     const realtime = createRealtimeServer(httpServer);
-    httpServer.listen(PORT);
 
     const stop = createStopHandler({
       realtime,
@@ -32,6 +35,10 @@ async function startServer(): Promise<void> {
       stop('SIGINT');
     });
     registerProcessErrorHandlers({ proc: process, logger, stop });
+    // Registrado antes do listen: um EADDRINUSE é logado e encerra com código 1.
+    httpServer.on('error', createServerErrorHandler({ logger, stop }));
+
+    httpServer.listen(PORT);
   } catch (error) {
     logger.error(
       'Falha ao iniciar o servidor',

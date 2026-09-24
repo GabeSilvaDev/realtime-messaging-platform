@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import {
+  createServerErrorHandler,
   createStopHandler,
   registerProcessErrorHandlers,
   SHUTDOWN_TIMEOUT_MS,
@@ -264,5 +265,37 @@ describe('registerProcessErrorHandlers', () => {
       error
     );
     expect(stop).toHaveBeenCalledWith('uncaughtException', { exitCode: 1 });
+  });
+});
+
+describe('createServerErrorHandler', () => {
+  it('erro do servidor HTTP (ex.: EADDRINUSE): loga e encerra com código 1', () => {
+    const logger = { error: jest.fn() };
+    const stop = jest.fn();
+    const error = Object.assign(new Error('listen EADDRINUSE: address already in use :::3100'), {
+      code: 'EADDRINUSE',
+    });
+
+    createServerErrorHandler({ logger, stop })(error);
+
+    expect(logger.error).toHaveBeenCalledWith('Erro no servidor HTTP: encerrando', error);
+    expect(stop).toHaveBeenCalledWith('httpServerError', { exitCode: 1 });
+  });
+
+  it('com o stop handler real: o processo sai com 1 após o encerramento gracioso', async () => {
+    const exit = jest.fn();
+    const logger = { info: jest.fn(), error: jest.fn() };
+    const stop = createStopHandler({
+      realtime: { close: jest.fn().mockResolvedValue(undefined) },
+      shutdown: jest.fn().mockResolvedValue(undefined),
+      exit,
+      logger,
+    });
+
+    createServerErrorHandler({ logger, stop })(new Error('boom'));
+    await flushPromises();
+    await flushPromises();
+
+    expect(exit).toHaveBeenCalledWith(1);
   });
 });
