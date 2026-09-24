@@ -55,7 +55,7 @@ export class ConversationService implements IConversationService {
     private readonly events: Pick<EventBus, 'publish'> = eventBus,
     private readonly directory: Pick<
       ParticipantDirectory,
-      'userIds' | 'isParticipant'
+      'userIds' | 'isParticipant' | 'forget'
     > = new ParticipantDirectory(participants)
   ) {}
 
@@ -114,6 +114,7 @@ export class ConversationService implements IConversationService {
       memberIds,
     });
 
+    // Cache pré-populado pela criação; não precisa forget aqui (listener invalida).
     await this.events.publish(ChatEvents.CONVERSATION_CREATED, {
       conversationId: conversation.id,
       type: 'group',
@@ -209,6 +210,8 @@ export class ConversationService implements IConversationService {
       return this.removeParticipant(conversationId, userId, transaction);
     });
 
+    // Cache invalidado antes do publish (requer leitura após saída).
+    await this.directory.forget(conversationId);
     await this.publishRemoval(conversationId, userId, userId, 'member_left', removal);
   }
 
@@ -244,6 +247,8 @@ export class ConversationService implements IConversationService {
     );
 
     if (toAdd.length > 0) {
+      // Cache invalidado antes do publish (membros novos precisam saber).
+      await this.directory.forget(conversationId);
       await this.publishUpdate(
         conversationId,
         'members_added',
@@ -274,6 +279,8 @@ export class ConversationService implements IConversationService {
       return this.removeParticipant(conversationId, memberId, transaction);
     });
 
+    // Cache invalidado antes do publish (membro removido não pode mais enviar).
+    await this.directory.forget(conversationId);
     await this.publishRemoval(conversationId, userId, memberId, 'member_removed', removal);
   }
 

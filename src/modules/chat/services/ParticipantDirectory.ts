@@ -1,5 +1,9 @@
 import { cacheService, type ICacheService } from '@/shared/cache';
-import { CHAT_CACHE_KEYS, CHAT_CACHE_TTL_SECONDS } from '../constants';
+import {
+  CHAT_CACHE_KEYS,
+  CHAT_PARTICIPANTS_CACHE_DELAYED_DELETE_MS,
+  CHAT_PARTICIPANTS_CACHE_TTL_SECONDS,
+} from '../constants';
 import type { IParticipantRepository } from '../interfaces';
 import { participantRepository } from '../repositories';
 import type { ParticipantRole } from '../types';
@@ -12,28 +16,36 @@ export interface ParticipantSummary {
 
 /**
  * Participantes por conversa (ids + papéis) no cache `cache:conv:participants:<id>` — o caminho
- * quente de toda mensagem enviada/listada. Invalidado por `chat:conversation-created/updated/
- * deleted` (`registerChatCacheListeners`); o TTL de 300 s cobre um evento perdido.
+ * quente de toda mensagem enviada/listada. Invalidado por chamadas diretas a `forget()` (após
+ * transação de mudança de membros) e por `chat:conversation-created/updated/deleted` eventos
+ * (`registerChatCacheListeners`). Janela residual: ≤ CHAT_PARTICIPANTS_CACHE_DELAYED_DELETE_MS
+ * (se ambos os DELs falharem) ou ≤ CHAT_PARTICIPANTS_CACHE_TTL_SECONDS (se aguardar TTL).
+ * Não cacheia listas vazias (conversas desconhecidas).
  */
 export class ParticipantDirectory {
+  private delayedDeleteTimers = new Map<string, NodeJS.Timeout>();
+
   constructor(
     private readonly participants: Pick<
       IParticipantRepository,
       'listByConversation'
     > = participantRepository,
-    private readonly cache: Pick<ICacheService, 'getOrLoad'> = cacheService
+    private readonly cache: Pick<ICacheService, 'getOrLoad' | 'del'> = cacheService,
+    private readonly delayedDeleteMs: number = CHAT_PARTICIPANTS_CACHE_DELAYED_DELETE_MS
   ) {}
 
   /** Do mais antigo para o mais novo (mesma ordem do repositório). */
   async list(conversationId: string): Promise<ParticipantSummary[]> {
     return this.cache.getOrLoad(
       CHAT_CACHE_KEYS.participants(conversationId),
-      CHAT_CACHE_TTL_SECONDS,
-      async () =>
-        (await this.participants.listByConversation(conversationId)).map(({ userId, role }) => ({
+      CHAT_PARTICIPANTS_CACHE_TTL_SECONDS,
+      async () => {
+        const participants = await this.participants.listByConversation(conversationId);
+        return participants.map(({ userId, role }) => ({
           userId,
           role,
-        }))
+        }));
+      }
     );
   }
 
@@ -43,5 +55,32 @@ export class ParticipantDirectory {
 
   async isParticipant(conversationId: string, userId: string): Promise<boolean> {
     return (await this.list(conversationId)).some((participant) => participant.userId === userId);
+  }
+
+  /**
+   * Invalida o cache imediatamente e agenda um segundo DEL após delay (mitigação de
+   * write-back stale). Chamado diretamente em ConversationService após transação de
+   * mudança de membros, antes de publish. O EventBus listener fornece fallback.
+   */
+  async forget(conversationId: string): Promise<void> {
+    const key = CHAT_CACHE_KEYS.participants(conversationId);
+    await this.cache.del(key);
+
+    // Cancela timer anterior se houver.
+    const timer = this.delayedDeleteTimers.get(key);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+
+    // Agenda segundo DEL após delay (unref'd para não manter o processo vivo).
+    const delayed = setTimeout(() => {
+      this.cache.del(key).catch(() => {
+        // Falha silenciosa no segundo delete (best-effort).
+      });
+      this.delayedDeleteTimers.delete(key);
+    }, this.delayedDeleteMs);
+
+    delayed.unref();
+    this.delayedDeleteTimers.set(key, delayed);
   }
 }

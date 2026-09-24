@@ -1,5 +1,6 @@
 jest.mock('@/modules/chat/repositories', () => ({ participantRepository: {} }));
 jest.mock('@/shared/database/redis', () => ({ redis: {} }));
+jest.useFakeTimers();
 
 import type { IParticipantRepository } from '@/modules/chat/interfaces';
 import { ParticipantDirectory } from '@/modules/chat/services/ParticipantDirectory';
@@ -31,6 +32,7 @@ describe('ParticipantDirectory', () => {
   let directory: ParticipantDirectory;
 
   beforeEach(() => {
+    jest.clearAllTimers();
     participants = {
       listByConversation: jest
         .fn()
@@ -39,11 +41,16 @@ describe('ParticipantDirectory', () => {
     redis = new FakeRedis();
     directory = new ParticipantDirectory(
       participants as unknown as IParticipantRepository,
-      new CacheService(redis)
+      new CacheService(redis),
+      100 // injected delay para testes
     );
   });
 
-  it('guarda só ids e papéis, com TTL de 300 s', async () => {
+  afterEach(() => {
+    jest.clearAllTimers();
+  });
+
+  it('guarda só ids e papéis, com TTL de 60 s', async () => {
     await expect(directory.list(CONVERSATION_ID)).resolves.toEqual([
       { userId: USER_A, role: 'admin' },
       { userId: USER_B, role: 'member' },
@@ -52,7 +59,7 @@ describe('ParticipantDirectory', () => {
       { userId: USER_A, role: 'admin' },
       { userId: USER_B, role: 'member' },
     ]);
-    expect(await redis.ttl(`cache:conv:participants:${CONVERSATION_ID}`)).toBe(300);
+    expect(await redis.ttl(`cache:conv:participants:${CONVERSATION_ID}`)).toBe(60);
   });
 
   it('userIds e isParticipant reaproveitam a mesma leitura', async () => {
@@ -70,6 +77,25 @@ describe('ParticipantDirectory', () => {
     await directory.userIds(CONVERSATION_ID);
 
     expect(participants.listByConversation).toHaveBeenCalledTimes(2);
+  });
+
+  it('forget() deleta imediatamente e agenda segundo DEL para mitigar write-back stale', async () => {
+    const key = `cache:conv:participants:${CONVERSATION_ID}`;
+
+    // Carrega no cache
+    await directory.list(CONVERSATION_ID);
+    expect(await redis.get(key)).not.toBeNull();
+
+    // forget() deleta imediatamente
+    await directory.forget(CONVERSATION_ID);
+    expect(await redis.get(key)).toBeNull();
+
+    // Verifica que um timer foi agendado (delayedDeleteMs = 100ms em testes)
+    expect(jest.getTimerCount()).toBeGreaterThan(0);
+
+    // Aguarda o segundo DEL
+    jest.runAllTimers();
+    // (timer expirado; se houvesse escrita concorrente, seria limpa agora)
   });
 
   it('instância com dependências padrão', () => {

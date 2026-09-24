@@ -2,6 +2,8 @@ import {
   CHAT_CACHE_KEYS,
   CHAT_CACHE_TTL_SECONDS,
   CHAT_CONSTANTS,
+  CHAT_PARTICIPANTS_CACHE_DELAYED_DELETE_MS,
+  CHAT_PARTICIPANTS_CACHE_TTL_SECONDS,
   CONVERSATION_TYPES,
   MESSAGE_CONTENT_TYPES,
   PARTICIPANT_ROLES,
@@ -29,6 +31,8 @@ describe('chat constants', () => {
 
   it('deve definir a chave e o TTL do cache de participantes', () => {
     expect(CHAT_CACHE_KEYS.participants('c1')).toBe('conv:participants:c1');
-    expect(CHAT_CACHE_TTL_SECONDS).toBe(300);
+    expect(CHAT_PARTICIPANTS_CACHE_TTL_SECONDS).toBe(60);
+    expect(CHAT_CACHE_TTL_SECONDS).toBe(60); // deprecated, but aliased
+    expect(CHAT_PARTICIPANTS_CACHE_DELAYED_DELETE_MS).toBe(1000);
   });
 });

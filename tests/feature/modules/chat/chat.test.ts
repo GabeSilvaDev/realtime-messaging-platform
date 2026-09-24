@@ -482,7 +482,7 @@ describe('Chat — Feature', () => {
       await send(BOB, groupId, 'dois');
       await request(app).get(`/api/conversations/${groupId}/messages`).set(as(ANA));
       expect(listByConversation).toHaveBeenCalledTimes(1);
-      expect(await fakeRedis.ttl(`cache:conv:participants:${groupId}`)).toBe(300);
+      expect(await fakeRedis.ttl(`cache:conv:participants:${groupId}`)).toBe(60);
 
       const outsider = await send(CAROL, groupId, 'ainda não');
       expect(outsider.status).toBe(HttpStatus.NOT_FOUND);
@@ -507,7 +507,10 @@ describe('Chat — Feature', () => {
       const groupId = created.body.data.id as string;
       expect((await send(CAROL, groupId, 'oi')).status).toBe(HttpStatus.CREATED);
 
-      await request(app).delete(`/api/conversations/${groupId}/members/${CAROL}`).set(as(ANA));
+      const deleted = await request(app)
+        .delete(`/api/conversations/${groupId}/members/${CAROL}`)
+        .set(as(ANA));
+      expect(deleted.status).toBe(HttpStatus.NO_CONTENT);
 
       expect((await send(CAROL, groupId, 'ainda estou?')).status).toBe(HttpStatus.NOT_FOUND);
     });

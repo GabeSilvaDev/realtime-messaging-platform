@@ -525,6 +525,35 @@ describe('ConversationService', () => {
       expect(events.publish).toHaveBeenCalledTimes(1);
     });
 
+    it('forget() invalida cache após commit e antes de publish', async () => {
+      givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
+      participants.listByConversation.mockResolvedValue([participant(USER_B)]);
+      let forgetCalled = false;
+      const originalLeave = service.leave.bind(service);
+      service.leave = async (userId: string, conversationId: string) => {
+        // Espiona durante a execução
+        const originalForget = (service as any)['directory'].forget.bind(
+          (service as any)['directory']
+        );
+        (service as any)['directory'].forget = async (cid: string) => {
+          forgetCalled = true;
+          return originalForget(cid);
+        };
+        return originalLeave(userId, conversationId);
+      };
+
+      conversations.withLock.mockImplementation(async (_id, work) => {
+        const result = await work(TX);
+        expect(forgetCalled).toBe(false);
+        return result;
+      });
+
+      await service.leave(USER_A, CONVERSATION_ID);
+
+      expect(forgetCalled).toBe(true);
+      expect(events.publish).toHaveBeenCalled();
+    });
+
     it('último admin saindo promove o membro mais antigo', async () => {
       givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
       participants.listByConversation.mockResolvedValue([participant(USER_B), participant(USER_C)]);

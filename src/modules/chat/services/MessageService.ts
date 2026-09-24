@@ -75,7 +75,7 @@ export class MessageService implements IMessageService {
     private readonly events: Pick<EventBus, 'publish'> = eventBus,
     private readonly directory: Pick<
       ParticipantDirectory,
-      'userIds' | 'isParticipant'
+      'userIds' | 'isParticipant' | 'forget'
     > = new ParticipantDirectory(participants)
   ) {}
 
