@@ -6,9 +6,16 @@ export interface ContactAttributes {
   isBlocked: boolean;
   isFavorite: boolean;
   blockedAt: Date | null;
-  createdByBlock: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * Atributos persistidos do model `Contact`, incluindo campos internos que não são expostos
+ * pela API (`toJSON()` devolve apenas `ContactAttributes`).
+ */
+export interface ContactModelAttributes extends ContactAttributes {
+  createdByBlock: boolean;
 }
 
 export interface ContactCreationAttributes {

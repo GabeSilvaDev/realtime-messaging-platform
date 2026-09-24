@@ -246,7 +246,6 @@ describe('ContactService', () => {
       mockContactRepository.findByUserAndContact.mockResolvedValue({
         ...mockContact,
         isBlocked: true,
-        createdByBlock: true,
       });
 
       await expect(
@@ -459,7 +458,6 @@ describe('ContactService', () => {
         ...mockContact,
         isBlocked: true,
         blockedAt: new Date(),
-        createdByBlock: true,
       });
 
       await contactService.blockUser('user-123', 'contact-456');

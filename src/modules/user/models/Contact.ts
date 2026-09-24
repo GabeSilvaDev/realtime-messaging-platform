@@ -1,14 +1,18 @@
-import type { ContactAttributes, ContactCreationAttributes } from '@/modules/user/types';
+import type {
+  ContactAttributes,
+  ContactCreationAttributes,
+  ContactModelAttributes,
+} from '@/modules/user/types';
 import User from '@/shared/database/models/User';
 import sequelize from '@/shared/database/sequelize';
 import { DataTypes, Model, Optional } from 'sequelize';
 
 class Contact
   extends Model<
-    ContactAttributes,
+    ContactModelAttributes,
     Optional<ContactCreationAttributes, 'nickname' | 'isFavorite' | 'createdByBlock'>
   >
-  implements ContactAttributes
+  implements ContactModelAttributes
 {
   declare id: string;
   declare userId: string;
@@ -33,7 +37,6 @@ class Contact
       isBlocked: this.isBlocked,
       isFavorite: this.isFavorite,
       blockedAt: this.blockedAt,
-      createdByBlock: this.createdByBlock,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };
@@ -88,7 +91,7 @@ Contact.init(
     },
     createdByBlock: {
       type: DataTypes.BOOLEAN,
-      allowNull: true,
+      allowNull: false,
       defaultValue: false,
       field: 'created_by_block',
     },
