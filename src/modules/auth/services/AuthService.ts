@@ -14,6 +14,8 @@ import { userRepository } from '../repositories/UserRepository';
 import type { IUserRepository, IAuthService } from '../interfaces';
 import { AuthEvents } from '../events/AuthEvents';
 import { redis } from '@/shared/database';
+import { eventBus, type EventBus } from '@/shared/event-bus';
+import { AuthEvents as BusAuthEvents } from '@/shared/types';
 import { PASSWORD_RESET_PREFIX, PASSWORD_RESET_TTL } from '../constants/auth.constants';
 import {
   EmailAlreadyExistsException,
@@ -31,7 +33,8 @@ export class AuthService implements IAuthService {
     private readonly passwords: PasswordService = new PasswordService(),
     private readonly users: IUserRepository = userRepository,
     private readonly refreshTokens = refreshTokenRepository,
-    private readonly events = new AuthEvents()
+    private readonly events = new AuthEvents(),
+    private readonly bus: Pick<EventBus, 'publish'> = eventBus
   ) {}
 
   async register(data: RegisterDTO, ctx?: AuthContext): Promise<AuthResponseDTO> {
@@ -158,6 +161,7 @@ export class AuthService implements IAuthService {
     await this.refreshTokens.revokeAllForUser(userId);
 
     this.events.emitPasswordReset(userId);
+    await this.publishSessionsRevoked(userId);
   }
 
   async changePassword(userId: string, data: ChangePasswordDTO): Promise<void> {
@@ -180,13 +184,16 @@ export class AuthService implements IAuthService {
     await this.users.updatePassword(userId, hashedPassword);
 
     this.events.emitPasswordChange(userId);
+    await this.publishSessionsRevoked(userId);
   }
 
   async revokeAllSessions(userId: string, exceptTokenId?: string): Promise<number> {
-    if (exceptTokenId !== undefined) {
-      return this.refreshTokens.revokeAllExcept(userId, exceptTokenId);
-    }
-    return this.refreshTokens.revokeAllForUser(userId);
+    const revoked =
+      exceptTokenId !== undefined
+        ? await this.refreshTokens.revokeAllExcept(userId, exceptTokenId)
+        : await this.refreshTokens.revokeAllForUser(userId);
+    await this.publishSessionsRevoked(userId);
+    return revoked;
   }
 
   async getActiveSessions(
@@ -205,13 +212,22 @@ export class AuthService implements IAuthService {
       }));
   }
 
-  validateAccessToken(token: string): { valid: boolean; userId?: string } {
+  validateAccessToken(token: string): { valid: boolean; userId?: string; exp?: number } {
     try {
       const decoded = this.tokens.verifyAccessToken(token);
-      return { valid: true, userId: decoded.userId };
+      return { valid: true, userId: decoded.userId, exp: decoded.exp };
     } catch {
       return { valid: false };
     }
+  }
+
+  /**
+   * Avisa (EventBus) que as sessões do usuário foram revogadas: o realtime derruba os sockets
+   * dele, que só voltam com um novo login/token. Tokens de acesso JWT não são revogáveis por si,
+   * então o cliente pode reconectar com um access token ainda válido até ele expirar.
+   */
+  private async publishSessionsRevoked(userId: string): Promise<void> {
+    await this.bus.publish(BusAuthEvents.SESSIONS_REVOKED, { userId });
   }
 
   private async createTokens(

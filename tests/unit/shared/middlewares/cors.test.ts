@@ -29,6 +29,7 @@ jest.mock('@/shared/logger', () => ({
 }));
 
 import createCorsMiddlewareDefault, {
+  buildCorsOptions,
   corsMiddleware,
   createCorsMiddleware,
   getCorsMiddleware,
@@ -176,6 +177,43 @@ describe('cors middleware', () => {
       expect(response.headers['access-control-allow-headers']).toBe('X-Custom');
       expect(response.headers['access-control-max-age']).toBe('60');
       expect(response.headers['access-control-allow-credentials']).toBeUndefined();
+    });
+  });
+
+  describe('buildCorsOptions (mesma política reusada pelo Socket.IO)', () => {
+    it('devolve as opções do pacote cors usadas pelo middleware HTTP', () => {
+      const options = buildCorsOptions({ allowedOrigins: ['http://a.com'] });
+
+      expect(options).toEqual(
+        expect.objectContaining({
+          methods: CORS_DEFAULT_METHODS,
+          allowedHeaders: CORS_DEFAULT_ALLOWED_HEADERS,
+          exposedHeaders: CORS_DEFAULT_EXPOSED_HEADERS,
+          credentials: true,
+          maxAge: CORS_DEFAULT_MAX_AGE,
+        })
+      );
+    });
+
+    it('sem argumentos usa os padrões do projeto', () => {
+      expect(buildCorsOptions()).toEqual(
+        expect.objectContaining({ credentials: true, maxAge: CORS_DEFAULT_MAX_AGE })
+      );
+    });
+
+    it('a função origin aplica a lista de origens permitidas', () => {
+      const { origin } = buildCorsOptions({ allowedOrigins: ['http://a.com'] });
+      const check = origin as (
+        requestOrigin: string | undefined,
+        callback: (error: Error | null, allow?: boolean) => void
+      ) => void;
+      const callback = jest.fn();
+
+      check('http://a.com', callback);
+      check('http://c.com', callback);
+
+      expect(callback).toHaveBeenNthCalledWith(1, null, true);
+      expect(callback).toHaveBeenNthCalledWith(2, expect.any(Error));
     });
   });
 

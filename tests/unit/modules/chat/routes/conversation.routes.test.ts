@@ -18,6 +18,7 @@ jest.mock('@/modules/chat/controllers/MessageController', () => ({
     list: jest.fn(),
     send: jest.fn(),
     delete: jest.fn(),
+    markRead: jest.fn(),
   },
 }));
 
@@ -64,10 +65,11 @@ const ROUTES = [
   ['GET', '/:id/messages', messageController, 'list'],
   ['POST', '/:id/messages', messageController, 'send'],
   ['DELETE', '/:id/messages/:messageId', messageController, 'delete'],
+  ['POST', '/:id/read', messageController, 'markRead'],
 ] as const;
 
 describe('conversation.routes', () => {
-  it('deve definir exatamente as 13 rotas do chat', () => {
+  it('deve definir exatamente as 14 rotas do chat', () => {
     expect(getRoutes().map(({ method, path }) => `${method} ${path}`)).toEqual(
       ROUTES.map(([method, path]) => `${method} ${path}`)
     );

@@ -82,7 +82,9 @@ describe('ConversationRepository', () => {
 
       const result = await repository.findById(CONVERSATION_ID);
 
-      expect(MockConversation.findByPk).toHaveBeenCalledWith(CONVERSATION_ID);
+      expect(MockConversation.findByPk).toHaveBeenCalledWith(CONVERSATION_ID, {
+        transaction: undefined,
+      });
       expect(result?.id).toBe(CONVERSATION_ID);
     });
 
@@ -90,6 +92,14 @@ describe('ConversationRepository', () => {
       MockConversation.findByPk.mockResolvedValue(null);
 
       await expect(repository.findById(CONVERSATION_ID)).resolves.toBeNull();
+    });
+
+    it('deve repassar a transação quando informada', async () => {
+      MockConversation.findByPk.mockResolvedValue(conversationRow() as never);
+
+      await repository.findById(CONVERSATION_ID, TX as never);
+
+      expect(MockConversation.findByPk).toHaveBeenCalledWith(CONVERSATION_ID, { transaction: TX });
     });
   });
 
@@ -320,6 +330,50 @@ describe('ConversationRepository', () => {
       await repository.delete(CONVERSATION_ID);
 
       expect(MockConversation.destroy).toHaveBeenCalledWith({ where: { id: CONVERSATION_ID } });
+    });
+
+    it('deve repassar a transação quando informada', async () => {
+      MockConversation.destroy.mockResolvedValue(1);
+
+      await repository.delete(CONVERSATION_ID, TX as never);
+
+      expect(MockConversation.destroy).toHaveBeenCalledWith({
+        where: { id: CONVERSATION_ID },
+        transaction: TX,
+      });
+    });
+  });
+
+  describe('withLock', () => {
+    const LOCK_TX = { LOCK: { UPDATE: 'UPDATE' } };
+
+    beforeEach(() => {
+      mockTransaction.mockImplementation(async (callback: (t: unknown) => Promise<unknown>) =>
+        callback(LOCK_TX)
+      );
+    });
+
+    it('abre transação, trava a linha da conversa (SELECT ... FOR UPDATE) e executa o trabalho', async () => {
+      MockConversation.findByPk.mockResolvedValue(conversationRow() as never);
+      const work = jest.fn().mockResolvedValue('resultado');
+
+      const result = await repository.withLock(CONVERSATION_ID, work);
+
+      expect(MockConversation.findByPk).toHaveBeenCalledWith(CONVERSATION_ID, {
+        transaction: LOCK_TX,
+        lock: 'UPDATE',
+      });
+      expect(work).toHaveBeenCalledWith(LOCK_TX);
+      expect(result).toBe('resultado');
+    });
+
+    it('executa o trabalho mesmo sem a linha (o service decide o 404) e propaga erros', async () => {
+      MockConversation.findByPk.mockResolvedValue(null);
+      const error = new Error('regra violada');
+
+      await expect(
+        repository.withLock(CONVERSATION_ID, jest.fn().mockRejectedValue(error))
+      ).rejects.toBe(error);
     });
   });
 });

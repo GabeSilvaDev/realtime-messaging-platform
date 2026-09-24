@@ -5,6 +5,7 @@ import { logger } from '@/shared/logger';
 import { ChatEvents } from '@/shared/types';
 import { CHAT_CONSTANTS } from '../constants';
 import {
+  ClientMessageIdConflictException,
   ConversationBlockedException,
   ConversationNotFoundException,
   InvalidMentionsException,
@@ -25,10 +26,14 @@ import type {
   MessageMetadata,
   MessageRecord,
   PaginatedMessages,
+  ParticipantAttributes,
   SendMessageDTO,
 } from '../types';
 
-/** Mensagem apagada vira tombstone: mantém id/datas (preserva threads), esconde o conteúdo. */
+/**
+ * Mensagem apagada vira tombstone: mantém id/datas/status (preserva threads e confirmações),
+ * esconde o conteúdo.
+ */
 function toMessageDTO(record: MessageRecord): MessageDTO {
   const deleted = record.deletedAt !== null;
   return {
@@ -38,10 +43,27 @@ function toMessageDTO(record: MessageRecord): MessageDTO {
     content: deleted ? null : record.content,
     replyTo: record.replyTo,
     mentions: deleted ? [] : record.mentions,
+    clientMessageId: record.clientMessageId,
+    status: {
+      sentAt: record.createdAt,
+      deliveredTo: record.deliveredTo,
+      readBy: record.readBy,
+    },
     deletedAt: record.deletedAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
+}
+
+/**
+ * Reenvio com `clientMessageId` já usado pelo remetente: devolve a mensagem original (sem novo
+ * evento nem `last_message_at`). O mesmo id reaproveitado em outra conversa é conflito (409).
+ */
+function toReplay(existing: MessageRecord, conversationId: string): MessageDTO {
+  if (existing.conversationId !== conversationId) {
+    throw new ClientMessageIdConflictException();
+  }
+  return toMessageDTO(existing);
 }
 
 export class MessageService implements IMessageService {
@@ -70,6 +92,14 @@ export class MessageService implements IMessageService {
       throw new ConversationNotFoundException();
     }
 
+    const clientMessageId = data.clientMessageId ?? null;
+    if (clientMessageId !== null) {
+      const existing = await this.messages.findByClientMessageId(userId, clientMessageId);
+      if (existing !== null) {
+        return toReplay(existing, conversationId);
+      }
+    }
+
     if (conversation.type === 'direct') {
       const otherId = participantIds.find((id) => id !== userId);
       if (otherId !== undefined && (await this.contacts.isBlockedByEither(userId, otherId))) {
@@ -90,14 +120,18 @@ export class MessageService implements IMessageService {
       throw new InvalidMentionsException();
     }
 
-    const record = await this.messages.create({
+    const { record, created } = await this.messages.create({
       conversationId,
       senderId: userId,
       content: { type: 'text', text: data.text.trim() },
       replyTo,
       mentions,
       metadata,
+      clientMessageId,
     });
+    if (!created) {
+      return toReplay(record, conversationId);
+    }
 
     // Best-effort: falha em atualizar last_message_at não deve impedir o envio da mensagem.
     try {
@@ -165,11 +199,7 @@ export class MessageService implements IMessageService {
 
   async delete(userId: string, conversationId: string, messageId: string): Promise<void> {
     await this.requireParticipant(conversationId, userId);
-
-    const message = await this.messages.findById(messageId);
-    if (message?.conversationId !== conversationId) {
-      throw new MessageNotFoundException();
-    }
+    const message = await this.requireMessage(conversationId, messageId);
 
     if (message.senderId !== userId) {
       throw new NotMessageAuthorException();
@@ -185,11 +215,68 @@ export class MessageService implements IMessageService {
     }
   }
 
-  private async requireParticipant(conversationId: string, userId: string): Promise<void> {
+  async markDelivered(userId: string, conversationId: string, messageId: string): Promise<void> {
+    await this.requireParticipant(conversationId, userId);
+    const message = await this.requireMessage(conversationId, messageId);
+
+    if (message.senderId === userId) {
+      return;
+    }
+
+    const at = new Date();
+    const changed = await this.messages.markDelivered(messageId, userId, at);
+    if (changed) {
+      await this.events.publish(ChatEvents.MESSAGE_DELIVERED, {
+        messageId,
+        conversationId,
+        userId,
+        senderId: message.senderId,
+        at,
+      });
+    }
+  }
+
+  async markRead(userId: string, conversationId: string, messageId: string): Promise<void> {
+    const membership = await this.requireParticipant(conversationId, userId);
+    const message = await this.requireMessage(conversationId, messageId);
+
+    // Tudo até `last_read_at` já foi marcado numa leitura anterior: a varredura começa ali
+    // (inclusive — reler o alvo é idempotente). Mongo antes do Postgres: se a marcação falhar,
+    // `last_read_at` não avança e a próxima leitura cobre o intervalo de novo.
+    const at = new Date();
+    const range = { from: membership.lastReadAt ?? new Date(0), upTo: message.createdAt };
+    const marked = await this.messages.markReadUpTo(conversationId, userId, range, at);
+    await this.participants.advanceLastReadAt(conversationId, userId, message.createdAt);
+
+    if (marked > 0) {
+      await this.events.publish(ChatEvents.MESSAGE_READ, {
+        conversationId,
+        userId,
+        upToMessageId: messageId,
+        at,
+      });
+    }
+  }
+
+  /** Mensagem inexistente ou de outra conversa → 404 (não revela mensagens alheias). */
+  private async requireMessage(conversationId: string, messageId: string): Promise<MessageRecord> {
+    const message = await this.messages.findById(messageId);
+    if (message?.conversationId !== conversationId) {
+      throw new MessageNotFoundException();
+    }
+    return message;
+  }
+
+  /** Não participante → 404; devolve a participação (ex.: `lastReadAt`). */
+  private async requireParticipant(
+    conversationId: string,
+    userId: string
+  ): Promise<ParticipantAttributes> {
     const membership = await this.participants.find(conversationId, userId);
     if (membership === null) {
       throw new ConversationNotFoundException();
     }
+    return membership;
   }
 }
 

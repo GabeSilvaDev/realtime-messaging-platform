@@ -7,6 +7,7 @@ import { messageService } from '../services/MessageService';
 import type { MessageMetadata } from '../types';
 import {
   listMessagesQuerySchema,
+  markReadSchema,
   messageParamSchema,
   sendMessageSchema,
 } from '../validation/chat.schemas';
@@ -66,6 +67,25 @@ export class MessageController {
     );
 
     res.status(HttpStatus.CREATED).json({ success: true, data: message });
+  }
+
+  /** Marca como lido tudo de outros autores até `messageId` (equivalente REST de `message:read`). */
+  async markRead(req: Request, res: Response): Promise<void> {
+    const userId = getAuthenticatedUserId(req);
+    const conversationId = parseConversationId(req, res);
+    if (conversationId === null) {
+      return;
+    }
+
+    const body = markReadSchema.safeParse(req.body);
+    if (!body.success) {
+      sendValidationError(res, body.error.issues);
+      return;
+    }
+
+    await this.messages.markRead(userId, conversationId, body.data.messageId);
+
+    res.status(HttpStatus.NO_CONTENT).send();
   }
 
   async delete(req: Request, res: Response): Promise<void> {

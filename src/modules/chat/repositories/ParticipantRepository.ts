@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import Participant from '../models/Participant';
 import type { IParticipantRepository } from '../interfaces';
-import type { ParticipantAttributes, ParticipantRole } from '../types';
+import type { ChatTransaction, ParticipantAttributes, ParticipantRole } from '../types';
 
 const OLDEST_FIRST: [string, string][] = [
   ['joinedAt', 'ASC'],
@@ -9,13 +9,27 @@ const OLDEST_FIRST: [string, string][] = [
 ];
 
 export class ParticipantRepository implements IParticipantRepository {
-  async find(conversationId: string, userId: string): Promise<ParticipantAttributes | null> {
-    const participant = await Participant.findOne({ where: { conversationId, userId } });
+  async find(
+    conversationId: string,
+    userId: string,
+    transaction?: ChatTransaction
+  ): Promise<ParticipantAttributes | null> {
+    const participant = await Participant.findOne({
+      where: { conversationId, userId },
+      transaction,
+    });
     return participant?.toJSON() ?? null;
   }
 
-  async listByConversation(conversationId: string): Promise<ParticipantAttributes[]> {
-    const rows = await Participant.findAll({ where: { conversationId }, order: OLDEST_FIRST });
+  async listByConversation(
+    conversationId: string,
+    transaction?: ChatTransaction
+  ): Promise<ParticipantAttributes[]> {
+    const rows = await Participant.findAll({
+      where: { conversationId },
+      order: OLDEST_FIRST,
+      transaction,
+    });
     return rows.map((row) => row.toJSON());
   }
 
@@ -35,22 +49,35 @@ export class ParticipantRepository implements IParticipantRepository {
     return rows.map((row) => row.conversationId);
   }
 
-  async addMembers(conversationId: string, userIds: string[]): Promise<void> {
+  async addMembers(
+    conversationId: string,
+    userIds: string[],
+    transaction?: ChatTransaction
+  ): Promise<void> {
     if (userIds.length === 0) {
       return;
     }
     await Participant.bulkCreate(
       userIds.map((userId) => ({ conversationId, userId, role: 'member' as const })),
-      { ignoreDuplicates: true }
+      { ignoreDuplicates: true, transaction }
     );
   }
 
-  async remove(conversationId: string, userId: string): Promise<void> {
-    await Participant.destroy({ where: { conversationId, userId } });
+  async remove(
+    conversationId: string,
+    userId: string,
+    transaction?: ChatTransaction
+  ): Promise<void> {
+    await Participant.destroy({ where: { conversationId, userId }, transaction });
   }
 
-  async setRole(conversationId: string, userId: string, role: ParticipantRole): Promise<void> {
-    await Participant.update({ role }, { where: { conversationId, userId } });
+  async setRole(
+    conversationId: string,
+    userId: string,
+    role: ParticipantRole,
+    transaction?: ChatTransaction
+  ): Promise<void> {
+    await Participant.update({ role }, { where: { conversationId, userId }, transaction });
   }
 
   async setArchivedAt(
@@ -59,6 +86,19 @@ export class ParticipantRepository implements IParticipantRepository {
     archivedAt: Date | null
   ): Promise<void> {
     await Participant.update({ archivedAt }, { where: { conversationId, userId } });
+  }
+
+  async advanceLastReadAt(conversationId: string, userId: string, at: Date): Promise<void> {
+    await Participant.update(
+      { lastReadAt: at },
+      {
+        where: {
+          conversationId,
+          userId,
+          [Op.or]: [{ lastReadAt: null }, { lastReadAt: { [Op.lt]: at } }],
+        },
+      }
+    );
   }
 }
 

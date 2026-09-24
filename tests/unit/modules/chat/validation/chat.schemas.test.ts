@@ -5,6 +5,7 @@ import {
   createGroupConversationSchema,
   listConversationsQuerySchema,
   listMessagesQuerySchema,
+  markReadSchema,
   memberParamSchema,
   messageParamSchema,
   renameConversationSchema,
@@ -126,6 +127,14 @@ describe('chat.schemas', () => {
     });
   });
 
+  describe('markReadSchema', () => {
+    it('exige messageId ObjectId (24 hex)', () => {
+      expect(markReadSchema.parse({ messageId: MESSAGE_ID })).toEqual({ messageId: MESSAGE_ID });
+      expect(markReadSchema.safeParse({ messageId: 'x' }).success).toBe(false);
+      expect(markReadSchema.safeParse({}).success).toBe(false);
+    });
+  });
+
   describe('sendMessageSchema', () => {
     it('faz trim do texto e aceita replyTo/mentions', () => {
       expect(
@@ -143,6 +152,16 @@ describe('chat.schemas', () => {
     it('rejeita replyTo e mentions inválidos', () => {
       expect(sendMessageSchema.safeParse({ text: 'oi', replyTo: 'x' }).success).toBe(false);
       expect(sendMessageSchema.safeParse({ text: 'oi', mentions: ['x'] }).success).toBe(false);
+    });
+
+    it('aceita clientMessageId UUID opcional (normalizado em minúsculas) e rejeita inválido', () => {
+      const clientMessageId = '33333333-3333-4333-8333-333333333333';
+
+      expect(
+        sendMessageSchema.parse({ text: 'oi', clientMessageId: clientMessageId.toUpperCase() })
+      ).toEqual({ text: 'oi', clientMessageId });
+      expect(sendMessageSchema.parse({ text: 'oi' })).not.toHaveProperty('clientMessageId');
+      expect(sendMessageSchema.safeParse({ text: 'oi', clientMessageId: 'x' }).success).toBe(false);
     });
   });
 });

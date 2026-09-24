@@ -72,7 +72,7 @@ import type { RefreshTokenRepository } from '@/modules/auth/repositories/Refresh
 import type { AuthEvents } from '@/modules/auth/events/AuthEvents';
 import { redis } from '@/shared/database';
 import { PASSWORD_RESET_PREFIX } from '@/modules/auth/constants/auth.constants';
-import { UserStatus } from '@/shared/types';
+import { AuthEvents as BusAuthEvents, UserStatus } from '@/shared/types';
 
 const mockRedis = redis as jest.Mocked<typeof redis>;
 
@@ -83,6 +83,7 @@ describe('AuthService', () => {
   let mockUserRepository: jest.Mocked<IUserRepository>;
   let mockRefreshTokenRepository: jest.Mocked<RefreshTokenRepository>;
   let mockAuthEvents: jest.Mocked<AuthEvents>;
+  let mockBus: { publish: jest.Mock };
 
   const mockUser = {
     id: 'user-123',
@@ -158,12 +159,15 @@ describe('AuthService', () => {
       off: jest.fn(),
     } as unknown as jest.Mocked<AuthEvents>;
 
+    mockBus = { publish: jest.fn().mockResolvedValue(undefined) };
+
     authService = new AuthService(
       mockTokenService,
       mockPasswordService,
       mockUserRepository,
       mockRefreshTokenRepository,
-      mockAuthEvents
+      mockAuthEvents,
+      mockBus
     );
   });
 
@@ -448,6 +452,10 @@ describe('AuthService', () => {
       expect(mockRedis.del).toHaveBeenCalled();
       expect(mockRefreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('user-123');
       expect(mockAuthEvents.emitPasswordReset).toHaveBeenCalledWith('user-123');
+      // Sessões revogadas: o realtime derruba os sockets do usuário.
+      expect(mockBus.publish).toHaveBeenCalledWith(BusAuthEvents.SESSIONS_REVOKED, {
+        userId: 'user-123',
+      });
     });
 
     it('should throw error for invalid or expired token', async () => {
@@ -456,6 +464,7 @@ describe('AuthService', () => {
       await expect(authService.resetPassword(resetData)).rejects.toThrow(
         'Token inválido ou expirado'
       );
+      expect(mockBus.publish).not.toHaveBeenCalled();
     });
   });
 
@@ -479,6 +488,9 @@ describe('AuthService', () => {
       expect(mockPasswordService.hash).toHaveBeenCalledWith(changeData.newPassword);
       expect(mockUserRepository.updatePassword).toHaveBeenCalled();
       expect(mockAuthEvents.emitPasswordChange).toHaveBeenCalledWith('user-123');
+      expect(mockBus.publish).toHaveBeenCalledWith(BusAuthEvents.SESSIONS_REVOKED, {
+        userId: 'user-123',
+      });
     });
 
     it('should throw error when user not found', async () => {
@@ -496,6 +508,7 @@ describe('AuthService', () => {
       await expect(authService.changePassword('user-123', changeData)).rejects.toThrow(
         'Senha atual incorreta'
       );
+      expect(mockBus.publish).not.toHaveBeenCalled();
     });
 
     it('should throw error when new password is same as current', async () => {
@@ -516,6 +529,9 @@ describe('AuthService', () => {
 
       expect(mockRefreshTokenRepository.revokeAllForUser).toHaveBeenCalledWith('user-123');
       expect(result).toBe(3);
+      expect(mockBus.publish).toHaveBeenCalledWith(BusAuthEvents.SESSIONS_REVOKED, {
+        userId: 'user-123',
+      });
     });
 
     it('should revoke all sessions except current token', async () => {
@@ -528,6 +544,9 @@ describe('AuthService', () => {
         'current-token-id'
       );
       expect(result).toBe(2);
+      expect(mockBus.publish).toHaveBeenCalledWith(BusAuthEvents.SESSIONS_REVOKED, {
+        userId: 'user-123',
+      });
     });
   });
 
@@ -586,11 +605,13 @@ describe('AuthService', () => {
         userId: 'user-123',
         email: 'test@example.com',
         username: 'testuser',
+        exp: 1_900_000_000,
       } as never);
 
       const result = authService.validateAccessToken('valid-token');
 
-      expect(result).toEqual({ valid: true, userId: 'user-123' });
+      // `exp` (segundos) permite ao realtime derrubar o socket quando o token expira.
+      expect(result).toEqual({ valid: true, userId: 'user-123', exp: 1_900_000_000 });
     });
 
     it('should return valid false for invalid token', () => {

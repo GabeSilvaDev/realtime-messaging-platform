@@ -22,15 +22,23 @@ import type {
 } from '../interfaces';
 import { conversationRepository, participantRepository } from '../repositories';
 import type {
+  ChatTransaction,
   ConversationChange,
   ConversationDTO,
   ConversationListEntry,
+  ConversationType,
   CreateDirectResult,
   CreateGroupDTO,
   ListConversationsOptions,
   PaginatedConversations,
   ParticipantAttributes,
 } from '../types';
+
+/** Resultado de remover um participante sob o lock da conversa. */
+interface ParticipantRemoval {
+  remaining: string[];
+  deleted: boolean;
+}
 
 /** Chave única da conversa 1:1: `menorUuid:maiorUuid` (independe de quem iniciou). */
 export function buildDirectKey(userA: string, userB: string): string {
@@ -183,50 +191,54 @@ export class ConversationService implements IConversationService {
     await this.participants.setArchivedAt(conversationId, userId, null);
   }
 
+  /**
+   * Sai do grupo. Leitura, remoção e promoção de admin rodam sob o lock da conversa
+   * (`withLock`); os eventos só são publicados depois do commit.
+   */
   async leave(userId: string, conversationId: string): Promise<void> {
-    const { conversation } = await this.requireMembership(conversationId, userId);
-    if (conversation.type !== 'group') {
-      throw new GroupOnlyOperationException();
-    }
+    const removal = await this.conversations.withLock(conversationId, async (transaction) => {
+      const { conversation } = await this.requireMembership(conversationId, userId, transaction);
+      if (conversation.type !== 'group') {
+        throw new GroupOnlyOperationException();
+      }
+      return this.removeParticipant(conversationId, userId, transaction);
+    });
 
-    const { remaining, deleted } = await this.removeParticipant(conversationId, userId);
-    if (deleted) {
-      await this.events.publish(ChatEvents.CONVERSATION_DELETED, {
-        conversationId,
-        actorId: userId,
-        participantIds: [userId],
-      });
-      return;
-    }
-
-    await this.publishUpdate(
-      conversationId,
-      'member_left',
-      userId,
-      [userId, ...remaining],
-      [userId]
-    );
+    await this.publishRemoval(conversationId, userId, userId, 'member_left', removal);
   }
 
+  /** O limite de 256 é checado sob o lock: dois admins adicionando ao mesmo tempo não o furam. */
   async addMembers(
     userId: string,
     conversationId: string,
     userIds: string[]
   ): Promise<ConversationDTO> {
-    const context = await this.requireMembership(conversationId, userId);
-    this.assertGroupAdmin(context);
+    // Valida usuários ANTES de adquirir o lock (evita pool de conexão travado)
+    const uniqueUserIds = [...new Set(userIds)];
+    await this.ensureUsersExist(uniqueUserIds);
 
-    const currentIds = await this.getParticipantIds(conversationId);
-    const toAdd = [...new Set(userIds)].filter((id) => !currentIds.includes(id));
+    const { currentIds, toAdd } = await this.conversations.withLock(
+      conversationId,
+      async (transaction) => {
+        const context = await this.requireMembership(conversationId, userId, transaction);
+        this.assertGroupAdmin(context);
 
-    if (currentIds.length + toAdd.length > CHAT_CONSTANTS.MAX_GROUP_PARTICIPANTS) {
-      throw new GroupParticipantLimitException();
-    }
+        const members = await this.participants.listByConversation(conversationId, transaction);
+        const memberIds = members.map((p) => p.userId);
+        const newIds = uniqueUserIds.filter((id) => !memberIds.includes(id));
 
-    await this.ensureUsersExist(toAdd);
+        if (memberIds.length + newIds.length > CHAT_CONSTANTS.MAX_GROUP_PARTICIPANTS) {
+          throw new GroupParticipantLimitException();
+        }
+
+        if (newIds.length > 0) {
+          await this.participants.addMembers(conversationId, newIds, transaction);
+        }
+        return { currentIds: memberIds, toAdd: newIds };
+      }
+    );
 
     if (toAdd.length > 0) {
-      await this.participants.addMembers(conversationId, toAdd);
       await this.publishUpdate(
         conversationId,
         'members_added',
@@ -245,22 +257,19 @@ export class ConversationService implements IConversationService {
       return;
     }
 
-    const context = await this.requireMembership(conversationId, userId);
-    this.assertGroupAdmin(context);
+    const removal = await this.conversations.withLock(conversationId, async (transaction) => {
+      const context = await this.requireMembership(conversationId, userId, transaction);
+      this.assertGroupAdmin(context);
 
-    const target = await this.participants.find(conversationId, memberId);
-    if (target === null) {
-      throw new ParticipantNotFoundException();
-    }
+      const target = await this.participants.find(conversationId, memberId, transaction);
+      if (target === null) {
+        throw new ParticipantNotFoundException();
+      }
 
-    const { remaining } = await this.removeParticipant(conversationId, memberId);
-    await this.publishUpdate(
-      conversationId,
-      'member_removed',
-      userId,
-      [memberId, ...remaining],
-      [memberId]
-    );
+      return this.removeParticipant(conversationId, memberId, transaction);
+    });
+
+    await this.publishRemoval(conversationId, userId, memberId, 'member_removed', removal);
   }
 
   async isParticipant(conversationId: string, userId: string): Promise<boolean> {
@@ -276,17 +285,23 @@ export class ConversationService implements IConversationService {
     return this.participants.listConversationIdsByUser(userId);
   }
 
+  async getTypeForParticipant(userId: string, conversationId: string): Promise<ConversationType> {
+    const { conversation } = await this.requireMembership(conversationId, userId);
+    return conversation.type;
+  }
+
   /** Não participante recebe 404 — não revela a existência da conversa. */
   private async requireMembership(
     conversationId: string,
-    userId: string
+    userId: string,
+    transaction?: ChatTransaction
   ): Promise<ConversationListEntry> {
-    const membership = await this.participants.find(conversationId, userId);
+    const membership = await this.participants.find(conversationId, userId, transaction);
     if (membership === null) {
       throw new ConversationNotFoundException();
     }
 
-    const conversation = await this.conversations.findById(conversationId);
+    const conversation = await this.conversations.findById(conversationId, transaction);
     if (conversation === null) {
       throw new ConversationNotFoundException();
     }
@@ -318,22 +333,53 @@ export class ConversationService implements IConversationService {
    */
   private async removeParticipant(
     conversationId: string,
-    userId: string
-  ): Promise<{ remaining: string[]; deleted: boolean }> {
-    await this.participants.remove(conversationId, userId);
-    const remaining = await this.participants.listByConversation(conversationId);
+    userId: string,
+    transaction: ChatTransaction
+  ): Promise<ParticipantRemoval> {
+    await this.participants.remove(conversationId, userId, transaction);
+    const remaining = await this.participants.listByConversation(conversationId, transaction);
 
     const [oldest] = remaining;
     if (oldest === undefined) {
-      await this.conversations.delete(conversationId);
+      await this.conversations.delete(conversationId, transaction);
       return { remaining: [], deleted: true };
     }
 
     if (!remaining.some((p) => p.role === 'admin')) {
-      await this.participants.setRole(conversationId, oldest.userId, 'admin');
+      await this.participants.setRole(conversationId, oldest.userId, 'admin', transaction);
     }
 
     return { remaining: remaining.map((p) => p.userId), deleted: false };
+  }
+
+  /**
+   * Publica o resultado de uma saída/remoção: `CONVERSATION_DELETED` quando a conversa ficou
+   * vazia e foi apagada (e então NÃO publica `member_left`/`member_removed`); senão,
+   * `CONVERSATION_UPDATED` com quem saiu/foi removido também em `participantIds`.
+   */
+  private async publishRemoval(
+    conversationId: string,
+    actorId: string,
+    removedId: string,
+    change: 'member_left' | 'member_removed',
+    { remaining, deleted }: ParticipantRemoval
+  ): Promise<void> {
+    if (deleted) {
+      await this.events.publish(ChatEvents.CONVERSATION_DELETED, {
+        conversationId,
+        actorId,
+        participantIds: [removedId],
+      });
+      return;
+    }
+
+    await this.publishUpdate(
+      conversationId,
+      change,
+      actorId,
+      [removedId, ...remaining],
+      [removedId]
+    );
   }
 
   private async publishUpdate(

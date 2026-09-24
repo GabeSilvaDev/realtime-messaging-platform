@@ -10,6 +10,7 @@ export enum AuthEvents {
   REGISTER = 'auth:register',
   PASSWORD_RESET_REQUESTED = 'auth:password-reset-requested',
   PASSWORD_RESET_COMPLETED = 'auth:password-reset-completed',
+  SESSIONS_REVOKED = 'auth:sessions-revoked',
 }
 
 export enum UserEvents {

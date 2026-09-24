@@ -1,3 +1,4 @@
+import path from 'path';
 import express, { Application } from 'express';
 import { initLogger, LogLevel, LogCategory } from './shared/logger';
 import {
@@ -15,6 +16,19 @@ import { profileRoutes, contactRoutes, blockRoutes, userRoutes } from './modules
 import { conversationRoutes } from './modules/chat/routes';
 
 const env: Environment = (process.env.NODE_ENV as Environment | undefined) ?? 'development';
+
+/** Cliente demo estático (HTML + JS puro); resolvido a partir da raiz do projeto (cwd). */
+const DEMO_DIR = path.resolve(process.cwd(), 'public', 'demo');
+
+/**
+ * O cliente demo é servido fora de produção; em produção só com `DEMO_ENABLED=true` (opt-in
+ * explícito — é uma página de demonstração, não um frontend de produção).
+ */
+export function isDemoEnabled(
+  environment: Record<string, string | undefined> = process.env
+): boolean {
+  return environment.NODE_ENV !== 'production' || environment.DEMO_ENABLED === 'true';
+}
 
 /**
  * Interpreta a variável de ambiente TRUST_PROXY para `app.set('trust proxy', …)`.
@@ -64,6 +78,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(requestLogger);
+
+if (isDemoEnabled()) {
+  app.use('/demo', express.static(DEMO_DIR));
+}
 
 app.use('/api', getRateLimiter());
 

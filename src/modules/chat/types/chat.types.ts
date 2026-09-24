@@ -1,9 +1,17 @@
-import type { CONVERSATION_TYPES, MESSAGE_CONTENT_TYPES, PARTICIPANT_ROLES } from '../constants';
+import type { Transaction } from 'sequelize';
+import type { CONVERSATION_TYPES, PARTICIPANT_ROLES } from '../constants';
 
+export type { MessageContentType } from '@/shared/types/chat-message.types';
 export type ConversationType = (typeof CONVERSATION_TYPES)[number];
 export type ParticipantRole = (typeof PARTICIPANT_ROLES)[number];
-export type MessageContentType = (typeof MESSAGE_CONTENT_TYPES)[number];
 export type ConversationChange = 'renamed' | 'members_added' | 'member_removed' | 'member_left';
+
+/**
+ * Transação do armazenamento relacional, aberta por `IConversationRepository.withLock` e
+ * repassada às operações que precisam enxergar/alterar o mesmo estado travado. O service só a
+ * repassa (nunca a inspeciona); repositórios em memória podem ignorá-la.
+ */
+export type ChatTransaction = Transaction;
 
 export interface ConversationAttributes {
   id: string;

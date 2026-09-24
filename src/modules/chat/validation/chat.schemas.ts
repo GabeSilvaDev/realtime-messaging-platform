@@ -101,6 +101,11 @@ export const sendMessageSchema = z.object({
       `Máximo de ${String(CHAT_CONSTANTS.MAX_GROUP_PARTICIPANTS)} menções`
     )
     .optional(),
+  clientMessageId: uuid('clientMessageId inválido').optional(),
+});
+
+export const markReadSchema = z.object({
+  messageId: objectId('ID de mensagem inválido'),
 });
 
 export type CreateDirectConversationInput = z.infer<typeof createDirectConversationSchema>;
@@ -110,3 +115,4 @@ export type AddMembersInput = z.infer<typeof addMembersSchema>;
 export type ListConversationsQuery = z.infer<typeof listConversationsQuerySchema>;
 export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+export type MarkReadInput = z.infer<typeof markReadSchema>;

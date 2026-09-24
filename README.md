@@ -2,7 +2,7 @@
 
 # Real-Time Messaging Platform
 
-**Backend for a real-time chat product, in Node.js and TypeScript** — Express 5 API with token auth, user profiles, contacts and a REST chat today; WebSocket delivery, presence, notifications and search on the way, each on the store that fits it.
+**Backend for a real-time chat product, in Node.js and TypeScript** — Express 5 API with token auth, user profiles, contacts and chat — REST plus real-time delivery over Socket.IO with delivered/read receipts and typing indicators — today; presence, notifications and search on the way, each on the store that fits it.
 
 [![Status](https://img.shields.io/badge/status-work%20in%20progress-f59e0b)](#roadmap)
 [![CI](https://github.com/GabeSilvaDev/realtime-messaging-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/GabeSilvaDev/realtime-messaging-platform/actions/workflows/ci.yml)
@@ -13,36 +13,38 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com)
 [![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.17-005571?logo=elasticsearch&logoColor=white)](https://www.elastic.co)
-[![Tests](https://img.shields.io/badge/tests-2335%20Jest-C21325?logo=jest&logoColor=white)](#development)
+[![Tests](https://img.shields.io/badge/tests-2521%20Jest-C21325?logo=jest&logoColor=white)](#development)
 [![License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
 </div>
 
-> **Work in progress.** Authentication, profiles, contacts/blocks and the chat REST API (1:1 and group conversations, messages in MongoDB) are implemented and tested on top of the shared infrastructure. Real-time delivery over WebSocket is the next milestone — see the [roadmap](#roadmap).
+> **Work in progress.** Authentication, profiles, contacts/blocks and chat (1:1 and group conversations, messages in MongoDB) are implemented and tested, over REST and in real time over Socket.IO — delivered/read receipts, typing indicators and a minimal demo client at `/demo`. Presence and caching are the next milestone — see the [roadmap](#roadmap).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     C[Client] -->|HTTP · Bearer JWT| API[Express 5 API]
+    C <-->|WebSocket · JWT handshake| RT[realtime module<br/>Socket.IO]
     API --> AUTH[auth module]
     API --> USER[user module]
     API --> CHAT[chat module]
-    API -.-> RT[realtime · WebSocket]
+    RT --> CHAT
     API -.-> NOTIF[notifications]
     API -.-> SEARCH[search]
     AUTH & USER & CHAT --> PG[(PostgreSQL<br/>Sequelize)]
-    AUTH & USER --> RD[(Redis<br/>rate limit · cache)]
+    AUTH & USER & RT --> RD[(Redis<br/>rate limit · Socket.IO adapter)]
     USER --> ST[(Storage<br/>local / S3)]
     API --> LOG[(MongoDB<br/>structured logs)]
     CHAT --> MG[(MongoDB<br/>messages)]
     SEARCH -.-> ES[(Elasticsearch)]
     AUTH & USER & CHAT --> EB{{EventBus}}
+    EB --> RT
 
     classDef planned stroke-dasharray: 5 5,opacity:0.6
-    class RT,NOTIF,SEARCH,ES planned
+    class NOTIF,SEARCH,ES planned
 ```
 
 Solid nodes exist today; dashed ones are planned. Each feature is a **module** (`src/modules/<name>`) with its own controllers, services, repositories, models, DTOs, validation schemas, exceptions and routes, wired through interfaces. Everything cross-cutting lives in `src/shared`.
@@ -119,10 +121,47 @@ A blocked user is not a contact: `GET`/`PATCH`/`DELETE /:contactId` answer 404 f
 | `POST` | `/:id/members` | ✓ | `{ userIds[] }` — admins only; current participants are ignored |
 | `DELETE` | `/:id/members/:userId` | ✓ | Admins only; removing yourself is the same as leaving |
 | `GET` | `/:id/messages` | ✓ | Newest first, `limit` ≤ 50, cursor `before=<messageId>`; returns `{ messages, nextCursor }`; deleted messages come back as tombstones (`content: null`) |
-| `POST` | `/:id/messages` | ✓ | `{ text, replyTo?, mentions? }` — text 1–10,000 characters; 403 in a 1:1 conversation where either side blocked the other |
+| `POST` | `/:id/messages` | ✓ | `{ text, replyTo?, mentions?, clientMessageId? }` — text 1–10,000 characters; 403 in a 1:1 conversation where either side blocked the other; resending the same `clientMessageId` (client-generated UUID) returns the stored message instead of a duplicate (409 if that id was used in another conversation) |
 | `DELETE` | `/:id/messages/:messageId` | ✓ | Author only; soft delete, idempotent |
+| `POST` | `/:id/read` | ✓ | `{ messageId }` — marks every message from others up to and including `messageId` as read (and delivered), advances the caller's `last_read_at`; 204 |
 
-Messages live only in MongoDB (`messages` collection, index `{ conversationId: 1, createdAt: -1, _id: -1 }`); conversations and participants live in PostgreSQL. The module publishes `chat:conversation-created`, `chat:conversation-updated`, `chat:conversation-deleted` (when the last member leaves and the conversation is removed), `chat:message-sent` (payload carries the same `MessageDTO` returned to the REST client) and `chat:message-deleted` on the EventBus; listeners registered at bootstrap update `contacts.last_interaction_at` on every direct message and best-effort delete the conversation's messages in MongoDB on `chat:conversation-deleted`.
+Messages live only in MongoDB (`messages` collection, indexes `{ conversationId: 1, createdAt: -1, _id: -1 }` and a unique partial `{ senderId: 1, clientMessageId: 1 }` for idempotent sends); conversations and participants live in PostgreSQL. Every message carries `clientMessageId` and `status: { sentAt, deliveredTo[], readBy[] }` (entries are `{ userId, at }`; deleted messages keep their status). Leaving, removing and adding members run inside a transaction that locks the conversation row (`SELECT … FOR UPDATE`), so concurrent changes can't skip the admin promotion or overflow the 256-member limit. The module publishes `chat:conversation-created`, `chat:conversation-updated`, `chat:conversation-deleted` (when the last member leaves and the conversation is removed), `chat:message-sent` (payload carries the same `MessageDTO` returned to the REST client), `chat:message-deleted`, `chat:message-delivered` and `chat:message-read` on the EventBus. Listeners registered at bootstrap update `contacts.last_interaction_at` on every direct message and best-effort delete the conversation's messages in MongoDB on `chat:conversation-deleted`; both run off the request path (`{ async: true }` subscribers).
+
+### Real-time — Socket.IO
+
+Socket.IO shares the HTTP server and port (`http://localhost:3000`, path `/socket.io/`). Connect with the access token in the handshake — `io(url, { auth: { token } })` (preferred) or an `Authorization: Bearer <token>` header; a missing or invalid token fails with `connect_error` and `message: 'UNAUTHORIZED'`. During the handshake the socket joins `user:<id>` and `conversation:<id>` for each of the user's conversations, so every automatic reconnection restores the rooms; once connected, the server re-reads the user's conversations and reconciles the `conversation:*` rooms (a membership change that happened mid-handshake, when room updates couldn't reach the socket yet, is applied — a removed member doesn't keep receiving the conversation); messages sent while disconnected are fetched over REST (`GET /api/conversations/:id/messages?before=`). CORS follows the HTTP policy (`ALLOWED_ORIGINS` in production).
+
+**Session lifetime.** The handshake validates the access token once, so the server also ends the socket when the session ends: at the token's `exp` (a per-socket timer) and immediately when the user's sessions are revoked — `POST /api/auth/change-password`, `POST /api/auth/reset-password` and `DELETE /api/auth/sessions` publish `auth:sessions-revoked` on the EventBus and every socket of that user is dropped (`disconnectSockets(true)` on `user:<id>`, across instances). The client sees `disconnect` with reason `io server disconnect`, which `socket.io-client` does **not** retry: it must reconnect with a refreshed token (`POST /api/auth/refresh`, or a new login after a revocation). JWT access tokens can't be revoked by themselves, so a client that still holds an unexpired access token can reconnect until it expires (15 min by default).
+
+Client → server events (every one accepts an ack):
+
+| Event | Payload | Effect / ack `data` |
+|---|---|---|
+| `message:send` | `{ conversationId, text, replyTo?, mentions?, clientMessageId? }` | Same rules as `POST /messages` (idempotent by `clientMessageId`); ack carries the `MessageDTO` |
+| `message:delivered` | `{ conversationId, messageId }` | Marks the message as delivered to the caller (no-op for the author); `null` |
+| `message:read` | `{ conversationId, messageId }` | Same as `POST /:id/read`; `null` |
+| `typing:start` | `{ conversationId }` | 1:1 conversations only (groups → 400); expires after 3 s without a new `start`; `null` |
+| `typing:stop` | `{ conversationId }` | Ends the indicator; `null` |
+
+Server → client events:
+
+| Event | Room | Payload |
+|---|---|---|
+| `message:new` | conversation | `MessageDTO` (the sender gets it too — dedupe by `id`/`clientMessageId`) |
+| `message:deleted` | conversation | `{ conversationId, messageId }` |
+| `message:status` | sender (`delivered`) · conversation (`read`) | `{ type: 'delivered', conversationId, messageId, userId, at }` · `{ type: 'read', conversationId, userId, upToMessageId, at }` |
+| `typing:indicator` | conversation, except the typist | `{ conversationId, userId, isTyping }` |
+| `conversation:new` | conversation + participants | `{ conversationId, type }` — participants' sockets join the room automatically |
+| `conversation:updated` | conversation + affected users | `{ conversationId, change, actorId, affectedUserIds, name? }` — added members join, removed/leaving members leave the room |
+| `conversation:deleted` | conversation + former participants | `{ conversationId }` |
+
+Acks are `{ ok: true, data }` or `{ ok: false, error: { code, message, statusCode, details? } }`, with the same codes as the REST API (`VALIDATION_ERROR` 400, `NOT_FOUND` 404, `USER_BLOCKED` 403, …; unexpected failures → `INTERNAL_ERROR` 500). Horizontal scaling uses `@socket.io/redis-adapter` on two duplicated Redis connections; it is on outside `NODE_ENV=test` unless `REALTIME_REDIS_ADAPTER=false`. The EventBus → Socket.IO bridge is registered when the server starts, and `SIGTERM`/`SIGINT` close sockets, the adapter connections and the stores gracefully.
+
+Two design notes worth knowing: a resend of an already-stored message by a sender who has since been blocked still returns the original message (idempotency is checked before the block check, and a resend isn't a new send); and typing renewals within the TTL aren't re-validated against the database — only the first `typing:start` for a given (socket, conversation) pair checks participation and conversation type.
+
+**Security note — no per-socket rate limit yet.** The HTTP rate limits (below) cover `/api` only; Socket.IO events (`message:send`, `typing:*`, receipts) aren't rate-limited per socket or per user, so an authenticated client can flood them. Per-socket/per-user limits are deferred to subproject 7 (hardening) — see the [Roadmap](#roadmap). Until then, run behind a proxy/WAF that caps WebSocket message rates if the API is exposed publicly.
+
+**Demo client** — `http://localhost:3000/demo/` is a single static page (plain JS, no build) to log in, list and open conversations, start a 1:1 chat by searching users, and watch messages, ✓ sent / ✓✓ delivered / ✓✓ (blue) read and "typing…" live. It keeps the access token in `localStorage`; it's a demo, not a production client. It's served outside production only — with `NODE_ENV=production`, `/demo` exists only if `DEMO_ENABLED=true`.
 
 ### Rate limiting
 
@@ -139,9 +178,9 @@ Built on `express-rate-limit` with a Redis-backed store (`rate-limit-redis`) by 
 ### Shared infrastructure — `src/shared`
 
 - **Databases** — connection helpers for PostgreSQL (Sequelize, with migrations and seeders), Redis (ioredis), MongoDB (Mongoose) and Elasticsearch, all started and stopped from `bootstrap.ts`.
-- **EventBus** — in-process publish/subscribe with priorities, once-handlers, wildcard subscriptions and counters; modules emit domain events (e.g. auth events, `user:blocked` / `user:unblocked`, `chat:message-sent`) through it.
+- **EventBus** — in-process publish/subscribe with priorities, once-handlers, wildcard subscriptions and counters; modules emit domain events (e.g. auth events, `user:blocked` / `user:unblocked`, `chat:message-sent`) through it; `{ async: true }` subscribers run off the publisher's path.
 - **Logger** — structured, leveled, categorised; console output in development and an optional MongoDB sink.
-- **Middleware** — Helmet, CORS, request id, request logger, Redis-backed rate limiter (injectable store), multer upload, 404 and error handlers.
+- **Middleware** — Helmet, CORS (shared with Socket.IO), request id, request logger, Redis-backed rate limiter (injectable store), multer upload, 404 and error handlers.
 - **Validation** — Zod schemas per module plus a `validate` middleware and shared pagination schemas.
 - **Errors** — `AppError` hierarchy with HTTP status and error codes, serialised consistently.
 - **Storage** — `StorageService` with local-disk and S3-compatible providers, `ImageProcessorService` on top of sharp.
@@ -195,7 +234,7 @@ ELASTICSEARCH_URL="http://localhost:${ELASTIC_HOST_PORT:-9200}" \
 PORT=${APP_HOST_PORT:-3000} npm run dev
 ```
 
-The API listens on `http://localhost:${APP_HOST_PORT:-3000}/api` (`3000` by default).
+The API listens on `http://localhost:${APP_HOST_PORT:-3000}/api` (`3000` by default); Socket.IO shares the same port (`/socket.io/`) and the demo client is at `http://localhost:${APP_HOST_PORT:-3000}/demo/`.
 
 `MONGO_USER`/`MONGO_PASSWORD` are URL-encoded before building `MONGODB_URL`: a password with URI-reserved characters (`@`, `:`, `[`, `]`, …) left un-encoded breaks the connection string, and `bootstrap()` fails without ever logging why.
 
@@ -215,7 +254,7 @@ npm run db:migrate:undo    # sequelize-cli db:migrate:undo
 npm run db:seed             # sequelize-cli db:seed:all
 ```
 
-**Tests** — 2,335 Jest tests in 145 suites (unit under `tests/unit`, HTTP feature tests with supertest under `tests/feature`). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below the `coverageThreshold` in `jest.config.ts` — statements, branches, functions and lines all set to 90%. Coverage is collected over every file under `src/`, not only the ones a test happens to import; measured with `node node_modules/.bin/jest --coverage --all`, current coverage is 100% statements, 100% branches, 100% functions, 100% lines.
+**Tests** — 2,521 Jest tests in 167 suites (unit under `tests/unit`; HTTP feature tests with supertest and WebSocket integration tests with socket.io-client under `tests/feature`). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below the `coverageThreshold` in `jest.config.ts` — statements, branches, functions and lines all set to 90%. Coverage is collected over every file under `src/`, not only the ones a test happens to import; measured with `node node_modules/.bin/jest --coverage --all`, current coverage is 100% statements, 100% branches, 100% functions, 100% lines.
 
 ## Project structure
 
@@ -223,7 +262,7 @@ npm run db:seed             # sequelize-cli db:seed:all
 src/
 ├── app.ts                    Express app: middleware pipeline and route mounting
 ├── bootstrap.ts              connects and disconnects the four stores
-├── server.ts                 entry point
+├── server.ts                 entry point: HTTP server + Socket.IO, graceful shutdown
 ├── database/                 Sequelize migrations, seeders and factories
 ├── modules/
 │   ├── auth/                 controllers · services (Auth, Token, Password) ·
@@ -232,9 +271,12 @@ src/
 │   ├── user/                 Profile, Contact, Block and User controllers ·
 │   │                         services (Profile, User, Contact, Avatar) ·
 │   │                         repositories · models · routes
-│   └── chat/                 Conversation and Message controllers · services ·
-│                             repositories (PostgreSQL + MongoDB) · models ·
-│                             listeners · validation · routes
+│   ├── chat/                 Conversation and Message controllers · services ·
+│   │                         repositories (PostgreSQL + MongoDB) · models ·
+│   │                         listeners · validation · routes
+│   └── realtime/             Socket.IO server · handshake middlewares ·
+│                             message/typing handlers · TypingService ·
+│                             EventBus → rooms bridge
 └── shared/
     ├── config/               env → typed config (database, upload)
     ├── database/             postgres · redis · mongo · elasticsearch clients
@@ -245,6 +287,8 @@ src/
     ├── services/             FileService · ImageProcessorService · StorageService
     ├── validation/           validate middleware + common schemas
     ├── errors/ interfaces/ types/ constants/ utils/
+public/
+└── demo/                     static demo client (HTML + plain JS), served at /demo
 tests/
 ├── unit/                     mirrors src/
 ├── feature/                  supertest against the Express app
@@ -258,7 +302,10 @@ tests/
 | Variable | Purpose |
 |---|---|
 | `PORT`, `NODE_ENV` | HTTP port (3000) and environment |
-| `TRUST_PROXY` | `app.set('trust proxy', …)`; unset keeps Express's default (`false`) — see [Rate limiting](#rate-limiting); prefer a hop count or proxy IPs over `true` (IP spoofing) |
+| `TRUST_PROXY` | `app.set('trust proxy', …)` — also used for the Socket.IO client IP (same rule as `req.ip`, via `proxy-addr`); unset keeps Express's default (`false`) — see [Rate limiting](#rate-limiting); prefer a hop count or proxy IPs over `true` (IP spoofing) |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins in production (HTTP and Socket.IO); any origin is allowed outside production |
+| `DEMO_ENABLED` | `true` serves the demo client at `/demo` in production (it's always served outside production) |
+| `REALTIME_REDIS_ADAPTER` | `false` keeps Socket.IO on the in-memory adapter (single instance); otherwise the Redis adapter is used outside `NODE_ENV=test` |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | PostgreSQL (host `postgres` inside Compose) |
 | `REDIS_PASSWORD` | Redis auth |
 | `MONGO_USER` / `MONGO_PASSWORD` / `MONGO_DB` | MongoDB |
@@ -276,11 +323,12 @@ tests/
 - [x] Contacts, blocks and user search — REST endpoints, EventBus events, rate limiting on auth routes
 - [x] Chat base — 1:1 and group conversations, messages in MongoDB with cursor pagination, REST API and EventBus events
 - [ ] Working `rtm-app` container — Dockerfile that runs `npm ci` and builds inside the image, with a base compatible with `sharp`'s native bindings (see [known limitation](#known-limitation-app-container))
-- [ ] Real-time — Socket.IO delivery, delivered/read receipts and typing indicators
-- [ ] Presence — online status and typing indicators through Redis pub/sub
+- [x] Real-time — Socket.IO with JWT handshake and per-user/per-conversation rooms, idempotent sends, delivered/read receipts, typing indicators, Redis adapter and a demo client at /demo
+- [ ] Presence and cache — online/offline status with heartbeat, conversation and profile caching on Redis
 - [ ] Notifications — in-app and push delivery
 - [ ] Search — message search on Elasticsearch
 - [ ] Observability — metrics and tracing
+- [ ] Hardening — per-socket/per-user rate limiting for Socket.IO events (deferred from the real-time subproject), security review and delivery polish
 
 ## License
 

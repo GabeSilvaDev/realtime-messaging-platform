@@ -71,6 +71,12 @@ export class InvalidMentionsException extends AppError {
   }
 }
 
+export class ClientMessageIdConflictException extends AppError {
+  constructor(message = 'clientMessageId já usado em outra conversa') {
+    super(message, HttpStatus.CONFLICT, ErrorCode.CONFLICT);
+  }
+}
+
 export class NotMessageAuthorException extends AppError {
   constructor(message = 'Apenas o autor pode apagar a mensagem') {
     super(message, HttpStatus.FORBIDDEN, ErrorCode.FORBIDDEN);

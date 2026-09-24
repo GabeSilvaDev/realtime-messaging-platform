@@ -1,3 +1,5 @@
+import type { MessageContentType } from '@/shared/types/chat-message.types';
+
 export const CHAT_CONSTANTS = {
   MAX_GROUP_PARTICIPANTS: 256,
   MAX_MESSAGE_LENGTH: 10_000,
@@ -11,4 +13,4 @@ export const CHAT_CONSTANTS = {
 
 export const CONVERSATION_TYPES = ['direct', 'group'] as const;
 export const PARTICIPANT_ROLES = ['admin', 'member'] as const;
-export const MESSAGE_CONTENT_TYPES = ['text'] as const;
+export const MESSAGE_CONTENT_TYPES = ['text'] as const satisfies readonly MessageContentType[];

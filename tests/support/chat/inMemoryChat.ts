@@ -8,17 +8,23 @@ import type {
   ListForUserOptions,
 } from '@/modules/chat/interfaces';
 import type {
+  ChatTransaction,
   ConversationAttributes,
   ConversationListPage,
   CreateDirectData,
   CreateDirectRecord,
   CreateGroupData,
   CreateMessageData,
+  CreateMessageResult,
   FindMessagesOptions,
   MessageRecord,
   ParticipantAttributes,
   ParticipantRole,
+  ReadRange,
 } from '@/modules/chat/types';
+
+/** Os repositórios em memória não têm transação real: o lock vira execução direta. */
+const IN_MEMORY_TRANSACTION = {} as ChatTransaction;
 
 export class InMemoryChatStore {
   conversations = new Map<string, ConversationAttributes>();
@@ -83,6 +89,16 @@ export class InMemoryChatStore {
     this.conversations.set(conversation.id, conversation);
     return conversation;
   }
+}
+
+/** Cópia defensiva (inclusive dos arrays de status) — o chamador não altera o store. */
+function copy(record: MessageRecord): MessageRecord {
+  return {
+    ...record,
+    mentions: [...record.mentions],
+    deliveredTo: record.deliveredTo.map((entry) => ({ ...entry })),
+    readBy: record.readBy.map((entry) => ({ ...entry })),
+  };
 }
 
 function oldestFirst(a: ParticipantAttributes, b: ParticipantAttributes): number {
@@ -173,6 +189,13 @@ export class InMemoryConversationRepository implements IConversationRepository {
     this.store.conversations.delete(id);
     this.store.participants = this.store.participants.filter((p) => p.conversationId !== id);
   }
+
+  async withLock<T>(
+    _conversationId: string,
+    work: (transaction: ChatTransaction) => Promise<T>
+  ): Promise<T> {
+    return work(IN_MEMORY_TRANSACTION);
+  }
 }
 
 export class InMemoryParticipantRepository implements IParticipantRepository {
@@ -234,27 +257,52 @@ export class InMemoryParticipantRepository implements IParticipantRepository {
       participant.archivedAt = archivedAt;
     }
   }
+
+  async advanceLastReadAt(conversationId: string, userId: string, at: Date): Promise<void> {
+    const participant = await this.find(conversationId, userId);
+    if (participant !== null && (participant.lastReadAt === null || participant.lastReadAt < at)) {
+      participant.lastReadAt = at;
+    }
+  }
 }
 
 export class InMemoryMessageRepository implements IMessageRepository {
   constructor(private readonly store: InMemoryChatStore) {}
 
-  async create(data: CreateMessageData): Promise<MessageRecord> {
+  async create(data: CreateMessageData): Promise<CreateMessageResult> {
+    if (data.clientMessageId !== null) {
+      const existing = await this.findByClientMessageId(data.senderId, data.clientMessageId);
+      if (existing !== null) {
+        return { record: existing, created: false };
+      }
+    }
     const at = this.store.now();
     const record: MessageRecord = {
       ...data,
       id: randomBytes(12).toString('hex'),
+      deliveredTo: [],
+      readBy: [],
       deletedAt: null,
       createdAt: at,
       updatedAt: at,
     };
     this.store.messages.push(record);
-    return { ...record };
+    return { record: copy(record), created: true };
   }
 
   async findById(id: string): Promise<MessageRecord | null> {
     const record = this.store.messages.find((m) => m.id === id);
-    return record === undefined ? null : { ...record };
+    return record === undefined ? null : copy(record);
+  }
+
+  async findByClientMessageId(
+    senderId: string,
+    clientMessageId: string
+  ): Promise<MessageRecord | null> {
+    const record = this.store.messages.find(
+      (m) => m.senderId === senderId && m.clientMessageId === clientMessageId
+    );
+    return record === undefined ? null : copy(record);
   }
 
   async findByConversation(
@@ -271,7 +319,7 @@ export class InMemoryMessageRepository implements IMessageRepository {
       )
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id))
       .slice(0, limit)
-      .map((m) => ({ ...m }));
+      .map(copy);
   }
 
   async softDelete(id: string, deletedAt: Date): Promise<boolean> {
@@ -281,6 +329,43 @@ export class InMemoryMessageRepository implements IMessageRepository {
     }
     record.deletedAt = deletedAt;
     return true;
+  }
+
+  async markDelivered(messageId: string, userId: string, at: Date): Promise<boolean> {
+    const record = this.store.messages.find((m) => m.id === messageId);
+    if (record === undefined || record.deliveredTo.some((entry) => entry.userId === userId)) {
+      return false;
+    }
+    record.deliveredTo.push({ userId, at });
+    return true;
+  }
+
+  async markReadUpTo(
+    conversationId: string,
+    userId: string,
+    { from, upTo }: ReadRange,
+    at: Date
+  ): Promise<number> {
+    let count = 0;
+    for (const record of this.store.messages) {
+      const eligible =
+        record.conversationId === conversationId &&
+        record.createdAt >= from &&
+        record.createdAt <= upTo &&
+        record.senderId !== userId &&
+        record.deletedAt === null;
+      if (!eligible) {
+        continue;
+      }
+      if (!record.deliveredTo.some((entry) => entry.userId === userId)) {
+        record.deliveredTo.push({ userId, at });
+      }
+      if (!record.readBy.some((entry) => entry.userId === userId)) {
+        record.readBy.push({ userId, at });
+        count++;
+      }
+    }
+    return count;
   }
 
   async deleteByConversation(conversationId: string): Promise<number> {

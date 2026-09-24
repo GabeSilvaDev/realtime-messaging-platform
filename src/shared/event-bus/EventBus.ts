@@ -78,6 +78,10 @@ export class EventBus {
       );
 
       for (const subscriber of sortedSubscribers) {
+        if (subscriber.options.async === true) {
+          this.runDetached(eventName, subscriber as Subscriber<K>, event);
+          continue;
+        }
         try {
           await Promise.resolve((subscriber.callback as EventCallback<K>)(event));
           this.stats.totalProcessed++;
@@ -102,6 +106,33 @@ export class EventBus {
     }
 
     return eventId;
+  }
+
+  /**
+   * Executa um subscriber `{ async: true }` fora do caminho de quem publica (setImmediate):
+   * `publish` não o aguarda e uma falha dele só conta em `totalErrors` (nunca propaga).
+   */
+  private runDetached<K extends keyof EventMap>(
+    eventName: K,
+    subscriber: Subscriber<K>,
+    event: BaseEvent<EventPayload<K>>
+  ): void {
+    if (subscriber.options.once === true) {
+      this.unsubscribe(eventName as string, subscriber.id);
+    }
+
+    setImmediate(() => {
+      void Promise.resolve()
+        .then(() => subscriber.callback(event))
+        .then(
+          () => {
+            this.stats.totalProcessed++;
+          },
+          () => {
+            this.stats.totalErrors++;
+          }
+        );
+    });
   }
 
   public subscribe<K extends keyof EventMap>(

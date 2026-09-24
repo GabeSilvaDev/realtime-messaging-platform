@@ -1,4 +1,4 @@
-import type { MessageDTO } from '@/modules/chat/types';
+import type { MessageDTO } from '../types/chat-message.types';
 import {
   SystemEvents,
   AuthEvents,
@@ -35,6 +35,11 @@ export interface EventMap {
   [AuthEvents.REGISTER]: { userId: string; email: string };
   [AuthEvents.PASSWORD_RESET_REQUESTED]: { userId: string; email: string };
   [AuthEvents.PASSWORD_RESET_COMPLETED]: { userId: string };
+  /**
+   * Sessões do usuário revogadas (troca/reset de senha, revogação de sessões): o realtime derruba
+   * todos os sockets dele; o cliente precisa se autenticar de novo.
+   */
+  [AuthEvents.SESSIONS_REVOKED]: { userId: string };
 
   [UserEvents.CREATED]: { userId: string; email: string };
   [UserEvents.UPDATED]: { userId: string; fields: string[] };
@@ -60,15 +65,20 @@ export interface EventMap {
     conversationId: string;
     deletedBy: string;
   };
+  /** `userId` confirmou a entrega de `messageId` (uma vez por destinatário; `senderId` é o autor). */
   [ChatEvents.MESSAGE_DELIVERED]: {
     messageId: string;
     conversationId: string;
     userId: string;
+    senderId: string;
+    at: Date;
   };
+  /** Leitura em lote: tudo de outros autores até `upToMessageId` (inclusive) foi lido por `userId`. */
   [ChatEvents.MESSAGE_READ]: {
-    messageId: string;
     conversationId: string;
     userId: string;
+    upToMessageId: string;
+    at: Date;
   };
   [ChatEvents.TYPING_STARTED]: { conversationId: string; userId: string };
   [ChatEvents.TYPING_STOPPED]: { conversationId: string; userId: string };
@@ -96,9 +106,10 @@ export interface EventMap {
     name?: string;
   };
   /**
-   * Publicado quando o último membro sai/é removido e a conversa é apagada (nesse caso
+   * Publicado quando a saída/remoção do último membro apaga a conversa (nesse caso
    * `member_left`/`member_removed` NÃO é publicado). `participantIds` traz quem participava
-   * imediatamente antes da remoção (sempre `[actorId]`, já que só há esse caminho para zerar).
+   * imediatamente antes da remoção: `[actorId]` quando o último membro sai (`leave`) e
+   * `[memberId]` quando um admin remove o último membro restante (`removeMember`).
    */
   [ChatEvents.CONVERSATION_DELETED]: {
     conversationId: string;
@@ -136,6 +147,12 @@ export type WildcardCallback = (eventName: string, event: BaseEvent) => Promise<
 export interface SubscriptionOptions {
   once?: boolean;
   priority?: number;
+  /**
+   * Roda o callback fora do caminho de quem publica (agendado com setImmediate): `publish`
+   * não o aguarda e erros só contam em `totalErrors`. Para listeners com I/O pesado.
+   * Com `once`, a desinscrição acontece no despacho (no `publish`), antes de o callback rodar.
+   */
+  async?: boolean;
 }
 
 export interface PublishOptions {

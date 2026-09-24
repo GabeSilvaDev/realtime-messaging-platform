@@ -7,7 +7,7 @@ export {
   getAuthRateLimiter,
   getLoginRateLimiter,
 } from './rateLimiter';
-export { corsMiddleware, createCorsMiddleware } from './cors';
+export { corsMiddleware, createCorsMiddleware, buildCorsOptions } from './cors';
 export { helmetMiddleware, createHelmetMiddleware } from './helmet';
 export { notFoundHandler } from './notFound';
 export { requestIdMiddleware, createRequestIdMiddleware } from './requestId';

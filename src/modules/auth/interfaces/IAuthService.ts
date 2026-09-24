@@ -20,5 +20,6 @@ export interface IAuthService {
   getActiveSessions(
     userId: string
   ): Promise<{ id: string; userAgent: string | null; ipAddress: string | null; createdAt: Date }[]>;
-  validateAccessToken(token: string): { valid: boolean; userId?: string };
+  /** `exp` (segundos desde epoch) do token válido, para quem precisa agir na expiração. */
+  validateAccessToken(token: string): { valid: boolean; userId?: string; exp?: number };
 }

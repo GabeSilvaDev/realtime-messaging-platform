@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Real-Time Messaging — demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Real-Time Messaging — demo</h1>
+      <span id="connection" class="badge">desconectado</span>
+      <span id="me"></span>
+      <button id="logout" type="button" hidden>Sair</button>
+    </header>
+
+    <section id="login-view">
+      <form id="login-form">
+        <h2>Entrar</h2>
+        <label>E-mail <input name="email" type="email" required autocomplete="username" /></label>
+        <label>
+          Senha <input name="password" type="password" required autocomplete="current-password" />
+        </label>
+        <button type="submit">Entrar</button>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <main id="chat-view" hidden>
+      <aside>
+        <form id="search-form">
+          <input name="query" placeholder="Buscar usuário para conversa 1:1" minlength="2" required />
+          <button type="submit">Buscar</button>
+        </form>
+        <ul id="search-results"></ul>
+        <h2>Conversas</h2>
+        <ul id="conversations"></ul>
+      </aside>
+
+      <section id="conversation" hidden>
+        <h2 id="conversation-title"></h2>
+        <button id="load-more" type="button" hidden>Carregar mais</button>
+        <ol id="messages"></ol>
+        <p id="typing" class="typing"></p>
+        <form id="message-form">
+          <input name="text" placeholder="Mensagem" autocomplete="off" required maxlength="10000" />
+          <button type="submit">Enviar</button>
+        </form>
+      </section>
+    </main>
+
+    <!-- Cliente servido pelo próprio servidor Socket.IO (compatível com CSP script-src 'self'). -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

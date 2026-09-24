@@ -40,6 +40,8 @@ describe('EventBus — eventos de chat tipados', () => {
         content: { type: 'text', text: 'olá' },
         replyTo: null,
         mentions: [],
+        clientMessageId: null,
+        status: { sentAt: createdAt, deliveredTo: [], readBy: [] },
         deletedAt: null,
         createdAt,
         updatedAt: createdAt,
@@ -51,6 +53,41 @@ describe('EventBus — eventos de chat tipados', () => {
     expect(received).toHaveLength(1);
     expect(received[0]!.name).toBe('chat:message-sent');
     expect(received[0]!.payload).toEqual(payload);
+  });
+
+  it('deve entregar MESSAGE_DELIVERED com senderId e at', async () => {
+    const handler = jest.fn();
+    bus.subscribe(ChatEvents.MESSAGE_DELIVERED, handler);
+    const payload: EventPayload<ChatEvents.MESSAGE_DELIVERED> = {
+      messageId: '65f000000000000000000001',
+      conversationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      userId: '22222222-2222-4222-8222-222222222222',
+      senderId: '11111111-1111-4111-8111-111111111111',
+      at: new Date('2026-09-25T10:00:00.000Z'),
+    };
+
+    await bus.publish(ChatEvents.MESSAGE_DELIVERED, payload);
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'chat:message-delivered', payload })
+    );
+  });
+
+  it('deve entregar MESSAGE_READ com upToMessageId e at', async () => {
+    const handler = jest.fn();
+    bus.subscribe(ChatEvents.MESSAGE_READ, handler);
+    const payload: EventPayload<ChatEvents.MESSAGE_READ> = {
+      conversationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      userId: '22222222-2222-4222-8222-222222222222',
+      upToMessageId: '65f000000000000000000001',
+      at: new Date('2026-09-25T10:00:00.000Z'),
+    };
+
+    await bus.publish(ChatEvents.MESSAGE_READ, payload);
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'chat:message-read', payload })
+    );
   });
 
   it('deve entregar MESSAGE_DELETED', async () => {

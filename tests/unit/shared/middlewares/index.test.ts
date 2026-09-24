@@ -8,6 +8,7 @@ import {
   getLoginRateLimiter,
   corsMiddleware,
   createCorsMiddleware,
+  buildCorsOptions,
   helmetMiddleware,
   createHelmetMiddleware,
   notFoundHandler,
@@ -42,6 +43,7 @@ describe('shared/middlewares index', () => {
   it('deve exportar middlewares de cors', () => {
     expect(corsMiddleware).toBeDefined();
     expect(createCorsMiddleware).toBeDefined();
+    expect(typeof buildCorsOptions).toBe('function');
   });
 
   it('deve exportar middlewares de helmet', () => {

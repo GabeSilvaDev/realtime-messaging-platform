@@ -27,6 +27,7 @@ function createService(): jest.Mocked<IConversationService> {
     isParticipant: jest.fn(),
     getParticipantIds: jest.fn(),
     getUserConversationIds: jest.fn(),
+    getTypeForParticipant: jest.fn(),
   };
 }
 

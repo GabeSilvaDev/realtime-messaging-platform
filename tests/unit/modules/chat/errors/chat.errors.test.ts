@@ -1,5 +1,6 @@
 import {
   CannotConverseWithSelfException,
+  ClientMessageIdConflictException,
   ConversationBlockedException,
   ConversationNotFoundException,
   GroupOnlyOperationException,
@@ -75,6 +76,12 @@ describe('chat errors', () => {
       ErrorCode.FORBIDDEN,
       'Apenas o autor pode apagar a mensagem',
     ],
+    [
+      new ClientMessageIdConflictException(),
+      HttpStatus.CONFLICT,
+      ErrorCode.CONFLICT,
+      'clientMessageId já usado em outra conversa',
+    ],
   ])('%p deve ter status, código e mensagem padrão', (error, status, code, message) => {
     expect(error).toBeInstanceOf(AppError);
     expect(error.statusCode).toBe(status);
@@ -92,6 +99,7 @@ describe('chat errors', () => {
     expect(new GroupOnlyOperationException('x').message).toBe('x');
     expect(new InvalidMentionsException('x').message).toBe('x');
     expect(new NotMessageAuthorException('x').message).toBe('x');
+    expect(new ClientMessageIdConflictException('x').message).toBe('x');
     expect(new GroupParticipantLimitException(10).message).toBe(
       'Um grupo pode ter no máximo 10 participantes'
     );

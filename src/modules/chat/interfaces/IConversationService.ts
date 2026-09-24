@@ -1,5 +1,6 @@
 import type {
   ConversationDTO,
+  ConversationType,
   CreateDirectResult,
   CreateGroupDTO,
   ListConversationsOptions,
@@ -20,4 +21,6 @@ export interface IConversationService {
   isParticipant(conversationId: string, userId: string): Promise<boolean>;
   getParticipantIds(conversationId: string): Promise<string[]>;
   getUserConversationIds(userId: string): Promise<string[]>;
+  /** Tipo da conversa para quem participa; 404 (`ConversationNotFoundException`) para os demais. */
+  getTypeForParticipant(userId: string, conversationId: string): Promise<ConversationType>;
 }

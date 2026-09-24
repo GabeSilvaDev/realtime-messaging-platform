@@ -22,6 +22,7 @@ const CONVERSATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OTHER_CONVERSATION_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const USER_B = '22222222-2222-4222-8222-222222222222';
+const TX = { id: 'tx' };
 const OLDEST_FIRST = [
   ['joinedAt', 'ASC'],
   ['id', 'ASC'],
@@ -174,6 +175,69 @@ describe('ParticipantRepository', () => {
         2,
         { archivedAt: null },
         { where: { conversationId: CONVERSATION_ID, userId: USER_A } }
+      );
+    });
+  });
+
+  describe('advanceLastReadAt', () => {
+    it('avança last_read_at só quando nulo ou anterior (nunca retrocede)', async () => {
+      const at = new Date('2026-09-25T10:00:00.000Z');
+      MockParticipant.update.mockResolvedValue([1] as never);
+
+      await repository.advanceLastReadAt(CONVERSATION_ID, USER_A, at);
+
+      expect(MockParticipant.update).toHaveBeenCalledWith(
+        { lastReadAt: at },
+        {
+          where: {
+            conversationId: CONVERSATION_ID,
+            userId: USER_A,
+            [Op.or]: [{ lastReadAt: null }, { lastReadAt: { [Op.lt]: at } }],
+          },
+        }
+      );
+    });
+  });
+
+  describe('dentro de transação (lock da conversa)', () => {
+    it('find e listByConversation repassam a transação', async () => {
+      MockParticipant.findOne.mockResolvedValue(null);
+      MockParticipant.findAll.mockResolvedValue([] as never);
+
+      await repository.find(CONVERSATION_ID, USER_A, TX as never);
+      await repository.listByConversation(CONVERSATION_ID, TX as never);
+
+      expect(MockParticipant.findOne).toHaveBeenCalledWith({
+        where: { conversationId: CONVERSATION_ID, userId: USER_A },
+        transaction: TX,
+      });
+      expect(MockParticipant.findAll).toHaveBeenCalledWith({
+        where: { conversationId: CONVERSATION_ID },
+        order: OLDEST_FIRST,
+        transaction: TX,
+      });
+    });
+
+    it('addMembers, remove e setRole repassam a transação', async () => {
+      MockParticipant.bulkCreate.mockResolvedValue([] as never);
+      MockParticipant.destroy.mockResolvedValue(1);
+      MockParticipant.update.mockResolvedValue([1] as never);
+
+      await repository.addMembers(CONVERSATION_ID, [USER_B], TX as never);
+      await repository.remove(CONVERSATION_ID, USER_A, TX as never);
+      await repository.setRole(CONVERSATION_ID, USER_B, 'admin', TX as never);
+
+      expect(MockParticipant.bulkCreate).toHaveBeenCalledWith(
+        [{ conversationId: CONVERSATION_ID, userId: USER_B, role: 'member' }],
+        { ignoreDuplicates: true, transaction: TX }
+      );
+      expect(MockParticipant.destroy).toHaveBeenCalledWith({
+        where: { conversationId: CONVERSATION_ID, userId: USER_A },
+        transaction: TX,
+      });
+      expect(MockParticipant.update).toHaveBeenCalledWith(
+        { role: 'admin' },
+        { where: { conversationId: CONVERSATION_ID, userId: USER_B }, transaction: TX }
       );
     });
   });

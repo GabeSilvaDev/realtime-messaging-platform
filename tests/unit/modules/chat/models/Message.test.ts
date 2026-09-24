@@ -17,6 +17,52 @@ describe('Message model (Mongoose)', () => {
     ]);
   });
 
+  it('deve declarar o índice único parcial de idempotência (senderId + clientMessageId)', () => {
+    expect(MessageModel.schema.indexes()).toContainEqual([
+      { senderId: 1, clientMessageId: 1 },
+      expect.objectContaining({
+        unique: true,
+        partialFilterExpression: { clientMessageId: { $type: 'string' } },
+      }),
+    ]);
+  });
+
+  it('deve aplicar defaults de status e idempotência (clientMessageId, deliveredTo, readBy)', () => {
+    const message = new MessageModel({
+      conversationId: CONVERSATION_ID,
+      senderId: SENDER_ID,
+      content: { type: 'text', text: 'olá' },
+    });
+
+    expect(message.clientMessageId).toBeNull();
+    expect(message.deliveredTo).toEqual([]);
+    expect(message.readBy).toEqual([]);
+  });
+
+  it('deve aceitar entradas de status { userId, at } e exigir ambos os campos', () => {
+    const at = new Date('2026-09-25T10:00:00.000Z');
+    const valid = new MessageModel({
+      conversationId: CONVERSATION_ID,
+      senderId: SENDER_ID,
+      content: { type: 'text', text: 'olá' },
+      clientMessageId: '33333333-3333-4333-8333-333333333333',
+      deliveredTo: [{ userId: '22222222-2222-4222-8222-222222222222', at }],
+      readBy: [{ userId: '22222222-2222-4222-8222-222222222222', at }],
+    });
+    const invalid = new MessageModel({
+      conversationId: CONVERSATION_ID,
+      senderId: SENDER_ID,
+      content: { type: 'text', text: 'olá' },
+      readBy: [{}],
+    }).validateSync();
+
+    expect(valid.validateSync()).toBeUndefined();
+    expect(valid.deliveredTo[0]?.userId).toBe('22222222-2222-4222-8222-222222222222');
+    expect(valid.readBy[0]?.at).toEqual(at);
+    expect(invalid?.errors['readBy.0.userId']).toBeDefined();
+    expect(invalid?.errors['readBy.0.at']).toBeDefined();
+  });
+
   it('deve aplicar defaults (replyTo, mentions, metadata, deletedAt)', () => {
     const message = new MessageModel({
       conversationId: CONVERSATION_ID,

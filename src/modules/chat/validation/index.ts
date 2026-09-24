@@ -9,6 +9,7 @@ export {
   listConversationsQuerySchema,
   listMessagesQuerySchema,
   sendMessageSchema,
+  markReadSchema,
 } from './chat.schemas';
 
 export type {
@@ -19,4 +20,5 @@ export type {
   ListConversationsQuery,
   ListMessagesQuery,
   SendMessageInput,
+  MarkReadInput,
 } from './chat.schemas';

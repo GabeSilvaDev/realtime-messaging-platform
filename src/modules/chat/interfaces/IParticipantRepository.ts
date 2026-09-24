@@ -1,14 +1,33 @@
-import type { ParticipantAttributes, ParticipantRole } from '../types';
+import type { ChatTransaction, ParticipantAttributes, ParticipantRole } from '../types';
 
+/** `transaction` (opcional) vem de `IConversationRepository.withLock`. */
 export interface IParticipantRepository {
-  find(conversationId: string, userId: string): Promise<ParticipantAttributes | null>;
+  find(
+    conversationId: string,
+    userId: string,
+    transaction?: ChatTransaction
+  ): Promise<ParticipantAttributes | null>;
   /** Participantes da conversa, do mais antigo (`joined_at`) para o mais novo. */
-  listByConversation(conversationId: string): Promise<ParticipantAttributes[]>;
+  listByConversation(
+    conversationId: string,
+    transaction?: ChatTransaction
+  ): Promise<ParticipantAttributes[]>;
   listByConversations(conversationIds: string[]): Promise<ParticipantAttributes[]>;
   listConversationIdsByUser(userId: string): Promise<string[]>;
   /** Adiciona como `member`, ignorando quem já participa. */
-  addMembers(conversationId: string, userIds: string[]): Promise<void>;
-  remove(conversationId: string, userId: string): Promise<void>;
-  setRole(conversationId: string, userId: string, role: ParticipantRole): Promise<void>;
+  addMembers(
+    conversationId: string,
+    userIds: string[],
+    transaction?: ChatTransaction
+  ): Promise<void>;
+  remove(conversationId: string, userId: string, transaction?: ChatTransaction): Promise<void>;
+  setRole(
+    conversationId: string,
+    userId: string,
+    role: ParticipantRole,
+    transaction?: ChatTransaction
+  ): Promise<void>;
   setArchivedAt(conversationId: string, userId: string, archivedAt: Date | null): Promise<void>;
+  /** `last_read_at = max(atual, at)` — nunca retrocede. */
+  advanceLastReadAt(conversationId: string, userId: string, at: Date): Promise<void>;
 }

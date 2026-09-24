@@ -10,6 +10,13 @@ export {
 } from './event.types';
 export { LogLevel, LogCategory } from './logger.types';
 export type {
+  MessageContentType,
+  MessageContent,
+  MessageDTO,
+  MessageStatusDTO,
+  MessageStatusEntry,
+} from './chat-message.types';
+export type {
   ValidationTarget,
   ValidationSchemas,
   ValidationOptions,
