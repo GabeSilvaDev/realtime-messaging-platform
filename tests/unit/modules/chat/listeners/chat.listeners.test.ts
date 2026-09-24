@@ -110,6 +110,36 @@ describe('registerChatListeners', () => {
     expect(messages.deleteByConversation).toHaveBeenCalledTimes(1);
   });
 
+  it('falha ao registrar a interação: loga (não fica só em totalErrors) e não propaga', async () => {
+    const dbError = new Error('contacts down');
+    contacts.recordInteraction.mockRejectedValue(dbError);
+    registerChatListeners(bus, contacts, messages);
+
+    await bus.publish(ChatEvents.MESSAGE_SENT, messageSent());
+    await flushDetached();
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Falha ao registrar a interação entre os contatos da conversa direct',
+      dbError,
+      { conversationId: CONVERSATION_ID, senderId: USER_A, otherId: USER_B }
+    );
+    expect(bus.getStats().totalErrors).toBe(0);
+  });
+
+  it('falha não-Error ao registrar a interação: envolve antes de logar', async () => {
+    contacts.recordInteraction.mockRejectedValue('falhou');
+    registerChatListeners(bus, contacts, messages);
+
+    await bus.publish(ChatEvents.MESSAGE_SENT, messageSent());
+    await flushDetached();
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ message: 'falhou' }),
+      expect.any(Object)
+    );
+  });
+
   it('deve ignorar mensagens de grupo', async () => {
     registerChatListeners(bus, contacts, messages);
 

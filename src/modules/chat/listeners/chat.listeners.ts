@@ -12,7 +12,8 @@ const DETACHED = { async: true } as const;
  * Registra os subscribers do módulo de chat no EventBus. Chamado no bootstrap (após as
  * conexões); retorna uma função que cancela todas as inscrições.
  *
- * - MESSAGE_SENT em conversa direct → atualiza `last_interaction_at` dos contatos (RF002.2).
+ * - MESSAGE_SENT em conversa direct → atualiza `last_interaction_at` dos contatos (RF002.2;
+ *   best-effort: uma falha é logada, nunca propagada — a mensagem já foi entregue).
  * - CONVERSATION_DELETED → apaga as mensagens órfãs da conversa no MongoDB (best-effort: uma
  *   falha aqui é logada, nunca propagada — a conversa já foi removida do Postgres).
  *
@@ -35,7 +36,15 @@ export function registerChatListeners(
         if (otherId === undefined) {
           return;
         }
-        await contacts.recordInteraction(payload.senderId, otherId);
+        try {
+          await contacts.recordInteraction(payload.senderId, otherId);
+        } catch (error) {
+          logger.error(
+            'Falha ao registrar a interação entre os contatos da conversa direct',
+            error instanceof Error ? error : new Error(String(error)),
+            { conversationId: payload.conversationId, senderId: payload.senderId, otherId }
+          );
+        }
       },
       DETACHED
     ),
