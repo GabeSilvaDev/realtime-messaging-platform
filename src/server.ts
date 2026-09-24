@@ -2,6 +2,7 @@ import { createServer } from 'http';
 import app from './app';
 import { bootstrap, shutdown } from './bootstrap';
 import { createRealtimeServer } from './modules/realtime';
+import { createStopHandler } from './serverLifecycle';
 import { logger } from './shared/logger';
 
 const PORT = process.env.PORT ?? 3000;
@@ -15,19 +16,21 @@ async function startServer(): Promise<void> {
     const realtime = createRealtimeServer(httpServer);
     httpServer.listen(PORT);
 
-    const stop = (signal: NodeJS.Signals): void => {
-      logger.info(`${signal} recebido: encerrando o servidor`);
-      realtime
-        .close()
-        .then(shutdown)
-        .then(
-          () => process.exit(0),
-          () => process.exit(1)
-        );
-    };
+    const stop = createStopHandler({
+      realtime,
+      shutdown,
+      exit: (code: number): void => {
+        process.exit(code);
+      },
+      logger,
+    });
     process.once('SIGTERM', stop);
     process.once('SIGINT', stop);
-  } catch {
+  } catch (error) {
+    logger.error(
+      'Falha ao iniciar o servidor',
+      error instanceof Error ? error : new Error(String(error))
+    );
     process.exit(1);
   }
 }
