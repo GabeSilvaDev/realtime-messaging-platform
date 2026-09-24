@@ -104,7 +104,7 @@ jest.mock('@/modules/user/controllers', () => ({
 }));
 
 import request from 'supertest';
-import app from '@/app';
+import app, { isDemoEnabled } from '@/app';
 import { authController } from '@/modules/auth/controllers';
 
 describe('app', () => {
@@ -330,6 +330,63 @@ describe('app', () => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const freshApp = require('@/app').default;
       expect(freshApp.get('trust proxy')).toBe('loopback');
+    });
+  });
+
+  describe('cliente demo (/demo) condicionado ao ambiente', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalDemoEnabled = process.env.DEMO_ENABLED;
+
+    function restore(name: string, value: string | undefined): void {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+
+    afterEach(() => {
+      restore('NODE_ENV', originalNodeEnv);
+      restore('DEMO_ENABLED', originalDemoEnabled);
+      jest.resetModules();
+    });
+
+    function freshApp(nodeEnv: string, demoEnabled: string): typeof app {
+      jest.resetModules();
+      process.env.NODE_ENV = nodeEnv;
+      process.env.DEMO_ENABLED = demoEnabled;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      return (require('@/app') as { default: typeof app }).default;
+    }
+
+    it('produção sem DEMO_ENABLED=true: /demo não é servido (404)', async () => {
+      const response = await request(freshApp('production', 'false')).get('/demo/');
+
+      expect(response.status).toBe(404);
+    });
+
+    it('produção com DEMO_ENABLED=true: /demo é servido', async () => {
+      const response = await request(freshApp('production', 'true')).get('/demo/');
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toMatch(/text\/html/);
+    });
+
+    it('fora de produção: servido mesmo sem DEMO_ENABLED', async () => {
+      const response = await request(freshApp('development', 'false')).get('/demo/');
+
+      expect(response.status).toBe(200);
+    });
+
+    it.each([
+      [{ NODE_ENV: 'production' }, false],
+      [{ NODE_ENV: 'production', DEMO_ENABLED: 'true' }, true],
+      [{ NODE_ENV: 'production', DEMO_ENABLED: '1' }, false],
+      [{ NODE_ENV: 'development' }, true],
+      [{ NODE_ENV: 'test' }, true],
+      [{}, true],
+    ])('isDemoEnabled(%j) → %s', (env, expected) => {
+      expect(isDemoEnabled(env)).toBe(expected);
     });
   });
 });

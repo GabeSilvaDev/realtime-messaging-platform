@@ -161,7 +161,7 @@ Duas notas de design importantes: um reenvio de mensagem já gravada por um reme
 
 **Nota de segurança — ainda sem rate limit por socket.** Os rate limits HTTP (abaixo) cobrem só `/api`; os eventos do Socket.IO (`message:send`, `typing:*`, confirmações) não têm limite por socket nem por usuário, então um cliente autenticado consegue inundá-los. Limites por socket/usuário ficaram para o subprojeto 7 (hardening) — veja o [Roadmap](#roadmap). Até lá, se a API for exposta publicamente, rode atrás de um proxy/WAF que limite a taxa de mensagens WebSocket.
 
-**Cliente demo** — `http://localhost:3000/demo/` é uma página estática única (JS puro, sem build) para logar, listar e abrir conversas, iniciar um 1:1 buscando usuários e ver ao vivo as mensagens, ✓ enviada / ✓✓ entregue / ✓✓ (azul) lida e "digitando…". Guarda o access token no `localStorage`; é uma demo, não um cliente de produção.
+**Cliente demo** — `http://localhost:3000/demo/` é uma página estática única (JS puro, sem build) para logar, listar e abrir conversas, iniciar um 1:1 buscando usuários e ver ao vivo as mensagens, ✓ enviada / ✓✓ entregue / ✓✓ (azul) lida e "digitando…". Guarda o access token no `localStorage`; é uma demo, não um cliente de produção. Só é servida fora de produção — com `NODE_ENV=production`, `/demo` existe apenas se `DEMO_ENABLED=true`.
 
 ### Rate limit
 
@@ -304,6 +304,7 @@ O `.env.example` lista todas as variáveis. As que importam:
 | `PORT`, `NODE_ENV` | Porta HTTP (3000) e ambiente |
 | `TRUST_PROXY` | `app.set('trust proxy', …)`; sem definir mantém o padrão do Express (`false`) — veja Rate limit, acima; prefira número de hops ou IPs dos proxies a `true` (spoof de IP) |
 | `ALLOWED_ORIGINS` | Origens de CORS separadas por vírgula em produção (HTTP e Socket.IO); fora de produção qualquer origem é aceita |
+| `DEMO_ENABLED` | `true` serve o cliente demo em `/demo` em produção (fora de produção ele é sempre servido) |
 | `REALTIME_REDIS_ADAPTER` | `false` mantém o Socket.IO no adapter em memória (uma instância); senão o Redis adapter é usado fora de `NODE_ENV=test` |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | PostgreSQL (host `postgres` dentro do Compose) |
 | `REDIS_PASSWORD` | Auth do Redis |

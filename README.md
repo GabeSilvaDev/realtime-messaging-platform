@@ -161,7 +161,7 @@ Two design notes worth knowing: a resend of an already-stored message by a sende
 
 **Security note — no per-socket rate limit yet.** The HTTP rate limits (below) cover `/api` only; Socket.IO events (`message:send`, `typing:*`, receipts) aren't rate-limited per socket or per user, so an authenticated client can flood them. Per-socket/per-user limits are deferred to subproject 7 (hardening) — see the [Roadmap](#roadmap). Until then, run behind a proxy/WAF that caps WebSocket message rates if the API is exposed publicly.
 
-**Demo client** — `http://localhost:3000/demo/` is a single static page (plain JS, no build) to log in, list and open conversations, start a 1:1 chat by searching users, and watch messages, ✓ sent / ✓✓ delivered / ✓✓ (blue) read and "typing…" live. It keeps the access token in `localStorage`; it's a demo, not a production client.
+**Demo client** — `http://localhost:3000/demo/` is a single static page (plain JS, no build) to log in, list and open conversations, start a 1:1 chat by searching users, and watch messages, ✓ sent / ✓✓ delivered / ✓✓ (blue) read and "typing…" live. It keeps the access token in `localStorage`; it's a demo, not a production client. It's served outside production only — with `NODE_ENV=production`, `/demo` exists only if `DEMO_ENABLED=true`.
 
 ### Rate limiting
 
@@ -304,6 +304,7 @@ tests/
 | `PORT`, `NODE_ENV` | HTTP port (3000) and environment |
 | `TRUST_PROXY` | `app.set('trust proxy', …)`; unset keeps Express's default (`false`) — see [Rate limiting](#rate-limiting); prefer a hop count or proxy IPs over `true` (IP spoofing) |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins in production (HTTP and Socket.IO); any origin is allowed outside production |
+| `DEMO_ENABLED` | `true` serves the demo client at `/demo` in production (it's always served outside production) |
 | `REALTIME_REDIS_ADAPTER` | `false` keeps Socket.IO on the in-memory adapter (single instance); otherwise the Redis adapter is used outside `NODE_ENV=test` |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | PostgreSQL (host `postgres` inside Compose) |
 | `REDIS_PASSWORD` | Redis auth |
