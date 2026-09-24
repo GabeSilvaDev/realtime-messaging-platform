@@ -1,0 +1,14 @@
+export const CHAT_CONSTANTS = {
+  MAX_GROUP_PARTICIPANTS: 256,
+  MAX_MESSAGE_LENGTH: 10_000,
+  MESSAGE_PAGE_SIZE: 50,
+  MIN_CONVERSATION_NAME_LENGTH: 1,
+  MAX_CONVERSATION_NAME_LENGTH: 100,
+  DEFAULT_CONVERSATION_LIMIT: 20,
+  MAX_CONVERSATION_LIMIT: 100,
+  MAX_DEVICE_LENGTH: 255,
+} as const;
+
+export const CONVERSATION_TYPES = ['direct', 'group'] as const;
+export const PARTICIPANT_ROLES = ['admin', 'member'] as const;
+export const MESSAGE_CONTENT_TYPES = ['text'] as const;
