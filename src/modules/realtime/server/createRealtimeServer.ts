@@ -23,7 +23,7 @@ import {
   reconcileConversationRooms,
 } from '../middlewares';
 import { TypingService } from '../services';
-import type { RealtimeServer } from '../types';
+import type { ConnectionHook, DisconnectHook, RealtimeServer, RealtimeSocket } from '../types';
 
 export interface RealtimeServerOptions {
   auth?: Pick<IAuthService, 'validateAccessToken'>;
@@ -35,6 +35,13 @@ export interface RealtimeServerOptions {
   /** Cliente base duplicado em pub/sub para o Redis adapter. */
   redisClient?: Pick<Redis, 'duplicate'>;
   env?: Record<string, string | undefined>;
+  /**
+   * Ponto de extensão (ex.: presença, subprojeto 4): rodam em paralelo a cada conexão aceita, com
+   * as rooms do handshake já aplicadas. Erros/rejeições são logados e nunca derrubam o socket.
+   */
+  onConnection?: ConnectionHook[];
+  /** Rodam a cada desconexão, com o `reason` do Socket.IO; mesmas garantias de `onConnection`. */
+  onDisconnect?: DisconnectHook[];
 }
 
 export interface RealtimeServerHandle {
@@ -57,6 +64,27 @@ function logRedisClientErrors(client: Pick<Redis, 'on'>, role: 'pub' | 'sub'): v
   });
 }
 
+/** Roda o hook isolado: exceção síncrona ou rejeição vira log, nunca derruba quem chamou. */
+function runHook(
+  run: () => void | Promise<void>,
+  message: string,
+  socket: RealtimeSocket,
+  context: Record<string, unknown> = {}
+): void {
+  const fail = (error: unknown): void => {
+    logger.error(message, error instanceof Error ? error : new Error(String(error)), {
+      userId: socket.data.userId,
+      socketId: socket.id,
+      ...context,
+    });
+  };
+  try {
+    void Promise.resolve(run()).catch(fail);
+  } catch (error) {
+    fail(error);
+  }
+}
+
 /**
  * Cria o servidor Socket.IO sobre o servidor HTTP da API: CORS igual ao HTTP, Redis adapter
  * (quando habilitado), handshake autenticado (`socketAuth`) que já entra nas rooms do usuário
@@ -74,6 +102,8 @@ export function createRealtimeServer(
     typing = new TypingService(),
     redisClient = redis,
     env = process.env,
+    onConnection = [],
+    onDisconnect = [],
   } = options;
 
   const io: RealtimeServer = new Server(httpServer, { cors: buildCorsOptions() });
@@ -101,6 +131,24 @@ export function createRealtimeServer(
     registerSessionExpiry(socket);
     registerMessageHandlers(socket, { messages });
     registerTypingHandlers(socket, { conversations, typing });
+
+    onConnection.forEach((hook) => {
+      runHook(() => hook(socket, io), 'Falha num hook de conexão do realtime', socket);
+    });
+    if (onDisconnect.length > 0) {
+      socket.on('disconnect', (reason) => {
+        onDisconnect.forEach((hook) => {
+          runHook(
+            () => hook(socket, reason, io),
+            'Falha num hook de desconexão do realtime',
+            socket,
+            {
+              reason,
+            }
+          );
+        });
+      });
+    }
   });
 
   const unregisterListeners = registerRealtimeListeners(io, bus);

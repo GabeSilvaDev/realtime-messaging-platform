@@ -13,7 +13,9 @@ import {
   createRealtimeServer,
   shouldUseRedisAdapter,
   type RealtimeServerHandle,
+  type RealtimeServerOptions,
 } from '@/modules/realtime/server/createRealtimeServer';
+import type { RealtimeServer, RealtimeSocket } from '@/modules/realtime/types';
 import { TypingService } from '@/modules/realtime/services/TypingService';
 import { EventBus } from '@/shared/event-bus/EventBus';
 import { getLogger, initLogger, LogCategory, LogLevel } from '@/shared/logger';
@@ -337,6 +339,147 @@ describe('createRealtimeServer', () => {
       await handle.close();
 
       expect(bus.subscriberCount()).toBe(0);
+    });
+  });
+
+  describe('hooks de conexão/desconexão (ponto de extensão, ex.: presença)', () => {
+    let httpServer: HttpServer;
+    let handle: RealtimeServerHandle | undefined;
+    const clients: ClientSocket[] = [];
+
+    async function start(
+      hooks: Pick<RealtimeServerOptions, 'onConnection' | 'onDisconnect'>
+    ): Promise<string> {
+      httpServer = createServer();
+      handle = createRealtimeServer(httpServer, {
+        ...fakeDeps(),
+        bus,
+        env: { NODE_ENV: 'test' },
+        ...hooks,
+      });
+      await new Promise<void>((resolve) => {
+        httpServer.listen(0, resolve);
+      });
+      return `http://localhost:${String((httpServer.address() as AddressInfo).port)}`;
+    }
+
+    async function connected(url: string): Promise<ClientSocket> {
+      const socket = connect(url, {
+        auth: { token: 'good' },
+        transports: ['websocket'],
+        reconnection: false,
+        forceNew: true,
+      });
+      clients.push(socket);
+      await new Promise<void>((resolve) => {
+        socket.on('connect', () => {
+          resolve();
+        });
+      });
+      return socket;
+    }
+
+    afterEach(async () => {
+      clients.splice(0).forEach((socket) => socket.disconnect());
+      await handle?.close();
+      handle = undefined;
+    });
+
+    it('onConnection: roda cada hook com o socket autenticado e o io', async () => {
+      const seen: [string, boolean][] = [];
+      const hook = jest.fn((socket: RealtimeSocket, io: RealtimeServer) => {
+        seen.push([socket.data.userId, io === handle?.io]);
+      });
+      const second = jest.fn(() => Promise.resolve());
+
+      await connected(await start({ onConnection: [hook, second] }));
+      await waitFor(() => second.mock.calls.length === 1);
+
+      expect(seen).toEqual([[USER_A, true]]);
+    });
+
+    it('hooks que lançam ou rejeitam são logados e não derrubam a conexão nem os outros hooks', async () => {
+      const errorSpy = jest.spyOn(getLogger(), 'error').mockImplementation(() => undefined);
+      const syncError = new Error('hook síncrono');
+      const asyncError = new Error('hook assíncrono');
+      const ok = jest.fn();
+
+      const socket = await connected(
+        await start({
+          onConnection: [
+            () => {
+              throw syncError;
+            },
+            () => Promise.reject(asyncError),
+            () => Promise.reject('texto'),
+            ok,
+          ],
+        })
+      );
+      await waitFor(() => errorSpy.mock.calls.length >= 3);
+
+      expect(ok).toHaveBeenCalledTimes(1);
+      expect(socket.connected).toBe(true);
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Falha num hook de conexão do realtime',
+        syncError,
+        expect.objectContaining({ userId: USER_A })
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Falha num hook de conexão do realtime',
+        asyncError,
+        expect.objectContaining({ userId: USER_A })
+      );
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Falha num hook de conexão do realtime',
+        expect.objectContaining({ message: 'texto' }),
+        expect.objectContaining({ userId: USER_A })
+      );
+      errorSpy.mockRestore();
+    });
+
+    it('onDisconnect: recebe o motivo (cliente saiu) e erros são logados', async () => {
+      const errorSpy = jest.spyOn(getLogger(), 'error').mockImplementation(() => undefined);
+      const reasons: string[] = [];
+      const failing = jest.fn(() => Promise.reject(new Error('presença caiu')));
+
+      const socket = await connected(
+        await start({
+          onDisconnect: [
+            (_socket, reason) => {
+              reasons.push(reason);
+            },
+            failing,
+          ],
+        })
+      );
+      socket.disconnect();
+      await waitFor(() => reasons.length === 1 && errorSpy.mock.calls.length === 1);
+
+      expect(reasons).toEqual(['client namespace disconnect']);
+      expect(errorSpy).toHaveBeenCalledWith(
+        'Falha num hook de desconexão do realtime',
+        expect.objectContaining({ message: 'presença caiu' }),
+        expect.objectContaining({ userId: USER_A, reason: 'client namespace disconnect' })
+      );
+      errorSpy.mockRestore();
+    });
+
+    it('onDisconnect no encerramento do servidor: motivo "server shutting down" (presença pode ignorar)', async () => {
+      const reasons: string[] = [];
+      await connected(
+        await start({
+          onDisconnect: [
+            (_socket, reason) => {
+              reasons.push(reason);
+            },
+          ],
+        })
+      );
+
+      await handle?.close();
+
+      expect(reasons).toEqual(['server shutting down']);
     });
   });
 });

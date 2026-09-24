@@ -18,4 +18,6 @@ export type {
   RealtimeServer,
   RealtimeSocket,
   SocketMiddleware,
+  ConnectionHook,
+  DisconnectHook,
 } from './realtime.types';

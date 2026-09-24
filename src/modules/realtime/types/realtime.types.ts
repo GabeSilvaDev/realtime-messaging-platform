@@ -1,4 +1,4 @@
-import type { ExtendedError, Server, Socket } from 'socket.io';
+import type { DisconnectReason, ExtendedError, Server, Socket } from 'socket.io';
 import type { ConversationChange, ConversationType, MessageDTO } from '@/modules/chat/types';
 
 /** Dados do socket preenchidos pelo middleware de autenticação do handshake. */
@@ -119,3 +119,16 @@ export type SocketMiddleware = (
   socket: RealtimeSocket,
   next: (error?: ExtendedError) => void
 ) => void;
+
+/** Hook rodado a cada conexão aceita (ex.: presença online). Erros são logados, nunca derrubam. */
+export type ConnectionHook = (socket: RealtimeSocket, io: RealtimeServer) => void | Promise<void>;
+
+/**
+ * Hook rodado a cada desconexão, com o motivo do Socket.IO (ex.: `server shutting down` no
+ * encerramento do processo, que a presença pode ignorar). Erros são logados, nunca derrubam.
+ */
+export type DisconnectHook = (
+  socket: RealtimeSocket,
+  reason: DisconnectReason,
+  io: RealtimeServer
+) => void | Promise<void>;
