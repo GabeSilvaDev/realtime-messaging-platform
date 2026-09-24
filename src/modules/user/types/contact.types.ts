@@ -79,3 +79,9 @@ export interface ContactStats {
   favorites: number;
   blocked: number;
 }
+
+export interface BlockResult {
+  contact: ContactAttributes;
+  /** `true` quando a linha foi criada ou passou de não bloqueada para bloqueada. */
+  changed: boolean;
+}

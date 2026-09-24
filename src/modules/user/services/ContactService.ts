@@ -161,13 +161,10 @@ export class ContactService implements IContactService {
       throw new UserNotFoundException();
     }
 
-    const alreadyBlocked = await this.contacts.isBlocked(userId, targetId);
-    if (alreadyBlocked) {
-      return;
+    const { changed } = await this.contacts.block(userId, targetId);
+    if (changed) {
+      await this.events.publish(UserEvents.BLOCKED, { userId, blockedUserId: targetId });
     }
-
-    await this.contacts.block(userId, targetId);
-    await this.events.publish(UserEvents.BLOCKED, { userId, blockedUserId: targetId });
   }
 
   async unblockUser(userId: string, targetId: string): Promise<void> {

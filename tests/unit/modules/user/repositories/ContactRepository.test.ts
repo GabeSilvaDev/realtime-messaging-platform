@@ -13,6 +13,7 @@ jest.mock('@/modules/user/models/Contact', () => {
       findAndCountAll: jest.fn(),
       findOrCreate: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
       destroy: jest.fn(),
       count: jest.fn(),
     },
@@ -505,17 +506,11 @@ describe('ContactRepository', () => {
   });
 
   describe('block', () => {
-    it('deve criar novo contato bloqueado quando não existe', async () => {
+    it('deve criar a linha bloqueada e retornar changed=true quando não existia', async () => {
       const blockedContact = {
         ...mockContactInstance,
         isBlocked: true,
-        blockedAt: new Date(),
-        toJSON: jest.fn().mockReturnValue({
-          ...mockContactInstance,
-          isBlocked: true,
-          blockedAt: new Date(),
-        }),
-        update: jest.fn(),
+        toJSON: jest.fn().mockReturnValue({ ...mockContactInstance, isBlocked: true }),
       };
       MockContact.findOrCreate.mockResolvedValue([blockedContact as any, true]);
 
@@ -531,84 +526,82 @@ describe('ContactRepository', () => {
           createdByBlock: true,
         },
       });
-      expect(result.isBlocked).toBe(true);
+      expect(MockContact.update).not.toHaveBeenCalled();
+      expect(result.changed).toBe(true);
+      expect(result.contact.isBlocked).toBe(true);
     });
 
-    it('deve atualizar contato existente para bloqueado', async () => {
+    it('deve bloquear contato existente via UPDATE condicional e retornar changed=true', async () => {
       const existingContact = {
         ...mockContactInstance,
         isBlocked: false,
-        toJSON: jest.fn().mockReturnValue(mockContactInstance),
-        update: jest.fn(),
+        toJSON: jest.fn().mockReturnValue({ ...mockContactInstance, isBlocked: true }),
+        reload: jest.fn().mockResolvedValue(undefined),
       };
       MockContact.findOrCreate.mockResolvedValue([existingContact as any, false]);
+      MockContact.update.mockResolvedValue([1] as any);
 
-      await repository.block('user-123', 'contact-456');
+      const result = await repository.block('user-123', 'contact-456');
 
-      expect(existingContact.update).toHaveBeenCalledWith({
-        isBlocked: true,
-        blockedAt: expect.any(Date),
-      });
+      expect(MockContact.update).toHaveBeenCalledWith(
+        { isBlocked: true, blockedAt: expect.any(Date) },
+        { where: { id: 'contact-id-1', isBlocked: false } }
+      );
+      expect(existingContact.reload).toHaveBeenCalledTimes(1);
+      expect(result.changed).toBe(true);
     });
 
-    it('não deve atualizar se já está bloqueado', async () => {
-      const alreadyBlockedContact = {
+    it('deve retornar changed=false quando outra requisição já bloqueou (0 linhas afetadas)', async () => {
+      const alreadyBlocked = {
         ...mockContactInstance,
         isBlocked: true,
         toJSON: jest.fn().mockReturnValue({ ...mockContactInstance, isBlocked: true }),
-        update: jest.fn(),
+        reload: jest.fn(),
       };
-      MockContact.findOrCreate.mockResolvedValue([alreadyBlockedContact as any, false]);
+      MockContact.findOrCreate.mockResolvedValue([alreadyBlocked as any, false]);
+      MockContact.update.mockResolvedValue([0] as any);
 
-      await repository.block('user-123', 'contact-456');
+      const result = await repository.block('user-123', 'contact-456');
 
-      expect(alreadyBlockedContact.update).not.toHaveBeenCalled();
+      expect(alreadyBlocked.reload).not.toHaveBeenCalled();
+      expect(result.changed).toBe(false);
     });
   });
 
   describe('unblock', () => {
-    it('deve desbloquear (limpar isBlocked/blockedAt) quando o contato não foi criado pelo bloqueio', async () => {
-      const blockedContact = {
-        ...mockContactInstance,
-        isBlocked: true,
-        createdByBlock: false,
-        update: jest.fn(),
-        destroy: jest.fn(),
-      };
-      MockContact.findOne.mockResolvedValue(blockedContact as any);
+    it('deve apagar a linha criada só pelo bloqueio e retornar true', async () => {
+      MockContact.destroy.mockResolvedValue(1);
 
       const result = await repository.unblock('user-123', 'contact-456');
 
-      expect(MockContact.findOne).toHaveBeenCalledWith({
-        where: { userId: 'user-123', contactId: 'contact-456', isBlocked: true },
+      expect(MockContact.destroy).toHaveBeenCalledWith({
+        where: {
+          userId: 'user-123',
+          contactId: 'contact-456',
+          isBlocked: true,
+          createdByBlock: true,
+        },
       });
-      expect(blockedContact.update).toHaveBeenCalledWith({
-        isBlocked: false,
-        blockedAt: null,
-      });
-      expect(blockedContact.destroy).not.toHaveBeenCalled();
+      expect(MockContact.update).not.toHaveBeenCalled();
       expect(result).toBe(true);
     });
 
-    it('deve remover o registro quando ele só existe por causa do bloqueio (createdByBlock=true)', async () => {
-      const blockedContact = {
-        ...mockContactInstance,
-        isBlocked: true,
-        createdByBlock: true,
-        update: jest.fn(),
-        destroy: jest.fn(),
-      };
-      MockContact.findOne.mockResolvedValue(blockedContact as any);
+    it('deve limpar isBlocked/blockedAt de contato pré-existente via UPDATE condicional', async () => {
+      MockContact.destroy.mockResolvedValue(0);
+      MockContact.update.mockResolvedValue([1] as any);
 
       const result = await repository.unblock('user-123', 'contact-456');
 
-      expect(blockedContact.destroy).toHaveBeenCalledTimes(1);
-      expect(blockedContact.update).not.toHaveBeenCalled();
+      expect(MockContact.update).toHaveBeenCalledWith(
+        { isBlocked: false, blockedAt: null },
+        { where: { userId: 'user-123', contactId: 'contact-456', isBlocked: true } }
+      );
       expect(result).toBe(true);
     });
 
-    it('deve retornar false quando contato não está bloqueado', async () => {
-      MockContact.findOne.mockResolvedValue(null);
+    it('deve retornar false quando nenhuma linha foi alterada (não bloqueado ou concorrência)', async () => {
+      MockContact.destroy.mockResolvedValue(0);
+      MockContact.update.mockResolvedValue([0] as any);
 
       const result = await repository.unblock('user-123', 'contact-456');
 

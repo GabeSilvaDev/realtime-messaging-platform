@@ -1,4 +1,5 @@
 import {
+  BlockResult,
   ContactAttributes,
   ContactCreationAttributes,
   ContactModelAttributes,
@@ -84,6 +85,28 @@ describe('contact.types', () => {
 
       expect(attrs.createdByBlock).toBe(true);
       expect(publicAttrs.id).toBe('contact-123');
+    });
+  });
+
+  describe('BlockResult', () => {
+    it('deve carregar o contato e o indicador changed', () => {
+      const result: BlockResult = {
+        contact: {
+          id: 'contact-123',
+          userId: 'user-123',
+          contactId: 'user-456',
+          nickname: null,
+          isBlocked: true,
+          isFavorite: false,
+          blockedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        changed: false,
+      };
+
+      expect(result.changed).toBe(false);
+      expect(result.contact.isBlocked).toBe(true);
     });
   });
 

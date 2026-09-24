@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import Contact from '../models/Contact';
 import type { IContactRepository } from '../interfaces';
 import type {
+  BlockResult,
   ContactAttributes,
   ContactCreationAttributes,
   ContactListOptions,
@@ -188,48 +189,60 @@ export class ContactRepository implements IContactRepository {
     return { total, favorites, blocked };
   }
 
-  async block(userId: string, contactId: string): Promise<ContactAttributes> {
+  /**
+   * Bloqueia `contactId` para `userId`. `changed` só é `true` para quem de fato criou a linha
+   * ou a virou de não bloqueada para bloqueada (UPDATE condicional em `is_blocked = false`),
+   * o que evita eventos duplicados quando duas requisições bloqueiam ao mesmo tempo.
+   */
+  async block(userId: string, contactId: string): Promise<BlockResult> {
+    const blockedAt = new Date();
     const [contact, created] = await Contact.findOrCreate({
       where: { userId, contactId },
       defaults: {
         userId,
         contactId,
         isBlocked: true,
-        blockedAt: new Date(),
+        blockedAt,
         createdByBlock: true,
       },
     });
 
-    if (!created && !contact.isBlocked) {
-      await contact.update({
-        isBlocked: true,
-        blockedAt: new Date(),
-      });
+    if (created) {
+      return { contact: contact.toJSON(), changed: true };
     }
 
-    return contact.toJSON();
+    const [affected] = await Contact.update(
+      { isBlocked: true, blockedAt },
+      { where: { id: contact.id, isBlocked: false } }
+    );
+
+    if (affected > 0) {
+      await contact.reload();
+    }
+
+    return { contact: contact.toJSON(), changed: affected > 0 };
   }
 
+  /**
+   * Remove o bloqueio. A linha criada só pelo bloqueio é apagada; um contato pré-existente
+   * volta a não bloqueado. Retorna `true` apenas se esta chamada alterou alguma linha
+   * (contagem de linhas afetadas), o que torna o desbloqueio seguro sob concorrência.
+   */
   async unblock(userId: string, contactId: string): Promise<boolean> {
-    const contact = await Contact.findOne({
-      where: { userId, contactId, isBlocked: true },
+    const destroyed = await Contact.destroy({
+      where: { userId, contactId, isBlocked: true, createdByBlock: true },
     });
 
-    if (!contact) {
-      return false;
-    }
-
-    if (contact.createdByBlock) {
-      await contact.destroy();
+    if (destroyed > 0) {
       return true;
     }
 
-    await contact.update({
-      isBlocked: false,
-      blockedAt: null,
-    });
+    const [affected] = await Contact.update(
+      { isBlocked: false, blockedAt: null },
+      { where: { userId, contactId, isBlocked: true } }
+    );
 
-    return true;
+    return affected > 0;
   }
 }
 

@@ -453,11 +453,9 @@ describe('ContactService', () => {
   describe('blockUser', () => {
     it('deve bloquear usuário com sucesso', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
-      mockContactRepository.isBlocked.mockResolvedValue(false);
       mockContactRepository.block.mockResolvedValue({
-        ...mockContact,
-        isBlocked: true,
-        blockedAt: new Date(),
+        contact: { ...mockContact, isBlocked: true, blockedAt: new Date() },
+        changed: true,
       });
 
       await contactService.blockUser('user-123', 'contact-456');
@@ -465,13 +463,15 @@ describe('ContactService', () => {
       expect(mockContactRepository.block).toHaveBeenCalledWith('user-123', 'contact-456');
     });
 
-    it('não deve chamar block nem publicar evento quando já está bloqueado (idempotente)', async () => {
+    it('deve ser idempotente quando já está bloqueado (repositório retorna changed=false)', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
-      mockContactRepository.isBlocked.mockResolvedValue(true);
+      mockContactRepository.block.mockResolvedValue({
+        contact: { ...mockContact, isBlocked: true },
+        changed: false,
+      });
 
-      await contactService.blockUser('user-123', 'contact-456');
-
-      expect(mockContactRepository.block).not.toHaveBeenCalled();
+      await expect(contactService.blockUser('user-123', 'contact-456')).resolves.toBeUndefined();
+      expect(mockContactRepository.isBlocked).not.toHaveBeenCalled();
     });
 
     it('deve lançar CannotBlockSelfException ao bloquear a si mesmo', async () => {
