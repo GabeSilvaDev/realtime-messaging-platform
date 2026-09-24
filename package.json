@@ -26,6 +26,7 @@
     "jest-extended": "^7.0.0",
     "prettier": "^3.7.4",
     "sequelize-cli": "^6.6.3",
+    "socket.io-client": "^4.8.3",
     "supertest": "^7.1.4",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
@@ -62,6 +63,7 @@
     "@aws-sdk/client-s3": "^3.806.0",
     "@aws-sdk/s3-request-presigner": "^3.806.0",
     "@elastic/elasticsearch": "^9.2.0",
+    "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
@@ -78,6 +80,7 @@
     "rate-limit-redis": "^4.3.1",
     "sequelize": "^6.37.7",
     "sharp": "^0.34.2",
+    "socket.io": "^4.8.3",
     "uuid": "^13.0.0",
     "zod": "^4.2.1"
   }
