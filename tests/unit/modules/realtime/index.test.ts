@@ -22,6 +22,7 @@ describe('realtime module index', () => {
     expect(new realtime.TypingService()).toBeInstanceOf(realtime.TypingService);
     expect(typeof realtime.registerMessageHandlers).toBe('function');
     expect(typeof realtime.registerTypingHandlers).toBe('function');
+    expect(typeof realtime.registerSessionExpiry).toBe('function');
     expect(typeof realtime.registerRealtimeListeners).toBe('function');
     expect(typeof realtime.createRealtimeServer).toBe('function');
     expect(typeof realtime.shouldUseRedisAdapter).toBe('function');

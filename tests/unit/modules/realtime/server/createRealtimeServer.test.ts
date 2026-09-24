@@ -299,6 +299,21 @@ describe('createRealtimeServer', () => {
       expect(rooms.get(`user:${USER_A}`)?.size).toBe(1);
     });
 
+    it('derruba o socket quando o access token expira (o cliente precisa de um token novo)', async () => {
+      deps.auth.validateAccessToken.mockReturnValue({
+        valid: true,
+        userId: USER_A,
+        exp: (Date.now() + 300) / 1000,
+      });
+
+      const socket = client('good');
+      const reason = await new Promise<string>((resolve) => {
+        socket.on('disconnect', resolve);
+      });
+
+      expect(reason).toBe('io server disconnect');
+    });
+
     it('close cancela a ponte do EventBus', async () => {
       expect(bus.subscriberCount()).toBeGreaterThan(0);
 

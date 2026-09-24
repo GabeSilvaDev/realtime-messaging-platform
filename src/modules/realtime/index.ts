@@ -15,8 +15,21 @@ export {
 
 export { TypingService } from './services';
 
-export { withAck, toAckError, registerMessageHandlers, registerTypingHandlers } from './handlers';
-export type { AckContext, AckListener, MessageHandlerDeps, TypingHandlerDeps } from './handlers';
+export {
+  withAck,
+  toAckError,
+  registerMessageHandlers,
+  registerTypingHandlers,
+  registerSessionExpiry,
+  MAX_TIMER_DELAY_MS,
+} from './handlers';
+export type {
+  AckContext,
+  AckListener,
+  MessageHandlerDeps,
+  SessionExpiryOptions,
+  TypingHandlerDeps,
+} from './handlers';
 
 export { registerRealtimeListeners } from './listeners';
 

@@ -19,7 +19,7 @@ describe('realtime types', () => {
       upToMessageId: '65f000000000000000000001',
       at: new Date(),
     };
-    const data: SocketData = { userId: 'u1', ip: null, device: null };
+    const data: SocketData = { userId: 'u1', ip: null, device: null, tokenExpiresAt: null };
     const indicator: Parameters<ServerToClientEvents['typing:indicator']>[0] = {
       conversationId: 'c1',
       userId: 'u1',

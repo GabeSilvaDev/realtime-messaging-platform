@@ -11,7 +11,11 @@ import { redis } from '@/shared/database/redis';
 import { eventBus, type EventBus } from '@/shared/event-bus';
 import { logger } from '@/shared/logger';
 import { buildCorsOptions } from '@/shared/middlewares/cors';
-import { registerMessageHandlers, registerTypingHandlers } from '../handlers';
+import {
+  registerMessageHandlers,
+  registerSessionExpiry,
+  registerTypingHandlers,
+} from '../handlers';
 import { registerRealtimeListeners } from '../listeners';
 import {
   createJoinRoomsMiddleware,
@@ -94,6 +98,7 @@ export function createRealtimeServer(
     // Corrige mudanças de participação ocorridas durante o handshake (a ponte ainda não via o
     // socket); nunca rejeita — falhas são logadas e desconectam o socket.
     void reconcileConversationRooms(socket, conversations);
+    registerSessionExpiry(socket);
     registerMessageHandlers(socket, { messages });
     registerTypingHandlers(socket, { conversations, typing });
   });

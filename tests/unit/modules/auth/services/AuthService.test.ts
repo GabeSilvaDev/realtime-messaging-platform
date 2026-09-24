@@ -586,11 +586,13 @@ describe('AuthService', () => {
         userId: 'user-123',
         email: 'test@example.com',
         username: 'testuser',
+        exp: 1_900_000_000,
       } as never);
 
       const result = authService.validateAccessToken('valid-token');
 
-      expect(result).toEqual({ valid: true, userId: 'user-123' });
+      // `exp` (segundos) permite ao realtime derrubar o socket quando o token expira.
+      expect(result).toEqual({ valid: true, userId: 'user-123', exp: 1_900_000_000 });
     });
 
     it('should return valid false for invalid token', () => {

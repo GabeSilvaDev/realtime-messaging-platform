@@ -48,14 +48,19 @@ describe('socketAuth', () => {
 
   describe('createSocketAuthMiddleware', () => {
     it('token válido: preenche socket.data (userId, ip, device) e segue', () => {
-      auth.validateAccessToken.mockReturnValue({ valid: true, userId: USER_A });
+      auth.validateAccessToken.mockReturnValue({ valid: true, userId: USER_A, exp: 1_900_000_000 });
       socket.handshake.auth = { token: 'good' };
       socket.handshake.headers['user-agent'] = 'jest-agent';
 
       createSocketAuthMiddleware(auth)(socket.asSocket(), next);
 
       expect(auth.validateAccessToken).toHaveBeenCalledWith('good');
-      expect(socket.data).toEqual({ userId: USER_A, ip: '127.0.0.1', device: 'jest-agent' });
+      expect(socket.data).toEqual({
+        userId: USER_A,
+        ip: '127.0.0.1',
+        device: 'jest-agent',
+        tokenExpiresAt: 1_900_000_000_000,
+      });
       expect(next).toHaveBeenCalledWith();
     });
 
@@ -71,7 +76,7 @@ describe('socketAuth', () => {
       bare.handshake.auth = { token: 'good' };
       bare.handshake.address = '';
       createSocketAuthMiddleware(auth)(bare.asSocket(), next);
-      expect(bare.data).toEqual({ userId: USER_A, ip: null, device: null });
+      expect(bare.data).toEqual({ userId: USER_A, ip: null, device: null, tokenExpiresAt: null });
     });
 
     it('sem token: recusa com UNAUTHORIZED sem consultar o AuthService', () => {

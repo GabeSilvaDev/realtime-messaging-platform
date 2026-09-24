@@ -6,5 +6,7 @@ describe('realtime handlers index', () => {
     expect(typeof handlers.toAckError).toBe('function');
     expect(typeof handlers.registerMessageHandlers).toBe('function');
     expect(typeof handlers.registerTypingHandlers).toBe('function');
+    expect(typeof handlers.registerSessionExpiry).toBe('function');
+    expect(handlers.MAX_TIMER_DELAY_MS).toBe(2_147_483_647);
   });
 });

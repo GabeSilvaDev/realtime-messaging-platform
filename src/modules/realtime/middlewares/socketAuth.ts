@@ -24,14 +24,15 @@ export function extractHandshakeToken(handshake: RealtimeSocket['handshake']): s
 /**
  * Autentica o handshake com a mesma regra do middleware HTTP (`validateAccessToken`). Sem token
  * ou com token inválido, recusa com `connect_error` de `message: 'UNAUTHORIZED'`; aceito,
- * preenche `socket.data` com `userId`, `ip` e `device` (user-agent truncado a 255).
+ * preenche `socket.data` com `userId`, `ip`, `device` (user-agent truncado a 255) e
+ * `tokenExpiresAt` (o socket é derrubado nessa hora — ver `registerSessionExpiry`).
  */
 export function createSocketAuthMiddleware(
   auth: Pick<IAuthService, 'validateAccessToken'> = authService
 ): SocketMiddleware {
   return (socket, next) => {
     const token = extractHandshakeToken(socket.handshake);
-    const validation: { valid: boolean; userId?: string } =
+    const validation: { valid: boolean; userId?: string; exp?: number } =
       token === null ? { valid: false } : auth.validateAccessToken(token);
 
     if (!validation.valid || validation.userId === undefined || validation.userId === '') {
@@ -46,6 +47,7 @@ export function createSocketAuthMiddleware(
       ip: address === '' ? null : address,
       device:
         userAgent === undefined ? null : userAgent.slice(0, REALTIME_CONSTANTS.MAX_DEVICE_LENGTH),
+      tokenExpiresAt: validation.exp === undefined ? null : validation.exp * 1000,
     };
     next();
   };

@@ -205,10 +205,10 @@ export class AuthService implements IAuthService {
       }));
   }
 
-  validateAccessToken(token: string): { valid: boolean; userId?: string } {
+  validateAccessToken(token: string): { valid: boolean; userId?: string; exp?: number } {
     try {
       const decoded = this.tokens.verifyAccessToken(token);
-      return { valid: true, userId: decoded.userId };
+      return { valid: true, userId: decoded.userId, exp: decoded.exp };
     } catch {
       return { valid: false };
     }

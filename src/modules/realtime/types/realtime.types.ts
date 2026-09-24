@@ -6,6 +6,8 @@ export interface SocketData {
   userId: string;
   ip: string | null;
   device: string | null;
+  /** Expiração do access token do handshake (ms desde epoch); `null` se desconhecida. */
+  tokenExpiresAt: number | null;
 }
 
 export interface AckErrorDetail {
