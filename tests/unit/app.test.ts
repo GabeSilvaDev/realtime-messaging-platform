@@ -199,6 +199,20 @@ describe('app', () => {
       expect(response.body.success).toBe(false);
     });
 
+    it('serve o cliente demo estático em /demo, fora do rate limit de /api', async () => {
+      const page = await request(app).get('/demo/');
+      const script = await request(app).get('/demo/app.js');
+      const styles = await request(app).get('/demo/styles.css');
+
+      expect(page.status).toBe(200);
+      expect(page.headers['content-type']).toMatch(/text\/html/);
+      expect(page.text).toContain('<script src="/socket.io/socket.io.js"></script>');
+      expect(page.headers['x-test-global-limiter']).toBeUndefined();
+      expect(script.status).toBe(200);
+      expect(script.headers['content-type']).toMatch(/javascript/);
+      expect(styles.status).toBe(200);
+    });
+
     it('retorna 404 em formato JSON (notFoundHandler + errorHandler) para rota desconhecida', async () => {
       const response = await request(app).get('/rota-que-nao-existe');
 

@@ -1,3 +1,4 @@
+import path from 'path';
 import express, { Application } from 'express';
 import { initLogger, LogLevel, LogCategory } from './shared/logger';
 import {
@@ -15,6 +16,9 @@ import { profileRoutes, contactRoutes, blockRoutes, userRoutes } from './modules
 import { conversationRoutes } from './modules/chat/routes';
 
 const env: Environment = (process.env.NODE_ENV as Environment | undefined) ?? 'development';
+
+/** Cliente demo estático (HTML + JS puro); resolvido a partir da raiz do projeto (cwd). */
+const DEMO_DIR = path.resolve(process.cwd(), 'public', 'demo');
 
 /**
  * Interpreta a variável de ambiente TRUST_PROXY para `app.set('trust proxy', …)`.
@@ -64,6 +68,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(requestLogger);
+
+app.use('/demo', express.static(DEMO_DIR));
 
 app.use('/api', getRateLimiter());
 
