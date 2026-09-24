@@ -212,6 +212,10 @@ export class ConversationService implements IConversationService {
     conversationId: string,
     userIds: string[]
   ): Promise<ConversationDTO> {
+    // Valida usuários ANTES de adquirir o lock (evita pool de conexão travado)
+    const uniqueUserIds = [...new Set(userIds)];
+    await this.ensureUsersExist(uniqueUserIds);
+
     const { currentIds, toAdd } = await this.conversations.withLock(
       conversationId,
       async (transaction) => {
@@ -220,13 +224,11 @@ export class ConversationService implements IConversationService {
 
         const members = await this.participants.listByConversation(conversationId, transaction);
         const memberIds = members.map((p) => p.userId);
-        const newIds = [...new Set(userIds)].filter((id) => !memberIds.includes(id));
+        const newIds = uniqueUserIds.filter((id) => !memberIds.includes(id));
 
         if (memberIds.length + newIds.length > CHAT_CONSTANTS.MAX_GROUP_PARTICIPANTS) {
           throw new GroupParticipantLimitException();
         }
-
-        await this.ensureUsersExist(newIds);
 
         if (newIds.length > 0) {
           await this.participants.addMembers(conversationId, newIds, transaction);

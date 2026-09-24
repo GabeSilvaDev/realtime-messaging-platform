@@ -570,13 +570,19 @@ describe('ConversationService', () => {
   describe('addMembers', () => {
     it('deve adicionar apenas quem ainda não participa e publicar members_added', async () => {
       givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
-      users.getMultiple.mockResolvedValueOnce([user(USER_C, 'carol')]);
+      users.getMultiple.mockResolvedValueOnce([user(USER_B, 'bob'), user(USER_C, 'carol')]);
 
       await service.addMembers(USER_A, CONVERSATION_ID, [USER_B, USER_C, USER_C]);
 
+      // Valida que users.getMultiple é chamado ANTES de withLock (validação fora do lock)
+      expect(users.getMultiple).toHaveBeenCalled();
+      expect(conversations.withLock).toHaveBeenCalled();
+      expect(users.getMultiple.mock.invocationCallOrder[0] || 0).toBeLessThan(
+        (conversations.withLock as jest.Mock).mock.invocationCallOrder[0] || Infinity
+      );
+
       expect(conversations.withLock).toHaveBeenCalledWith(CONVERSATION_ID, expect.any(Function));
       expect(participants.listByConversation).toHaveBeenNthCalledWith(1, CONVERSATION_ID, TX);
-      expect(users.getMultiple).toHaveBeenNthCalledWith(1, [USER_C]);
       expect(participants.addMembers).toHaveBeenCalledWith(CONVERSATION_ID, [USER_C], TX);
       expect(events.publish).toHaveBeenCalledWith(ChatEvents.CONVERSATION_UPDATED, {
         conversationId: CONVERSATION_ID,
@@ -589,6 +595,7 @@ describe('ConversationService', () => {
 
     it('não deve inserir nem publicar quando todos já participam', async () => {
       givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
+      users.getMultiple.mockResolvedValueOnce([user(USER_B, 'bob')]);
 
       await service.addMembers(USER_A, CONVERSATION_ID, [USER_B]);
 
@@ -598,6 +605,7 @@ describe('ConversationService', () => {
 
     it('deve responder 403 para não admin', async () => {
       givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
+      users.getMultiple.mockResolvedValueOnce([user(USER_C, 'carol')]);
 
       await expect(service.addMembers(USER_B, CONVERSATION_ID, [USER_C])).rejects.toThrow(
         NotConversationAdminException
@@ -609,6 +617,7 @@ describe('ConversationService', () => {
         participant(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
       );
       givenMembership(conversation(), [participant(USER_A, 'admin'), ...current.slice(1)]);
+      users.getMultiple.mockResolvedValueOnce([user(USER_C, 'carol')]);
 
       await expect(service.addMembers(USER_A, CONVERSATION_ID, [USER_C])).rejects.toThrow(
         GroupParticipantLimitException
@@ -616,13 +625,13 @@ describe('ConversationService', () => {
       expect(participants.addMembers).not.toHaveBeenCalled();
     });
 
-    it('deve responder 404 para usuário inexistente', async () => {
-      givenMembership(conversation(), [participant(USER_A, 'admin')]);
+    it('deve responder 404 para usuário inexistente (validação antes do lock)', async () => {
       users.getMultiple.mockResolvedValueOnce([]);
 
       await expect(service.addMembers(USER_A, CONVERSATION_ID, [USER_C])).rejects.toThrow(
         UsersNotFoundException
       );
+      expect(conversations.withLock).not.toHaveBeenCalled();
       expect(participants.addMembers).not.toHaveBeenCalled();
     });
   });
