@@ -16,11 +16,25 @@ import {
 } from '@/modules/realtime/server/createRealtimeServer';
 import { TypingService } from '@/modules/realtime/services/TypingService';
 import { EventBus } from '@/shared/event-bus/EventBus';
-import { initLogger, LogCategory, LogLevel } from '@/shared/logger';
+import { getLogger, initLogger, LogCategory, LogLevel } from '@/shared/logger';
 
 const mockCreateAdapter = createAdapter as jest.Mock;
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const CONVERSATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+function fakePubSubPair(): {
+  pub: { quit: jest.Mock; on: jest.Mock };
+  sub: { quit: jest.Mock; on: jest.Mock };
+  redisClient: { duplicate: jest.Mock };
+} {
+  const pub = { quit: jest.fn().mockResolvedValue('OK'), on: jest.fn() };
+  const sub = { quit: jest.fn().mockResolvedValue('OK'), on: jest.fn() };
+  return {
+    pub,
+    sub,
+    redisClient: { duplicate: jest.fn().mockReturnValueOnce(pub).mockReturnValueOnce(sub) },
+  };
+}
 
 function fakeDeps(): {
   auth: { validateAccessToken: jest.Mock };
@@ -83,11 +97,7 @@ describe('createRealtimeServer', () => {
 
   describe('adapter', () => {
     it('com Redis: duplica o cliente em pub/sub, instala o adapter e fecha ambos no close', async () => {
-      const pub = { quit: jest.fn().mockResolvedValue('OK') };
-      const sub = { quit: jest.fn().mockResolvedValue('OK') };
-      const redisClient = {
-        duplicate: jest.fn().mockReturnValueOnce(pub).mockReturnValueOnce(sub),
-      };
+      const { pub, sub, redisClient } = fakePubSubPair();
       mockCreateAdapter.mockReturnValue(Adapter);
 
       const handle = createRealtimeServer(createServer(), {
@@ -102,6 +112,57 @@ describe('createRealtimeServer', () => {
       await handle.close();
       expect(pub.quit).toHaveBeenCalledTimes(1);
       expect(sub.quit).toHaveBeenCalledTimes(1);
+    });
+
+    it('close é idempotente: memoiza a promise e não toca no Redis mais de uma vez', async () => {
+      const { pub, sub, redisClient } = fakePubSubPair();
+      mockCreateAdapter.mockReturnValue(Adapter);
+
+      const handle = createRealtimeServer(createServer(), {
+        ...fakeDeps(),
+        bus,
+        redisClient: redisClient as never,
+        env: { NODE_ENV: 'production' },
+      });
+
+      const first = handle.close();
+      const second = handle.close();
+      expect(first).toBe(second);
+
+      await Promise.all([first, second]);
+      await handle.close();
+
+      expect(pub.quit).toHaveBeenCalledTimes(1);
+      expect(sub.quit).toHaveBeenCalledTimes(1);
+    });
+
+    it('loga erros dos clientes Redis (pub/sub) do adapter via o logger da aplicação', async () => {
+      const { pub, sub, redisClient } = fakePubSubPair();
+      mockCreateAdapter.mockReturnValue(Adapter);
+
+      const handle = createRealtimeServer(createServer(), {
+        ...fakeDeps(),
+        bus,
+        redisClient: redisClient as never,
+        env: { NODE_ENV: 'production' },
+      });
+
+      expect(pub.on).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(sub.on).toHaveBeenCalledWith('error', expect.any(Function));
+
+      const errorSpy = jest.spyOn(getLogger(), 'error').mockImplementation(() => undefined);
+      const pubError = new Error('pub caiu');
+      const subError = new Error('sub caiu');
+      const [, pubHandler] = pub.on.mock.calls[0] as [string, (error: Error) => void];
+      const [, subHandler] = sub.on.mock.calls[0] as [string, (error: Error) => void];
+      pubHandler(pubError);
+      subHandler(subError);
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.any(String), pubError);
+      expect(errorSpy).toHaveBeenCalledWith(expect.any(String), subError);
+      errorSpy.mockRestore();
+
+      await handle.close();
     });
 
     it('em teste ou com REALTIME_REDIS_ADAPTER=false: adapter em memória, sem tocar no Redis', async () => {

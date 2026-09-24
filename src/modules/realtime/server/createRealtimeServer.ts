@@ -9,6 +9,7 @@ import { conversationService } from '@/modules/chat/services/ConversationService
 import { messageService } from '@/modules/chat/services/MessageService';
 import { redis } from '@/shared/database/redis';
 import { eventBus, type EventBus } from '@/shared/event-bus';
+import { logger } from '@/shared/logger';
 import { buildCorsOptions } from '@/shared/middlewares/cors';
 import { registerMessageHandlers, registerTypingHandlers } from '../handlers';
 import { registerRealtimeListeners } from '../listeners';
@@ -41,6 +42,13 @@ export function shouldUseRedisAdapter(
   return env.REALTIME_REDIS_ADAPTER !== 'false' && env.NODE_ENV !== 'test';
 }
 
+/** Loga erros do cliente Redis pub/sub do adapter via o logger da aplicação, sem derrubar o processo. */
+function logRedisClientErrors(client: Pick<Redis, 'on'>, role: 'pub' | 'sub'): void {
+  client.on('error', (error: Error) => {
+    logger.error(`Erro no cliente Redis (${role}) do adapter do Socket.IO`, error);
+  });
+}
+
 /**
  * Cria o servidor Socket.IO sobre o servidor HTTP da API: CORS igual ao HTTP, Redis adapter
  * (quando habilitado), handshake autenticado (`socketAuth`) que já entra nas rooms do usuário
@@ -66,6 +74,8 @@ export function createRealtimeServer(
   if (shouldUseRedisAdapter(env)) {
     const pubClient = redisClient.duplicate();
     const subClient = redisClient.duplicate();
+    logRedisClientErrors(pubClient, 'pub');
+    logRedisClientErrors(subClient, 'sub');
     pubSubClients.push(pubClient, subClient);
     io.adapter(createAdapter(pubClient, subClient));
   }
@@ -80,12 +90,21 @@ export function createRealtimeServer(
 
   const unregisterListeners = registerRealtimeListeners(io, bus);
 
+  let closePromise: Promise<void> | null = null;
+  const closeOnce = async (): Promise<void> => {
+    unregisterListeners();
+    await io.close();
+    await Promise.all(pubSubClients.map((client) => client.quit()));
+  };
+
   return {
     io,
-    close: async (): Promise<void> => {
-      unregisterListeners();
-      await io.close();
-      await Promise.all(pubSubClients.map((client) => client.quit()));
+    // Idempotente: chamadas repetidas (ex.: reentrância no encerramento) devolvem a mesma
+    // promise em vez de fechar o io/Redis de novo (o que quebraria com o Redis adapter — um
+    // client já encerrado rejeita um segundo `quit()`).
+    close: (): Promise<void> => {
+      closePromise ??= closeOnce();
+      return closePromise;
     },
   };
 }
