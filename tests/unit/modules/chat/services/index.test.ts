@@ -13,4 +13,8 @@ describe('chat services index', () => {
     expect(services.conversationService).toBeInstanceOf(services.ConversationService);
     expect(typeof services.buildDirectKey).toBe('function');
   });
+
+  it('deve exportar MessageService e a instância padrão', () => {
+    expect(services.messageService).toBeInstanceOf(services.MessageService);
+  });
 });
