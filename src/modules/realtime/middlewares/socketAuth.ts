@@ -1,7 +1,9 @@
+import type { IncomingMessage } from 'http';
+import proxyAddr from 'proxy-addr';
 import type { IAuthService } from '@/modules/auth/interfaces';
 import { authService } from '@/modules/auth/services/AuthService';
 import { REALTIME_CONSTANTS, SOCKET_ERRORS } from '../constants';
-import type { RealtimeSocket, SocketMiddleware } from '../types';
+import type { RealtimeSocket, SocketMiddleware, TrustProxyFn } from '../types';
 
 const BEARER_PREFIX = 'Bearer ';
 
@@ -21,6 +23,30 @@ export function extractHandshakeToken(handshake: RealtimeSocket['handshake']): s
   return null;
 }
 
+/** Padrão do Express (`trust proxy` desligado): nenhum proxy é confiável. */
+const TRUST_NO_PROXY: TrustProxyFn = () => false;
+
+export interface SocketAuthOptions {
+  /** `app.get('trust proxy fn')` do Express; padrão: não confia em proxy algum. */
+  trustProxy?: TrustProxyFn;
+}
+
+/**
+ * IP do cliente com a mesma regra do Express (`req.ip`): `proxy-addr` sobre o endereço do peer
+ * e o `X-Forwarded-For` do handshake, parando no primeiro salto não confiável.
+ */
+export function resolveHandshakeIp(
+  handshake: RealtimeSocket['handshake'],
+  trustProxy: TrustProxyFn = TRUST_NO_PROXY
+): string | null {
+  const request = {
+    headers: handshake.headers,
+    socket: { remoteAddress: handshake.address },
+  } as unknown as IncomingMessage;
+  const ip = proxyAddr(request, trustProxy);
+  return ip === '' ? null : ip;
+}
+
 /**
  * Autentica o handshake com a mesma regra do middleware HTTP (`validateAccessToken`). Sem token
  * ou com token inválido, recusa com `connect_error` de `message: 'UNAUTHORIZED'`; aceito,
@@ -28,7 +54,8 @@ export function extractHandshakeToken(handshake: RealtimeSocket['handshake']): s
  * `tokenExpiresAt` (o socket é derrubado nessa hora — ver `registerSessionExpiry`).
  */
 export function createSocketAuthMiddleware(
-  auth: Pick<IAuthService, 'validateAccessToken'> = authService
+  auth: Pick<IAuthService, 'validateAccessToken'> = authService,
+  { trustProxy = TRUST_NO_PROXY }: SocketAuthOptions = {}
 ): SocketMiddleware {
   return (socket, next) => {
     const token = extractHandshakeToken(socket.handshake);
@@ -40,11 +67,10 @@ export function createSocketAuthMiddleware(
       return;
     }
 
-    const { address, headers } = socket.handshake;
-    const userAgent = headers['user-agent'];
+    const userAgent = socket.handshake.headers['user-agent'];
     socket.data = {
       userId: validation.userId,
-      ip: address === '' ? null : address,
+      ip: resolveHandshakeIp(socket.handshake, trustProxy),
       device:
         userAgent === undefined ? null : userAgent.slice(0, REALTIME_CONSTANTS.MAX_DEVICE_LENGTH),
       tokenExpiresAt: validation.exp === undefined ? null : validation.exp * 1000,

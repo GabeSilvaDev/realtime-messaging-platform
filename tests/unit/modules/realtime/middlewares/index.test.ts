@@ -9,5 +9,6 @@ describe('realtime middlewares index', () => {
     expect(typeof middlewares.createJoinRoomsMiddleware).toBe('function');
     expect(typeof middlewares.extractHandshakeToken).toBe('function');
     expect(typeof middlewares.reconcileConversationRooms).toBe('function');
+    expect(typeof middlewares.resolveHandshakeIp).toBe('function');
   });
 });

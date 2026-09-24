@@ -114,6 +114,9 @@ export type RealtimeSocket = Socket<
   SocketData
 >;
 
+/** Função de confiança em proxies do Express (`app.get('trust proxy fn')`, via `proxy-addr`). */
+export type TrustProxyFn = (addr: string, i: number) => boolean;
+
 /** Middleware do handshake (`io.use`): `next(error)` recusa a conexão com `connect_error`. */
 export type SocketMiddleware = (
   socket: RealtimeSocket,

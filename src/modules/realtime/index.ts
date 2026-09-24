@@ -11,6 +11,7 @@ export {
   createJoinRoomsMiddleware,
   extractHandshakeToken,
   reconcileConversationRooms,
+  resolveHandshakeIp,
 } from './middlewares';
 
 export { TypingService } from './services';

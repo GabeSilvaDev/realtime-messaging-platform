@@ -333,6 +333,38 @@ describe('createRealtimeServer', () => {
       await expect(disconnected).resolves.toBe('io server disconnect');
     });
 
+    it('ip do socket respeita o trust proxy (fn do Express) repassado', async () => {
+      await handle.close();
+      httpServer = createServer();
+      handle = createRealtimeServer(httpServer, {
+        ...deps,
+        bus,
+        env: { NODE_ENV: 'test' },
+        trustProxy: () => true,
+      });
+      await new Promise<void>((resolve) => {
+        httpServer.listen(0, resolve);
+      });
+      url = `http://localhost:${String((httpServer.address() as AddressInfo).port)}`;
+
+      const socket = connect(url, {
+        auth: { token: 'good' },
+        transports: ['websocket'],
+        reconnection: false,
+        forceNew: true,
+        extraHeaders: { 'X-Forwarded-For': '198.51.100.9' },
+      });
+      clients.push(socket);
+      await new Promise<void>((resolve) => {
+        socket.on('connect', () => {
+          resolve();
+        });
+      });
+
+      const [serverSocket] = await handle.io.fetchSockets();
+      expect(serverSocket?.data.ip).toBe('198.51.100.9');
+    });
+
     it('close cancela a ponte do EventBus', async () => {
       expect(bus.subscriberCount()).toBeGreaterThan(0);
 

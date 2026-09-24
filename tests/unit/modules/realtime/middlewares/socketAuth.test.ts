@@ -79,6 +79,34 @@ describe('socketAuth', () => {
       expect(bare.data).toEqual({ userId: USER_A, ip: null, device: null, tokenExpiresAt: null });
     });
 
+    describe('ip respeitando o trust proxy do Express', () => {
+      beforeEach(() => {
+        auth.validateAccessToken.mockReturnValue({ valid: true, userId: USER_A });
+        socket.handshake.auth = { token: 'good' };
+        socket.handshake.headers['x-forwarded-for'] = '203.0.113.7, 10.0.0.2';
+      });
+
+      it('sem trust proxy (padrão do Express): ignora X-Forwarded-For e usa o peer', () => {
+        createSocketAuthMiddleware(auth)(socket.asSocket(), next);
+
+        expect(socket.data.ip).toBe('127.0.0.1');
+      });
+
+      it('confiando em todos os proxies: usa o cliente original do X-Forwarded-For', () => {
+        createSocketAuthMiddleware(auth, { trustProxy: () => true })(socket.asSocket(), next);
+
+        expect(socket.data.ip).toBe('203.0.113.7');
+      });
+
+      it('com número de hops (TRUST_PROXY=1): para no primeiro endereço não confiável', () => {
+        const oneHop = (_addr: string, i: number): boolean => i < 1;
+
+        createSocketAuthMiddleware(auth, { trustProxy: oneHop })(socket.asSocket(), next);
+
+        expect(socket.data.ip).toBe('10.0.0.2');
+      });
+    });
+
     it('sem token: recusa com UNAUTHORIZED sem consultar o AuthService', () => {
       createSocketAuthMiddleware(auth)(socket.asSocket(), next);
 

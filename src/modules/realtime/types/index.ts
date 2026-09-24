@@ -19,5 +19,6 @@ export type {
   RealtimeSocket,
   SocketMiddleware,
   ConnectionHook,
+  TrustProxyFn,
   DisconnectHook,
 } from './realtime.types';

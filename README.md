@@ -302,7 +302,7 @@ tests/
 | Variable | Purpose |
 |---|---|
 | `PORT`, `NODE_ENV` | HTTP port (3000) and environment |
-| `TRUST_PROXY` | `app.set('trust proxy', …)`; unset keeps Express's default (`false`) — see [Rate limiting](#rate-limiting); prefer a hop count or proxy IPs over `true` (IP spoofing) |
+| `TRUST_PROXY` | `app.set('trust proxy', …)` — also used for the Socket.IO client IP (same rule as `req.ip`, via `proxy-addr`); unset keeps Express's default (`false`) — see [Rate limiting](#rate-limiting); prefer a hop count or proxy IPs over `true` (IP spoofing) |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins in production (HTTP and Socket.IO); any origin is allowed outside production |
 | `DEMO_ENABLED` | `true` serves the demo client at `/demo` in production (it's always served outside production) |
 | `REALTIME_REDIS_ADAPTER` | `false` keeps Socket.IO on the in-memory adapter (single instance); otherwise the Redis adapter is used outside `NODE_ENV=test` |

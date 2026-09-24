@@ -302,7 +302,7 @@ O `.env.example` lista todas as variáveis. As que importam:
 | Variável | Uso |
 |---|---|
 | `PORT`, `NODE_ENV` | Porta HTTP (3000) e ambiente |
-| `TRUST_PROXY` | `app.set('trust proxy', …)`; sem definir mantém o padrão do Express (`false`) — veja Rate limit, acima; prefira número de hops ou IPs dos proxies a `true` (spoof de IP) |
+| `TRUST_PROXY` | `app.set('trust proxy', …)` — vale também para o IP do cliente Socket.IO (mesma regra do `req.ip`, via `proxy-addr`); sem definir mantém o padrão do Express (`false`) — veja Rate limit, acima; prefira número de hops ou IPs dos proxies a `true` (spoof de IP) |
 | `ALLOWED_ORIGINS` | Origens de CORS separadas por vírgula em produção (HTTP e Socket.IO); fora de produção qualquer origem é aceita |
 | `DEMO_ENABLED` | `true` serve o cliente demo em `/demo` em produção (fora de produção ele é sempre servido) |
 | `REALTIME_REDIS_ADAPTER` | `false` mantém o Socket.IO no adapter em memória (uma instância); senão o Redis adapter é usado fora de `NODE_ENV=test` |

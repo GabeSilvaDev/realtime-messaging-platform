@@ -1,7 +1,7 @@
 import { createServer } from 'http';
 import app from './app';
 import { bootstrap, shutdown } from './bootstrap';
-import { createRealtimeServer } from './modules/realtime';
+import { createRealtimeServer, type TrustProxyFn } from './modules/realtime';
 import {
   createServerErrorHandler,
   createStopHandler,
@@ -17,7 +17,10 @@ async function startServer(): Promise<void> {
 
     // Socket.IO compartilha o servidor HTTP (e a porta) da API Express.
     const httpServer = createServer(app);
-    const realtime = createRealtimeServer(httpServer);
+    // Mesmo `trust proxy` do Express: o IP do socket segue a regra do `req.ip`.
+    const realtime = createRealtimeServer(httpServer, {
+      trustProxy: app.get('trust proxy fn') as TrustProxyFn,
+    });
 
     const stop = createStopHandler({
       realtime,

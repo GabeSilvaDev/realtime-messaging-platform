@@ -23,7 +23,13 @@ import {
   reconcileConversationRooms,
 } from '../middlewares';
 import { TypingService } from '../services';
-import type { ConnectionHook, DisconnectHook, RealtimeServer, RealtimeSocket } from '../types';
+import type {
+  ConnectionHook,
+  DisconnectHook,
+  RealtimeServer,
+  RealtimeSocket,
+  TrustProxyFn,
+} from '../types';
 
 export interface RealtimeServerOptions {
   auth?: Pick<IAuthService, 'validateAccessToken'>;
@@ -35,6 +41,8 @@ export interface RealtimeServerOptions {
   /** Cliente base duplicado em pub/sub para o Redis adapter. */
   redisClient?: Pick<Redis, 'duplicate'>;
   env?: Record<string, string | undefined>;
+  /** `app.get('trust proxy fn')`: o IP do socket segue a mesma regra do `req.ip` do Express. */
+  trustProxy?: TrustProxyFn;
   /**
    * Ponto de extensão (ex.: presença, subprojeto 4): rodam em paralelo a cada conexão aceita, com
    * as rooms do handshake já aplicadas. Erros/rejeições são logados e nunca derrubam o socket.
@@ -102,6 +110,7 @@ export function createRealtimeServer(
     typing = new TypingService(),
     redisClient = redis,
     env = process.env,
+    trustProxy,
     onConnection = [],
     onDisconnect = [],
   } = options;
@@ -121,7 +130,7 @@ export function createRealtimeServer(
     io.adapter(createAdapter(pubClient, subClient));
   }
 
-  io.use(createSocketAuthMiddleware(auth));
+  io.use(createSocketAuthMiddleware(auth, { trustProxy }));
   io.use(createJoinRoomsMiddleware(conversations));
 
   io.on('connection', (socket) => {

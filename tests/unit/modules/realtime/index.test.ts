@@ -17,6 +17,7 @@ describe('realtime module index', () => {
     expect(typeof realtime.createJoinRoomsMiddleware).toBe('function');
     expect(typeof realtime.extractHandshakeToken).toBe('function');
     expect(typeof realtime.reconcileConversationRooms).toBe('function');
+    expect(typeof realtime.resolveHandshakeIp).toBe('function');
     expect(typeof realtime.withAck).toBe('function');
     expect(typeof realtime.toAckError).toBe('function');
     expect(new realtime.TypingService()).toBeInstanceOf(realtime.TypingService);
