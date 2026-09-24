@@ -230,6 +230,7 @@ describe('ConversationRepository', () => {
         order: [
           [{ model: Conversation, as: 'conversation' }, 'lastMessageAt', 'DESC NULLS LAST'],
           [{ model: Conversation, as: 'conversation' }, 'createdAt', 'DESC'],
+          [{ model: Conversation, as: 'conversation' }, 'id', 'DESC'],
         ],
         limit: 20,
         offset: 0,
@@ -238,6 +239,16 @@ describe('ConversationRepository', () => {
       expect(result.rows).toEqual([
         { conversation: expect.objectContaining({ id: CONVERSATION_ID }), membership },
       ]);
+    });
+
+    it('deve desempatar por id DESC da conversa como último critério', async () => {
+      MockParticipant.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as never);
+
+      await repository.listForUser(USER_A, { archived: false, limit: 20, offset: 0 });
+
+      const call = MockParticipant.findAndCountAll.mock.calls[0]![0] as { order: unknown[] };
+      expect(call.order).toHaveLength(3);
+      expect(call.order[2]).toEqual([{ model: Conversation, as: 'conversation' }, 'id', 'DESC']);
     });
 
     it('deve filtrar arquivadas com archived_at IS NOT NULL', async () => {

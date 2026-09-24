@@ -95,6 +95,7 @@ export class ConversationRepository implements IConversationRepository {
       order: [
         [conversationAssociation, 'lastMessageAt', 'DESC NULLS LAST'],
         [conversationAssociation, 'createdAt', 'DESC'],
+        [conversationAssociation, 'id', 'DESC'],
       ],
       limit,
       offset,
