@@ -18,7 +18,11 @@ describe('CacheService', () => {
 
   it('exporta a instância padrão (Redis da aplicação) e as constantes', () => {
     expect(cacheService).toBeInstanceOf(CacheService);
-    expect(CACHE_CONSTANTS).toEqual({ KEY_PREFIX: 'cache:', DEFAULT_TTL_SECONDS: 300 });
+    expect(CACHE_CONSTANTS).toEqual({
+      KEY_PREFIX: 'cache:',
+      DEFAULT_TTL_SECONDS: 300,
+      DELAYED_DELETE_MS: 1000,
+    });
   });
 
   describe('get/set', () => {

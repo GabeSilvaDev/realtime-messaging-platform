@@ -1,4 +1,4 @@
-import { cacheService, type ICacheService } from '@/shared/cache';
+import { cacheService, DelayedCacheInvalidator, type ICacheService } from '@/shared/cache';
 import {
   CHAT_CACHE_KEYS,
   CHAT_PARTICIPANTS_CACHE_DELAYED_DELETE_MS,
@@ -23,7 +23,7 @@ export interface ParticipantSummary {
  * Não cacheia listas vazias (conversas desconhecidas).
  */
 export class ParticipantDirectory {
-  private delayedDeleteTimers = new Map<string, NodeJS.Timeout>();
+  private readonly invalidator: DelayedCacheInvalidator;
 
   constructor(
     private readonly participants: Pick<
@@ -31,8 +31,10 @@ export class ParticipantDirectory {
       'listByConversation'
     > = participantRepository,
     private readonly cache: Pick<ICacheService, 'get' | 'set' | 'del'> = cacheService,
-    private readonly delayedDeleteMs: number = CHAT_PARTICIPANTS_CACHE_DELAYED_DELETE_MS
-  ) {}
+    delayedDeleteMs: number = CHAT_PARTICIPANTS_CACHE_DELAYED_DELETE_MS
+  ) {
+    this.invalidator = new DelayedCacheInvalidator(cache, delayedDeleteMs);
+  }
 
   /** Do mais antigo para o mais novo (mesma ordem do repositório). */
   async list(conversationId: string): Promise<ParticipantSummary[]> {
@@ -69,28 +71,10 @@ export class ParticipantDirectory {
 
   /**
    * Invalida o cache imediatamente e agenda um segundo DEL após delay (mitigação de
-   * write-back stale). Chamado diretamente em ConversationService após transação de
-   * mudança de membros, antes de publish. O EventBus listener fornece fallback.
+   * write-back stale; `DelayedCacheInvalidator`). Chamado diretamente em ConversationService após
+   * transação de mudança de membros, antes de publish. O EventBus listener fornece fallback.
    */
   async forget(conversationId: string): Promise<void> {
-    const key = CHAT_CACHE_KEYS.participants(conversationId);
-    await this.cache.del(key);
-
-    // Cancela timer anterior se houver.
-    const timer = this.delayedDeleteTimers.get(key);
-    if (timer !== undefined) {
-      clearTimeout(timer);
-    }
-
-    // Agenda segundo DEL após delay (unref'd para não manter o processo vivo).
-    // CacheService.del() nunca rejeita (swallows erros internamente).
-    const delayed = setTimeout(() => {
-      void this.cache.del(key).then(() => {
-        this.delayedDeleteTimers.delete(key);
-      });
-    }, this.delayedDeleteMs);
-
-    delayed.unref();
-    this.delayedDeleteTimers.set(key, delayed);
+    await this.invalidator.forget(CHAT_CACHE_KEYS.participants(conversationId));
   }
 }
