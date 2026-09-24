@@ -13,9 +13,11 @@ jest.mock('@/modules/auth/middlewares', () => ({
 
 import express, { type Router } from 'express';
 import request from 'supertest';
+import type { Store } from 'express-rate-limit';
 import { authenticate } from '@/modules/auth/middlewares';
 import { searchController } from '@/modules/search/controllers/SearchController';
 import { createSearchRateLimiter, createSearchRoutes, searchRoutes } from '@/modules/search/routes';
+import { createRateLimiter } from '@/shared/middlewares/rateLimiter';
 
 type Layer = {
   route?: {
@@ -86,5 +88,37 @@ describe('search.routes', () => {
       },
     });
     expect(limited.headers['ratelimit-limit']).toBe('30');
+  });
+
+  it('quando o store falha, a requisição ainda chega ao controller (passOnStoreError: true)', async () => {
+    const failingStore: Partial<Store> = {
+      increment: jest.fn().mockRejectedValue(new Error('Redis outage')),
+      decrement: jest.fn().mockResolvedValue(undefined),
+      resetKey: jest.fn().mockResolvedValue(undefined),
+    } as Partial<Store>;
+
+    const controller = {
+      searchMessages: async (_req: unknown, res: express.Response): Promise<void> => {
+        res.status(200).json({ success: true, data: 'ok' });
+      },
+    };
+
+    const app = express();
+    const limiter = createRateLimiter({
+      windowMs: 60_000,
+      max: 30,
+      keyPrefix: 'rl:search:',
+      message: 'Too many search requests, please try again later',
+      passOnStoreError: true,
+      store: failingStore as Store,
+    });
+
+    app.use('/api/search', createSearchRoutes(controller, limiter));
+
+    const response = await request(app).get('/api/search/messages?q=test');
+
+    expect((failingStore.increment as jest.Mock).mock.calls.length).toBeGreaterThan(0);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ success: true, data: 'ok' });
   });
 });

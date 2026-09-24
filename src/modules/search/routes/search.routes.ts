@@ -6,11 +6,14 @@ import { searchController, type SearchController } from '../controllers/SearchCo
 
 /** Rate limit próprio da busca: 30 requisições por minuto por IP (chave padrão do projeto). */
 export function createSearchRateLimiter(): RequestHandler {
+  // Prioriza disponibilidade sobre o rate limiting em si — se o store falhar (ex.: Redis fora
+  // do ar), deixa a requisição passar em vez de derrubar a busca.
   return createRateLimiter({
     windowMs: SEARCH_CONSTANTS.RATE_LIMIT_WINDOW_MS,
     max: SEARCH_CONSTANTS.RATE_LIMIT_MAX_REQUESTS,
     keyPrefix: SEARCH_CONSTANTS.RATE_LIMIT_KEY_PREFIX,
     message: 'Too many search requests, please try again later',
+    passOnStoreError: true,
   });
 }
 
