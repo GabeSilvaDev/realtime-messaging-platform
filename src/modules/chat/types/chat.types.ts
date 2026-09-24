@@ -1,8 +1,8 @@
-import type { CONVERSATION_TYPES, MESSAGE_CONTENT_TYPES, PARTICIPANT_ROLES } from '../constants';
+import type { CONVERSATION_TYPES, PARTICIPANT_ROLES } from '../constants';
 
+export type { MessageContentType } from '@/shared/types/chat-message.types';
 export type ConversationType = (typeof CONVERSATION_TYPES)[number];
 export type ParticipantRole = (typeof PARTICIPANT_ROLES)[number];
-export type MessageContentType = (typeof MESSAGE_CONTENT_TYPES)[number];
 export type ConversationChange = 'renamed' | 'members_added' | 'member_removed' | 'member_left';
 
 export interface ConversationAttributes {

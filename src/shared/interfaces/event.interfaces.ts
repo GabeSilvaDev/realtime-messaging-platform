@@ -1,4 +1,4 @@
-import type { MessageDTO } from '@/modules/chat/types';
+import type { MessageDTO } from '../types/chat-message.types';
 import {
   SystemEvents,
   AuthEvents,

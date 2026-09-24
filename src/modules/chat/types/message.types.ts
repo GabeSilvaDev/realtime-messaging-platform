@@ -1,9 +1,6 @@
-import type { MessageContentType } from './chat.types';
+import type { MessageContent, MessageDTO } from '@/shared/types/chat-message.types';
 
-export interface MessageContent {
-  type: MessageContentType;
-  text: string;
-}
+export type { MessageContent, MessageDTO } from '@/shared/types/chat-message.types';
 
 export interface MessageMetadata {
   ip: string | null;
@@ -40,19 +37,6 @@ export interface MessageCursor {
 export interface FindMessagesOptions {
   limit: number;
   before?: MessageCursor;
-}
-
-/** Mensagem como exposta pela API: apagada vira tombstone (`content: null`). */
-export interface MessageDTO {
-  id: string;
-  conversationId: string;
-  senderId: string;
-  content: MessageContent | null;
-  replyTo: string | null;
-  mentions: string[];
-  deletedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 export interface SendMessageDTO {

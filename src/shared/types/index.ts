@@ -9,6 +9,7 @@ export {
   NotificationEvents,
 } from './event.types';
 export { LogLevel, LogCategory } from './logger.types';
+export type { MessageContentType, MessageContent, MessageDTO } from './chat-message.types';
 export type {
   ValidationTarget,
   ValidationSchemas,
