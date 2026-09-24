@@ -19,7 +19,8 @@ export async function bootstrap(): Promise<void> {
   await connectRedis();
   await connectMongo();
   await connectElasticsearch();
-  // Índice de mensagens: cria se não existe (se existe, não mexe) antes de indexar qualquer coisa.
+  // Índice de mensagens: instala o template e cria o índice se não existe (se existe, não mexe)
+  // antes de indexar qualquer coisa.
   await searchIndexService.ensureIndex();
   registerChatListeners();
   registerSearchIndexListeners();
