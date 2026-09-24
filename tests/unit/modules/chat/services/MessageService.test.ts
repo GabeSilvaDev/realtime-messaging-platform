@@ -4,6 +4,14 @@ jest.mock('@/modules/chat/repositories', () => ({
   messageRepository: {},
 }));
 jest.mock('@/modules/user/services/ContactService', () => ({ contactService: {} }));
+jest.mock('@/shared/logger', () => ({
+  logger: {
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  },
+}));
 
 import {
   ConversationBlockedException,
@@ -23,7 +31,10 @@ import type {
   MessageRecord,
   ParticipantAttributes,
 } from '@/modules/chat/types';
+import { logger } from '@/shared/logger';
 import { ChatEvents } from '@/shared/types';
+
+const mockLogger = logger as jest.Mocked<typeof logger>;
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const USER_B = '22222222-2222-4222-8222-222222222222';
@@ -166,6 +177,24 @@ describe('MessageService', () => {
         updatedAt: CREATED_AT,
       });
       expect(result).not.toHaveProperty('metadata');
+    });
+
+    it('deve continuar e publicar MESSAGE_SENT mesmo se touchLastMessageAt falhar', async () => {
+      messages.create.mockResolvedValue(record());
+      const dbError = new Error('db down');
+      conversations.touchLastMessageAt.mockRejectedValue(dbError);
+
+      const result = await service.send(USER_A, CONVERSATION_ID, { text: 'oi' }, META);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ conversationId: CONVERSATION_ID, messageId: MESSAGE_ID })
+      );
+      expect(events.publish).toHaveBeenCalledWith(
+        ChatEvents.MESSAGE_SENT,
+        expect.objectContaining({ messageId: MESSAGE_ID })
+      );
+      expect(result.id).toBe(MESSAGE_ID);
     });
 
     it('deve responder 404 quando o remetente não participa', async () => {

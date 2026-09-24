@@ -1,6 +1,7 @@
 import type { IContactService } from '@/modules/user/interfaces';
 import { contactService } from '@/modules/user/services/ContactService';
 import { eventBus, type EventBus } from '@/shared/event-bus';
+import { logger } from '@/shared/logger';
 import { ChatEvents } from '@/shared/types';
 import { CHAT_CONSTANTS } from '../constants';
 import {
@@ -98,7 +99,16 @@ export class MessageService implements IMessageService {
       metadata,
     });
 
-    await this.conversations.touchLastMessageAt(conversationId, record.createdAt);
+    // Best-effort: falha em atualizar last_message_at não deve impedir o envio da mensagem.
+    try {
+      await this.conversations.touchLastMessageAt(conversationId, record.createdAt);
+    } catch (error) {
+      logger.warn('Falha ao atualizar last_message_at da conversa', {
+        conversationId,
+        messageId: record.id,
+        error,
+      });
+    }
 
     await this.events.publish(ChatEvents.MESSAGE_SENT, {
       messageId: record.id,
