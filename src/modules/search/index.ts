@@ -16,3 +16,5 @@ export { registerSearchIndexListeners } from './listeners';
 export { SearchController, searchController } from './controllers';
 
 export { createSearchRateLimiter, createSearchRoutes, searchRoutes } from './routes';
+
+export { runReindex, type ReindexCommandDeps } from './cli';

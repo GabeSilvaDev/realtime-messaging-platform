@@ -26,4 +26,8 @@ describe('search module index', () => {
     expect(searchModule.createSearchRoutes).toBeInstanceOf(Function);
     expect(searchModule.createSearchRateLimiter).toBeInstanceOf(Function);
   });
+
+  it('deve exportar o comando de reindex', () => {
+    expect(searchModule.runReindex).toBeInstanceOf(Function);
+  });
 });

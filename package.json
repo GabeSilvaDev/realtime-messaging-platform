@@ -47,7 +47,8 @@
     "test:watch": "jest --watch --coverage=false",
     "db:migrate": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:migrate",
     "db:migrate:undo": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:migrate:undo",
-    "db:seed": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:seed:all"
+    "db:seed": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:seed:all",
+    "search:reindex": "node --import tsx src/scripts/reindexMessages.ts"
   },
   "repository": {
     "type": "git",

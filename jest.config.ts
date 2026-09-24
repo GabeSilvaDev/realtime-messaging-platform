@@ -17,6 +17,8 @@ const config: Config = {
     '!src/database/seeders/**',
     // ferramental de geração de dados de teste, não código de produção
     '!src/database/factories/**',
+    // entrada do `npm run search:reindex`: só liga conexões e o runReindex (testado à parte)
+    '!src/scripts/reindexMessages.ts',
     // apenas tipos (interfaces/type aliases); o único import do arquivo existe só para o
     // compilador resolver as chaves computadas dos enums na interface EventMap e nunca
     // é executado em runtime (nenhum código real importa este módulo por valor)
