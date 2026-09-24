@@ -29,6 +29,7 @@ describe('Error Types', () => {
       expect(ErrorCode.RATE_LIMITED).toBe('RATE_LIMITED');
       expect(ErrorCode.BAD_REQUEST).toBe('BAD_REQUEST');
       expect(ErrorCode.SERVICE_UNAVAILABLE).toBe('SERVICE_UNAVAILABLE');
+      expect(ErrorCode.SEARCH_UNAVAILABLE).toBe('SEARCH_UNAVAILABLE');
     });
   });
 
