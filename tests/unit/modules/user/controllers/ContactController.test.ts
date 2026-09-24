@@ -2,12 +2,14 @@ jest.mock('@/modules/user/services/ContactService', () => ({
   contactService: {},
 }));
 jest.mock('@/modules/presence/services/PresenceService', () => ({ presenceService: {} }));
+jest.mock('@/shared/logger', () => ({ logger: { warn: jest.fn() } }));
 
 import type { Request, Response } from 'express';
 import { ContactController } from '@/modules/user/controllers/ContactController';
 import type { IContactService } from '@/modules/user/interfaces';
 import type { ContactWithUser } from '@/modules/user/types';
 import { HttpStatus, UnauthorizedError } from '@/shared/errors';
+import { logger } from '@/shared/logger';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CONTACT_ID = '22222222-2222-4222-8222-222222222222';
@@ -425,6 +427,63 @@ describe('ContactController', () => {
 
       const { data } = res.json.mock.calls[0]![0] as { data: { contactId: string }[] };
       expect(data.map((c) => c.contactId)).toEqual([OTHER_ID, CONTACT_ID]);
+    });
+
+    describe('presença indisponível (Redis fora do ar)', () => {
+      it('list responde 200 com presence: null em cada contato e loga warn', async () => {
+        service.listContacts.mockResolvedValue(
+          page([
+            contactRow(CONTACT_ID, { username: 'bia' }),
+            contactRow(OTHER_ID, { username: 'caio' }),
+          ])
+        );
+        presence.getVisibleStates.mockRejectedValue(new Error('ECONNREFUSED'));
+
+        await controller.list(createReq(), res);
+
+        expect(res.status).toHaveBeenCalledWith(HttpStatus.OK);
+        const { data } = res.json.mock.calls[0]![0] as {
+          data: { contacts: { contactId: string; presence: unknown }[]; total: number };
+        };
+        expect(data.total).toBe(2);
+        expect(data.contacts.map((c) => [c.contactId, c.presence])).toEqual([
+          [CONTACT_ID, null],
+          [OTHER_ID, null],
+        ]);
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Presença indisponível; contatos listados sem presence',
+          { userId: USER_ID, error: 'ECONNREFUSED' }
+        );
+      });
+
+      it('orderBy=presence cai na ordem do banco', async () => {
+        service.listContacts.mockResolvedValue(
+          page([
+            contactRow(OTHER_ID, { username: 'caio' }),
+            contactRow(CONTACT_ID, { username: 'bia' }),
+          ])
+        );
+        presence.getVisibleStates.mockRejectedValue('timeout');
+
+        await controller.list(createReq({ query: { orderBy: 'presence' } }), res);
+
+        const { data } = res.json.mock.calls[0]![0] as {
+          data: { contacts: { contactId: string }[] };
+        };
+        expect(data.contacts.map((c) => c.contactId)).toEqual([OTHER_ID, CONTACT_ID]);
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Presença indisponível; contatos listados sem presence',
+          { userId: USER_ID, error: 'timeout' }
+        );
+      });
+
+      it('online continua falhando (é um endpoint da presença)', async () => {
+        service.listContactIds.mockResolvedValue([CONTACT_ID]);
+        presence.getVisibleStates.mockRejectedValue(new Error('ECONNREFUSED'));
+
+        await expect(controller.online(createReq(), res)).rejects.toThrow('ECONNREFUSED');
+        expect(res.json).not.toHaveBeenCalled();
+      });
     });
 
     it('online sem usuário autenticado lança UnauthorizedError', async () => {

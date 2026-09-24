@@ -184,6 +184,33 @@ describe('Contacts / Blocks / Users — Feature', () => {
       expect(response.status).toBe(HttpStatus.CONFLICT);
     });
 
+    it('GET /api/contacts com a presença fora do ar responde 200 com presence: null; /online responde 500', async () => {
+      mockContactService.listContacts.mockResolvedValue({
+        contacts: [
+          { id: 'c-2', contactId: '33333333-3333-4333-8333-333333333333' },
+          { id: 'c-1', contactId: CONTACT_ID },
+        ],
+        total: 2,
+        limit: 20,
+        offset: 0,
+        hasMore: false,
+      });
+      mockContactService.listContactIds.mockResolvedValue([CONTACT_ID]);
+      mockPresenceService.getVisibleStates.mockRejectedValue(new Error('Redis indisponível'));
+
+      const listed = await request(app).get('/api/contacts?orderBy=presence').set(AUTH);
+      const online = await request(app).get('/api/contacts/online').set(AUTH);
+
+      expect(listed.status).toBe(HttpStatus.OK);
+      expect(
+        listed.body.data.contacts.map((c: { id: string; presence: unknown }) => [c.id, c.presence])
+      ).toEqual([
+        ['c-2', null],
+        ['c-1', null],
+      ]);
+      expect(online.status).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+    });
+
     it('GET /api/contacts traz presence em cada contato e aceita orderBy=presence', async () => {
       mockContactService.listContacts.mockResolvedValue({
         contacts: [{ id: 'c-1', contactId: CONTACT_ID }],

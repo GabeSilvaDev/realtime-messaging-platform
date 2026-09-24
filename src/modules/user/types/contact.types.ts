@@ -84,7 +84,13 @@ export interface BlockResult {
   changed: boolean;
 }
 
-/** Contato com a presença do usuário (como quem lista a vê: bloqueio ⇒ offline). */
+/** Presença de um contato como quem lista a vê (bloqueio ⇒ offline sem `lastSeenAt`). */
+export type ContactPresence = Pick<PresenceStateDTO, 'state' | 'lastSeenAt'>;
+
+/**
+ * Contato com a presença do usuário. `presence: null` só em `GET /contacts` quando a presença
+ * (Redis) está indisponível — a listagem degrada em vez de falhar.
+ */
 export interface ContactWithPresence extends ContactWithUser {
-  presence: Pick<PresenceStateDTO, 'state' | 'lastSeenAt'>;
+  presence: ContactPresence | null;
 }

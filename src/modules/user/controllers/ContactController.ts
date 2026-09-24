@@ -3,10 +3,11 @@ import { compareByPresence } from '@/modules/presence/constants';
 import type { IPresenceService } from '@/modules/presence/interfaces';
 import { presenceService } from '@/modules/presence/services/PresenceService';
 import { HttpStatus } from '@/shared/errors';
+import { logger } from '@/shared/logger';
 import type { PresenceStateDTO } from '@/shared/types';
 import { contactService } from '../services/ContactService';
 import type { IContactService } from '../interfaces';
-import type { ContactWithPresence, ContactWithUser } from '../types';
+import type { ContactPresence, ContactWithPresence, ContactWithUser } from '../types';
 import {
   addContactSchema,
   contactIdParamSchema,
@@ -15,7 +16,7 @@ import {
 } from '../validation/contact.schemas';
 import { getAuthenticatedUserId, sendValidationError } from '@/shared/http/controller.helpers';
 
-const OFFLINE: ContactWithPresence['presence'] = { state: 'offline', lastSeenAt: null };
+const OFFLINE: ContactPresence = { state: 'offline', lastSeenAt: null };
 
 /** Nome exibido do contato: apelido, nome de exibição ou username. */
 function contactName(contact: ContactWithUser): string {
@@ -35,6 +36,10 @@ export class ContactController {
    * Página de contatos com `presence: { state, lastSeenAt }` em cada item. `orderBy=presence`
    * ordena a PÁGINA carregada (o banco ordena por `createdAt`); para a lista completa de quem
    * está conectado, `GET /contacts/online`.
+   *
+   * A listagem não depende do Redis: se a presença falhar, loga `warn` e responde os contatos com
+   * `presence: null` (na ordem do banco, mesmo com `orderBy=presence`). Os endpoints da presença
+   * (`GET /contacts/online`, `GET /api/presence`) continuam exigindo o Redis.
    */
   async list(req: Request, res: Response): Promise<void> {
     const userId = getAuthenticatedUserId(req);
@@ -55,13 +60,23 @@ export class ContactController {
       order,
     });
 
-    const states = await this.presence.getVisibleStates(
-      userId,
-      result.contacts.map((contact) => contact.contactId)
-    );
-    const contacts = withPresence(result.contacts, states);
-    if (byPresence) {
-      contacts.sort((a, b) => compareByPresence(a.presence, b.presence));
+    let contacts: ContactWithPresence[];
+    try {
+      const states = await this.presence.getVisibleStates(
+        userId,
+        result.contacts.map((contact) => contact.contactId)
+      );
+      const withStates = withPresence(result.contacts, states);
+      if (byPresence) {
+        withStates.sort((a, b) => compareByPresence(a.presence, b.presence));
+      }
+      contacts = withStates;
+    } catch (error) {
+      logger.warn('Presença indisponível; contatos listados sem presence', {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      contacts = result.contacts.map((contact) => ({ ...contact, presence: null }));
     }
 
     res.status(HttpStatus.OK).json({ success: true, data: { ...result, contacts } });
@@ -177,7 +192,7 @@ export class ContactController {
 function withPresence(
   contacts: ContactWithUser[],
   states: PresenceStateDTO[]
-): ContactWithPresence[] {
+): (ContactWithUser & { presence: ContactPresence })[] {
   const byId = new Map(
     states.map(({ userId, state, lastSeenAt }) => [userId, { state, lastSeenAt }])
   );
