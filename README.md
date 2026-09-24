@@ -2,7 +2,7 @@
 
 # Real-Time Messaging Platform
 
-**Backend for a real-time chat product, in Node.js and TypeScript** — Express 5 API with token auth, user profiles, contacts and chat — REST plus real-time delivery over Socket.IO with delivered/read receipts, typing indicators and presence (online/away/busy, last seen), with Redis caching on the hot paths — today; search and notifications on the way, each on the store that fits it.
+**Backend for a real-time chat product, in Node.js and TypeScript** — Express 5 API with token auth, user profiles, contacts and chat — REST plus real-time delivery over Socket.IO with delivered/read receipts, typing indicators and presence (online/away/busy, last seen), Redis caching on the hot paths and full-text message search on Elasticsearch — today; notifications on the way, each on the store that fits it.
 
 [![Status](https://img.shields.io/badge/status-work%20in%20progress-f59e0b)](#roadmap)
 [![CI](https://github.com/GabeSilvaDev/realtime-messaging-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/GabeSilvaDev/realtime-messaging-platform/actions/workflows/ci.yml)
@@ -13,14 +13,14 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com)
 [![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.17-005571?logo=elasticsearch&logoColor=white)](https://www.elastic.co)
-[![Tests](https://img.shields.io/badge/tests-2796%20Jest-C21325?logo=jest&logoColor=white)](#development)
+[![Tests](https://img.shields.io/badge/tests-2963%20Jest-C21325?logo=jest&logoColor=white)](#development)
 [![License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
 </div>
 
-> **Work in progress.** Authentication, profiles, contacts/blocks, chat (1:1 and group conversations, messages in MongoDB) and presence are implemented and tested, over REST and in real time over Socket.IO — delivered/read receipts, typing indicators, online/away/busy with last seen, Redis caching with event-driven invalidation and a minimal demo client at `/demo`. Message search is the next milestone — see the [roadmap](#roadmap).
+> **Work in progress.** Authentication, profiles, contacts/blocks, chat (1:1 and group conversations, messages in MongoDB), presence and message search are implemented and tested, over REST and in real time over Socket.IO — delivered/read receipts, typing indicators, online/away/busy with last seen, Redis caching with event-driven invalidation, accent-insensitive full-text search with highlighting on Elasticsearch and a minimal demo client at `/demo`. Notifications, email and file attachments are the next milestone — see the [roadmap](#roadmap).
 
 ## Architecture
 
@@ -35,19 +35,21 @@ flowchart LR
     RT --> CHAT
     RT --> PRES
     API -.-> NOTIF[notifications]
-    API -.-> SEARCH[search]
+    API --> SEARCH[search module]
     AUTH & USER & CHAT --> PG[(PostgreSQL<br/>Sequelize)]
     AUTH & USER & CHAT & PRES & RT --> RD[(Redis<br/>rate limit · Socket.IO adapter<br/>presence · cache)]
     USER --> ST[(Storage<br/>local / S3)]
     API --> LOG[(MongoDB<br/>structured logs)]
     CHAT --> MG[(MongoDB<br/>messages)]
-    SEARCH -.-> ES[(Elasticsearch)]
+    SEARCH --> ES[(Elasticsearch<br/>messages index)]
+    SEARCH --> CHAT
     AUTH & USER & CHAT & PRES --> EB{{EventBus}}
     EB --> RT
     EB --> PRES
+    EB --> SEARCH
 
     classDef planned stroke-dasharray: 5 5,opacity:0.6
-    class NOTIF,SEARCH,ES planned
+    class NOTIF planned
 ```
 
 Solid nodes exist today; dashed ones are planned. Each feature is a **module** (`src/modules/<name>`) with its own controllers, services, repositories, models, DTOs, validation schemas, exceptions and routes, wired through interfaces. Everything cross-cutting lives in `src/shared`.
@@ -170,7 +172,7 @@ Two design notes worth knowing: a resend of an already-stored message by a sende
 
 **Security note — no per-socket rate limit yet.** The HTTP rate limits (below) cover `/api` only; Socket.IO events (`message:send`, `typing:*`, receipts) aren't rate-limited per socket or per user, so an authenticated client can flood them. Per-socket/per-user limits are deferred to subproject 7 (hardening) — see the [Roadmap](#roadmap). Until then, run behind a proxy/WAF that caps WebSocket message rates if the API is exposed publicly.
 
-**Demo client** — `http://localhost:3000/demo/` is a single static page (plain JS, no build) to log in, list and open conversations, start a 1:1 chat by searching users, and watch messages, ✓ sent / ✓✓ delivered / ✓✓ (blue) read, "typing…" and presence (a dot per 1:1 conversation, last seen in the header, and a status selector) live. It keeps the access token in `localStorage`; it's a demo, not a production client. It's served outside production only — with `NODE_ENV=production`, `/demo` exists only if `DEMO_ENABLED=true`.
+**Demo client** — `http://localhost:3000/demo/` is a single static page (plain JS, no build) to log in, list and open conversations, start a 1:1 chat by searching users, and watch messages, ✓ sent / ✓✓ delivered / ✓✓ (blue) read, "typing…" and presence (a dot per 1:1 conversation, last seen in the header, and a status selector) live, plus a message search box in the header (results show the conversation, author, date and the highlighted fragment; clicking one opens the conversation). It keeps the access token in `localStorage`; it's a demo, not a production client. It's served outside production only — with `NODE_ENV=production`, `/demo` exists only if `DEMO_ENABLED=true`.
 
 ### Presence — `/api/presence`
 
@@ -211,6 +213,24 @@ Known limitations:
 
 Invalidation subscribers are synchronous: the request that changed the data returns only after the key was cleared, and the TTL bounds staleness if an event is ever lost. Participants, blocks and audiences also get a second DEL 1 s later (`DelayedCacheInvalidator`, a fire-and-forget unref'd timer): a read that queried the database before the change and finished after the first DEL would otherwise write the old value back for the whole TTL (e.g. a just-blocked user could keep messaging). `POST /:id/read` still reads the participation row, since `last_read_at` changes on every read.
 
+### Search — `/api/search`
+
+Full-text search over the messages of the conversations the caller belongs to **at search time**. The `search` module indexes messages in Elasticsearch (`MessageIndexer`: `{ async: true }` subscribers of `chat:message-sent` and `chat:message-deleted`, so indexing never delays a send); MongoDB stays the source of truth — hits are hydrated from it, so a message deleted in the meantime never shows up.
+
+| Method | Endpoint | Auth | Notes |
+|---|---|:---:|---|
+| `GET` | `/api/search/messages` | ✓ | `q` (required, 1–200 characters) · `conversationId` · `senderId` · `from` / `to` (ISO 8601 with a timezone, `from ≤ to`) · `limit` (1–100, default 20) → `{ items: [{ message, highlights, score }], total, facets: { conversations: [{ conversationId, count }] }, tookMs }` |
+
+- **Index** — `messages` (override with `ELASTICSEARCH_MESSAGES_INDEX`), created at startup when missing and never changed when it exists; `dynamic: strict` mapping with `messageId`, `conversationId`, `senderId` (keywords), `content` (text) and `createdAt` (date), `_id` = message id; deleted messages are removed from it. One shard and no replicas fit a single development node — set replicas for production. At startup (and on every reindex) the server also installs the index template `<index>-template` (priority 500) with the same settings and mapping: Elasticsearch creates a missing index on the first write, so if the index is deleted while the app runs (or during a `--recreate`), the next indexed message recreates it with the right mapping instead of a dynamic one.
+- **Accents and plurals** — the `pt_folded` analyzer (lowercase → ASCII folding → Portuguese stopwords → `-oes` becomes `-ao` → light Portuguese stemmer) runs at index and query time, so "coração", "coracao", "CORAÇÕES" and "corações" all match each other; `content.exact` (no stemming) weighs twice, so the exact form ranks first. Known gap: irregular plurals such as "pães" don't match "pão".
+- **Ranking and highlighting** — relevance first, then newest; up to 3 fragments of 150 characters per message wrapped in `<mark>…</mark>`, with the message text HTML-escaped by Elasticsearch (safe to insert as HTML); `facets.conversations` lists the 10 conversations with most hits; `total` is capped at 10,000 (Elasticsearch default). `total` and the facet counts come from the index, so they may count a message that was deleted but is still indexed (a failed delete, a delete that raced ahead of the indexing, a reindex racing a delete) — such hits are dropped from `items` during hydration, so `items` can be shorter than `total` suggests.
+- **Authorization** — only conversations the caller belongs to now (a `terms` filter, checked again during hydration); a `conversationId` the caller isn't part of answers 404, exactly like a conversation that doesn't exist.
+- **Limits and errors** — 30 requests per minute per IP on this route; Elasticsearch down or too slow → 503 `SEARCH_UNAVAILABLE`; invalid parameters → 400. Once the server is up, no other endpoint depends on Elasticsearch — but the server does need it at startup (it connects and ensures the index before listening).
+- **Timeouts** — every Elasticsearch request gives up after 10 s (the client default would be 10 minutes), so a stalled — not down — node can't hold background indexing or the startup; the search query itself gets 3 s and at most 1 retry (only on a connection error or a 502/503/504 — a timeout isn't retried), then answers 503.
+- **Freshness and recovery** — a new message becomes searchable within about 1 s (the index refresh). Indexing failures are logged with the `messageId`; `npm run search:reindex` walks MongoDB in batches of 500 (by `_id`), indexes live messages and removes deleted ones (idempotent — also how messages sent before search existed get indexed), and `npm run search:reindex -- --recreate` drops and rebuilds the index first (after a mapping or analyzer change; with the app running, searches during the rebuild may return partial results). It exits with 1 if any item failed. The command reads the same environment variables as the app — all database variables must be set, as for `db:migrate`.
+
+Known limitations: search covers message content only — author and conversation names aren't indexed (names change; filter by `senderId`/`conversationId` instead); messages of a deleted conversation stay in the index until a `--recreate` reindex, although nobody can get them back (nobody belongs to that conversation anymore); there's no pagination beyond `limit` (a query returns at most 100 hits).
+
 ### Rate limiting
 
 Built on `express-rate-limit` with a Redis-backed store (`rate-limit-redis`) by default; a `MemoryStore` is selected automatically when `NODE_ENV=test` (no Redis needed to run the suite), and the `store` option on `createRateLimiter` allows injecting any other store. All limits are keyed by the client's IP address (the default `express-rate-limit` key), not by account — the login limiter counts failed attempts per IP, so it can also throttle several accounts sharing the same source IP. `/auth/register`, `/forgot-password` and `/reset-password` share a single limiter instance (same key prefix), so together they share one 5-request bucket per IP within the window, not 5 requests each.
@@ -220,6 +240,7 @@ Built on `express-rate-limit` with a Redis-backed store (`rate-limit-redis`) by 
 | `/api` (global) | 15 min | 100 req | Fails open (`passOnStoreError`) if the store errors, so a Redis outage doesn't take the whole API down |
 | `/auth/register` · `/forgot-password` · `/reset-password` | 15 min | 5 req | One shared bucket per IP across the three routes; fails closed on store errors |
 | `/auth/login` | 15 min | 5 failed attempts | Successful logins aren't counted (`skipSuccessfulRequests`); fails closed on store errors |
+| `/api/search/messages` | 1 min | 30 req | Own bucket per IP (prefix `rl:search:`), on top of the global limit |
 
 `TRUST_PROXY` (unset by default) controls `app.set('trust proxy', …)`, which in turn controls how the client IP (and therefore the rate-limit key) is derived behind a reverse proxy. Leave it unset to keep Express's default (`false`, direct connections only); set it to `true`/`false`, a number of hops (e.g. `1`), or an Express preset/IP such as `loopback` when running behind a trusted proxy — see [Configuration](#configuration). Avoid `TRUST_PROXY=true` outside a controlled setup: it trusts any `X-Forwarded-For` header, so clients can spoof their IP and dodge the rate limit — prefer a hop count or the proxies' IPs/subnets.
 
@@ -301,9 +322,10 @@ npm run test:watch     # jest --watch --coverage=false
 npm run db:migrate         # sequelize-cli db:migrate (via tsx, paths in .sequelizerc)
 npm run db:migrate:undo    # sequelize-cli db:migrate:undo
 npm run db:seed             # sequelize-cli db:seed:all
+npm run search:reindex      # sync the Elasticsearch messages index with MongoDB (-- --recreate rebuilds it)
 ```
 
-**Tests** — 2,827 Jest tests in 189 suites (unit under `tests/unit`; HTTP feature tests with supertest and WebSocket integration tests with socket.io-client under `tests/feature`; Redis is replaced by an in-memory fake, `tests/support/redis/fakeRedis.ts`, whose command semantics were checked against Redis 7). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below the `coverageThreshold` in `jest.config.ts` — statements, branches, functions and lines all set to 90%. Coverage is collected over every file under `src/`, not only the ones a test happens to import; measured with `node node_modules/.bin/jest --coverage --all`, current coverage is 100% statements, 100% branches, 100% functions, 100% lines.
+**Tests** — 2,979 Jest tests in 203 suites (unit under `tests/unit`; HTTP feature tests with supertest and WebSocket integration tests with socket.io-client under `tests/feature`; Redis and Elasticsearch are replaced by in-memory fakes, `tests/support/redis/fakeRedis.ts` and `tests/support/elasticsearch/fakeSearchClient.ts`, whose command and response shapes were checked against Redis 7 and Elasticsearch 8.17). The 14 tests of `tests/integration/search/elasticsearch.int.test.ts` run against a real Elasticsearch only when `ELASTICSEARCH_IT_URL` is set (e.g. `http://localhost:9200`) and are skipped otherwise, CI included — they prove the analyzer (accents, plurals, stemming), the escaped highlighting, the exact queries and that an index recreated by a write gets the template's mapping. The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below the `coverageThreshold` in `jest.config.ts` — statements, branches, functions and lines all set to 90%. Coverage is collected over every file under `src/`, not only the ones a test happens to import; measured with `node node_modules/.bin/jest --coverage --all`, current coverage is 100% statements, 100% branches, 100% functions, 100% lines.
 
 ## Project structure
 
@@ -326,9 +348,13 @@ src/
 │   ├── realtime/             Socket.IO server · handshake middlewares ·
 │   │                         message/typing handlers · TypingService ·
 │   │                         EventBus → rooms bridge
-│   └── presence/             PresenceService (Redis) · connection hooks,
-│                             heartbeat and sweep · presence:update bridge ·
-│                             REST controller · cache invalidation listeners
+│   ├── presence/             PresenceService (Redis) · connection hooks,
+│   │                         heartbeat and sweep · presence:update bridge ·
+│   │                         REST controller · cache invalidation listeners
+│   └── search/               SearchIndexService (index, reindex) ·
+│                             SearchService (query, hydration) · MessageIndexer
+│                             listeners · controller · routes · reindex command
+├── scripts/                  reindexMessages.ts (npm run search:reindex)
 └── shared/
     ├── cache/                CacheService (JSON on Redis, TTL, degradation)
     ├── config/               env → typed config (database, upload)
@@ -345,7 +371,8 @@ public/
 tests/
 ├── unit/                     mirrors src/
 ├── feature/                  supertest against the Express app
-└── support/                  in-memory fakes (chat repositories, Redis, sockets)
+├── integration/              optional suites against real services (ELASTICSEARCH_IT_URL)
+└── support/                  in-memory fakes (chat repositories, Redis, Elasticsearch, sockets)
 ```
 
 ## Configuration
@@ -363,6 +390,7 @@ tests/
 | `REDIS_PASSWORD` | Redis auth |
 | `MONGO_USER` / `MONGO_PASSWORD` / `MONGO_DB` | MongoDB |
 | `ELASTIC_PASSWORD` | Elasticsearch |
+| `ELASTICSEARCH_MESSAGES_INDEX` | Name of the messages search index (default `messages`) |
 | `STORAGE_PROVIDER` | `local` or `s3` |
 | `LOCAL_STORAGE_PATH`, `PUBLIC_URL` | Local provider |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_S3_BUCKET` / `AWS_REGION` / `AWS_S3_ENDPOINT` | S3 provider (any S3-compatible endpoint) |
@@ -379,7 +407,7 @@ tests/
 - [x] Real-time — Socket.IO with JWT handshake and per-user/per-conversation rooms, idempotent sends, delivered/read receipts, typing indicators, Redis adapter and a demo client at /demo
 - [x] Presence and cache — online/away/busy over multi-tab connections in Redis with heartbeat, sweep and last seen, block-aware notifications, and Redis caching of profiles, participants, blocks and audiences with event-driven invalidation
 - [ ] Notifications — in-app and push delivery
-- [ ] Search — message search on Elasticsearch
+- [x] Search — full-text message search on Elasticsearch: accent- and plural-insensitive Portuguese analyzer, relevance, highlighting, filters by conversation, author and date, facets, participant-only results, automatic indexing and a reindex command
 - [ ] Observability — metrics and tracing
 - [ ] Hardening — per-socket/per-user rate limiting for Socket.IO events (deferred from the real-time subproject), security review and delivery polish
 

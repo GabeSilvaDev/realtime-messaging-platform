@@ -120,6 +120,7 @@
     $('chat-view').hidden = false;
     $('logout').hidden = false;
     $('status-label').hidden = false;
+    $('message-search-form').hidden = false;
     $('me').textContent = state.user.displayName ?? state.user.username;
     connectSocket();
     void loadConversations();
@@ -418,6 +419,71 @@
         return item;
       })
     );
+  });
+
+  // ---------- busca de mensagens ----------
+
+  // Nome de quem enviou: só os já conhecidos pelas conversas carregadas (sem ir ao servidor).
+  function knownUserName(userId) {
+    if (userId === state.user.id) {
+      return 'você';
+    }
+    for (const conversation of state.conversations) {
+      const participant = conversation.participants.find((p) => p.id === userId);
+      if (participant) {
+        return participant.displayName ?? participant.username;
+      }
+    }
+    return 'alguém';
+  }
+
+  function renderSearchResults({ items, total, tookMs }) {
+    $('message-search').hidden = false;
+    $('message-search-summary').textContent = `${total} resultado(s) · ${tookMs} ms`;
+    $('message-search-results').replaceChildren(
+      ...items.map(({ message, highlights }) => {
+        const item = el('li');
+        const conversation = state.conversations.find((c) => c.id === message.conversationId);
+        const time = new Date(message.createdAt).toLocaleString([], {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const where = conversation ? conversationTitle(conversation) : 'Conversa';
+        item.append(el('p', 'search-meta', `${where} · ${knownUserName(message.senderId)} · ${time}`));
+        const fragment = el('p', 'fragment');
+        if (highlights.length > 0) {
+          // ÚNICO innerHTML da demo: o fragmento vem do Elasticsearch com encoder html (o texto do
+          // usuário chega escapado) e só as tags <mark> são HTML de verdade.
+          fragment.innerHTML = highlights.join(' … ');
+        } else {
+          fragment.textContent = message.content?.text ?? '';
+        }
+        item.append(fragment);
+        item.addEventListener('click', () => void openConversation(message.conversationId));
+        return item;
+      })
+    );
+  }
+
+  $('message-search-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const q = String(new FormData(event.target).get('q') ?? '').trim();
+    if (!q) {
+      return;
+    }
+    try {
+      renderSearchResults(await api('GET', `/search/messages?q=${encodeURIComponent(q)}&limit=50`));
+    } catch (error) {
+      $('message-search').hidden = false;
+      $('message-search-summary').textContent = `Falha na busca: ${error.message}`;
+      $('message-search-results').replaceChildren();
+    }
+  });
+
+  $('message-search-close').addEventListener('click', () => {
+    $('message-search').hidden = true;
   });
 
   // ---------- mensagens ----------

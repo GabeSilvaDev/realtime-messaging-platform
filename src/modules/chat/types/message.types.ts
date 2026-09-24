@@ -83,3 +83,15 @@ export interface PaginatedMessages {
   messages: MessageDTO[];
   nextCursor: string | null;
 }
+
+/**
+ * Mensagem como a busca a indexa (varredura do reindex). `text: null` = apagada (tombstone): o
+ * índice remove o documento em vez de indexá-lo.
+ */
+export interface IndexableMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  text: string | null;
+  createdAt: Date;
+}

@@ -1,4 +1,6 @@
 * { box-sizing: border-box; }
+/* Regras com display (ex.: #login-view, #search-form) venceriam o [hidden] do navegador. */
+[hidden] { display: none !important; }
 body { margin: 0; font-family: system-ui, sans-serif; background: #f4f5f7; color: #1d2330; }
 header { display: flex; gap: 1rem; align-items: center; padding: 0.75rem 1rem; background: #1d2330; color: #fff; }
 header h1 { font-size: 1.1rem; margin: 0; flex: 1; }
@@ -39,3 +41,13 @@ select { padding: 0.3rem; border-radius: 0.25rem; font: inherit; }
 .dot.away { background: #d97706; }
 .dot.busy { background: #b3261e; }
 .presence-line { margin: 0 0 0.5rem; font-size: 0.8rem; color: #6b7280; min-height: 1em; }
+#message-search-form { display: flex; gap: 0.4rem; }
+#message-search-form input { width: 14rem; padding: 0.3rem 0.5rem; }
+#message-search { margin-bottom: 1rem; }
+#message-search h2 { display: flex; justify-content: space-between; align-items: center; margin-top: 0; }
+#message-search-results { list-style: none; margin: 0; padding: 0; }
+#message-search-results li { border-bottom: 1px solid #dde1e8; }
+.search-meta { font-size: 0.7rem; color: #6b7280; margin: 0 0 0.25rem; }
+.fragment { font-size: 0.85rem; }
+.fragment mark { background: #fde68a; padding: 0 0.1rem; }
+button.link { background: none; color: #2f5bea; padding: 0; font-size: 0.8rem; }

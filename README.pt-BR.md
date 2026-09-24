@@ -2,7 +2,7 @@
 
 # Real-Time Messaging Platform
 
-**Backend de um produto de chat em tempo real, em Node.js e TypeScript** — API Express 5 com autenticação por token, perfis de usuário, contatos e chat — REST e entrega em tempo real via Socket.IO, com confirmações de entrega/leitura, indicador de digitação e presença (online/ausente/ocupado, visto por último), com cache Redis nos caminhos quentes — hoje; busca e notificações a caminho, cada um no banco que melhor o atende.
+**Backend de um produto de chat em tempo real, em Node.js e TypeScript** — API Express 5 com autenticação por token, perfis de usuário, contatos e chat — REST e entrega em tempo real via Socket.IO, com confirmações de entrega/leitura, indicador de digitação e presença (online/ausente/ocupado, visto por último), cache Redis nos caminhos quentes e busca full-text de mensagens no Elasticsearch — hoje; notificações a caminho, cada uma no banco que melhor a atende.
 
 [![Status](https://img.shields.io/badge/status-em%20desenvolvimento-f59e0b)](#roadmap)
 [![CI](https://github.com/GabeSilvaDev/realtime-messaging-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/GabeSilvaDev/realtime-messaging-platform/actions/workflows/ci.yml)
@@ -13,14 +13,14 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com)
 [![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.17-005571?logo=elasticsearch&logoColor=white)](https://www.elastic.co)
-[![Testes](https://img.shields.io/badge/testes-2796%20Jest-C21325?logo=jest&logoColor=white)](#desenvolvimento)
+[![Testes](https://img.shields.io/badge/testes-2963%20Jest-C21325?logo=jest&logoColor=white)](#desenvolvimento)
 [![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-555)](LICENSE)
 
 [English](README.md) · **Português (Brasil)**
 
 </div>
 
-> **Em desenvolvimento.** Autenticação, perfis, contatos/bloqueios, chat (conversas 1:1 e em grupo, mensagens no MongoDB) e presença estão implementados e testados, via REST e em tempo real via Socket.IO — confirmações de entrega/leitura, indicador de digitação, online/ausente/ocupado com visto por último, cache Redis com invalidação por evento e um cliente demo mínimo em `/demo`. A busca de mensagens é o próximo marco — veja o [roadmap](#roadmap).
+> **Em desenvolvimento.** Autenticação, perfis, contatos/bloqueios, chat (conversas 1:1 e em grupo, mensagens no MongoDB), presença e busca de mensagens estão implementados e testados, via REST e em tempo real via Socket.IO — confirmações de entrega/leitura, indicador de digitação, online/ausente/ocupado com visto por último, cache Redis com invalidação por evento, busca full-text sem distinção de acentos e com destaque no Elasticsearch e um cliente demo mínimo em `/demo`. Notificações, email e anexos são o próximo marco — veja o [roadmap](#roadmap).
 
 ## Arquitetura
 
@@ -35,19 +35,21 @@ flowchart LR
     RT --> CHAT
     RT --> PRES
     API -.-> NOTIF[notificações]
-    API -.-> SEARCH[busca]
+    API --> SEARCH[módulo search]
     AUTH & USER & CHAT --> PG[(PostgreSQL<br/>Sequelize)]
     AUTH & USER & CHAT & PRES & RT --> RD[(Redis<br/>rate limit · adapter do Socket.IO<br/>presença · cache)]
     USER --> ST[(Storage<br/>local / S3)]
     API --> LOG[(MongoDB<br/>logs estruturados)]
     CHAT --> MG[(MongoDB<br/>mensagens)]
-    SEARCH -.-> ES[(Elasticsearch)]
+    SEARCH --> ES[(Elasticsearch<br/>índice de mensagens)]
+    SEARCH --> CHAT
     AUTH & USER & CHAT & PRES --> EB{{EventBus}}
     EB --> RT
     EB --> PRES
+    EB --> SEARCH
 
     classDef planned stroke-dasharray: 5 5,opacity:0.6
-    class NOTIF,SEARCH,ES planned
+    class NOTIF planned
 ```
 
 Nós sólidos existem hoje; tracejados são planejados. Cada feature é um **módulo** (`src/modules/<nome>`) com seus próprios controllers, services, repositories, models, DTOs, schemas de validação, exceções e rotas, ligados por interfaces. Tudo que é transversal vive em `src/shared`.
@@ -170,7 +172,7 @@ Duas notas de design importantes: um reenvio de mensagem já gravada por um reme
 
 **Nota de segurança — ainda sem rate limit por socket.** Os rate limits HTTP (abaixo) cobrem só `/api`; os eventos do Socket.IO (`message:send`, `typing:*`, confirmações) não têm limite por socket nem por usuário, então um cliente autenticado consegue inundá-los. Limites por socket/usuário ficaram para o subprojeto 7 (hardening) — veja o [Roadmap](#roadmap). Até lá, se a API for exposta publicamente, rode atrás de um proxy/WAF que limite a taxa de mensagens WebSocket.
 
-**Cliente demo** — `http://localhost:3000/demo/` é uma página estática única (JS puro, sem build) para logar, listar e abrir conversas, iniciar um 1:1 buscando usuários e ver ao vivo as mensagens, ✓ enviada / ✓✓ entregue / ✓✓ (azul) lida, "digitando…" e a presença (um indicador por conversa 1:1, visto por último no cabeçalho e um seletor de status). Guarda o access token no `localStorage`; é uma demo, não um cliente de produção. Só é servida fora de produção — com `NODE_ENV=production`, `/demo` existe apenas se `DEMO_ENABLED=true`.
+**Cliente demo** — `http://localhost:3000/demo/` é uma página estática única (JS puro, sem build) para logar, listar e abrir conversas, iniciar um 1:1 buscando usuários e ver ao vivo as mensagens, ✓ enviada / ✓✓ entregue / ✓✓ (azul) lida, "digitando…" e a presença (um indicador por conversa 1:1, visto por último no cabeçalho e um seletor de status), além de um campo de busca de mensagens no cabeçalho (os resultados mostram conversa, autor, data e o fragmento com os termos destacados; clicar abre a conversa). Guarda o access token no `localStorage`; é uma demo, não um cliente de produção. Só é servida fora de produção — com `NODE_ENV=production`, `/demo` existe apenas se `DEMO_ENABLED=true`.
 
 ### Presença — `/api/presence`
 
@@ -211,6 +213,24 @@ O `CacheService` (`src/shared/cache`) guarda JSON em `cache:*` com TTL padrão d
 
 Os subscribers de invalidação são síncronos: a requisição que mudou o dado só termina depois de a chave ser apagada, e o TTL limita a defasagem se um evento se perder. Participantes, bloqueios e audiências também recebem um segundo DEL 1 s depois (`DelayedCacheInvalidator`, timer `unref` sem aguardar): uma leitura que consultou o banco antes da mudança e terminou depois do primeiro DEL gravaria de volta o valor antigo por todo o TTL (ex.: quem acabou de ser bloqueado seguiria enviando mensagens). O `POST /:id/read` continua lendo a linha da participação, porque `last_read_at` muda a cada leitura.
 
+### Busca — `/api/search`
+
+Busca full-text nas mensagens das conversas das quais o usuário participa **no momento da busca**. O módulo `search` indexa as mensagens no Elasticsearch (`MessageIndexer`: subscribers `{ async: true }` de `chat:message-sent` e `chat:message-deleted`, então a indexação nunca atrasa um envio); o MongoDB continua sendo a fonte da verdade — os acertos são hidratados a partir dele, então uma mensagem apagada nesse meio-tempo nunca aparece.
+
+| Método | Endpoint | Auth | Observações |
+|---|---|:---:|---|
+| `GET` | `/api/search/messages` | ✓ | `q` (obrigatório, 1–200 caracteres) · `conversationId` · `senderId` · `from` / `to` (ISO 8601 com fuso, `from ≤ to`) · `limit` (1–100, padrão 20) → `{ items: [{ message, highlights, score }], total, facets: { conversations: [{ conversationId, count }] }, tookMs }` |
+
+- **Índice** — `messages` (sobrescrito por `ELASTICSEARCH_MESSAGES_INDEX`), criado na inicialização quando não existe e nunca alterado quando existe; mapping `dynamic: strict` com `messageId`, `conversationId`, `senderId` (keywords), `content` (texto) e `createdAt` (data), `_id` = id da mensagem; mensagens apagadas saem dele. Um shard e nenhuma réplica servem a um nó de desenvolvimento — defina as réplicas em produção. Na inicialização (e a cada reindex) o servidor também instala o template de índice `<índice>-template` (prioridade 500) com os mesmos settings e mapping: o Elasticsearch cria um índice ausente na primeira escrita, então, se o índice for apagado com a aplicação no ar (ou durante um `--recreate`), a próxima mensagem indexada o recria com o mapping certo, e não com um dinâmico.
+- **Acentos e plurais** — o analyzer `pt_folded` (minúsculas → remoção de acentos → stopwords do português → `-oes` vira `-ao` → stemmer leve do português) roda na indexação e na consulta, então "coração", "coracao", "CORAÇÕES" e "corações" se encontram; `content.exact` (sem stemmer) pesa o dobro, e a forma exata aparece primeiro. Lacuna conhecida: plurais irregulares como "pães" não casam com "pão".
+- **Relevância e destaque** — primeiro a relevância, depois as mais recentes; até 3 fragmentos de 150 caracteres por mensagem com `<mark>…</mark>`, com o texto da mensagem escapado para HTML pelo Elasticsearch (seguro para inserir como HTML); `facets.conversations` traz as 10 conversas com mais acertos; `total` é limitado a 10.000 (padrão do Elasticsearch). `total` e as contagens das facetas vêm do índice, então podem contar uma mensagem apagada que ainda esteja indexada (um delete que falhou, um delete que chegou antes da indexação, um reindex concorrente com um delete) — esses acertos são descartados de `items` na hidratação, e `items` pode vir menor do que o `total` sugere.
+- **Autorização** — só as conversas das quais o usuário participa agora (filtro `terms`, conferido de novo na hidratação); um `conversationId` do qual ele não participa responde 404, igual a uma conversa que não existe.
+- **Limites e erros** — 30 requisições por minuto por IP nesta rota; Elasticsearch fora do ar ou lento demais → 503 `SEARCH_UNAVAILABLE`; parâmetros inválidos → 400. Com o servidor no ar, nenhum outro endpoint depende do Elasticsearch — mas o servidor precisa dele na inicialização (conecta e garante o índice antes de escutar).
+- **Timeouts** — toda requisição ao Elasticsearch desiste depois de 10 s (o padrão do cliente seria 10 minutos), então um nó travado — não fora do ar — não segura a indexação em segundo plano nem a inicialização; a consulta da busca tem 3 s e no máximo 1 nova tentativa (só para erro de conexão ou 502/503/504 — timeout não é repetido) e então responde 503.
+- **Atualização e recuperação** — uma mensagem nova aparece na busca em cerca de 1 s (o refresh do índice). Falhas de indexação são logadas com o `messageId`; `npm run search:reindex` percorre o MongoDB em lotes de 500 (por `_id`), indexa as mensagens ativas e remove as apagadas (idempotente — é também como as mensagens anteriores à busca entram no índice), e `npm run search:reindex -- --recreate` apaga e recria o índice antes (depois de mudar o mapping ou o analyzer; com a aplicação no ar, buscas durante a reconstrução podem devolver resultados parciais). Sai com código 1 se algum item falhar. O comando lê as mesmas variáveis de ambiente da aplicação — todas as variáveis de banco precisam estar definidas, como no `db:migrate`.
+
+Limitações conhecidas: a busca cobre só o conteúdo das mensagens — nomes de autor e de conversa não são indexados (nomes mudam; filtre por `senderId`/`conversationId`); mensagens de uma conversa apagada ficam no índice até um reindex com `--recreate`, mas ninguém consegue recuperá-las (ninguém participa mais daquela conversa); não há paginação além de `limit` (uma consulta devolve no máximo 100 acertos).
+
 ### Rate limit
 
 Construído sobre `express-rate-limit` com store no Redis (`rate-limit-redis`) por padrão; um `MemoryStore` é selecionado automaticamente quando `NODE_ENV=test` (a suíte roda sem precisar de Redis), e a opção `store` do `createRateLimiter` permite injetar qualquer outro store. Todos os limites são identificados pelo IP do cliente (chave padrão do `express-rate-limit`), não por conta — o limiter de login conta tentativas com falha por IP, então também pode limitar várias contas que compartilhem o mesmo IP de origem. `/auth/register`, `/forgot-password` e `/reset-password` compartilham a mesma instância de limiter (mesmo prefixo de chave), então juntas dividem um único bucket de 5 requisições por IP na janela, não 5 cada uma.
@@ -220,6 +240,7 @@ Construído sobre `express-rate-limit` com store no Redis (`rate-limit-redis`) p
 | `/api` (global) | 15 min | 100 req | Falha aberto (`passOnStoreError`) se o store der erro, para uma falha do Redis não derrubar a API inteira |
 | `/auth/register` · `/forgot-password` · `/reset-password` | 15 min | 5 req | Um único bucket por IP entre as três rotas; falha fechado se o store der erro |
 | `/auth/login` | 15 min | 5 tentativas com falha | Logins bem-sucedidos não contam (`skipSuccessfulRequests`); falha fechado se o store der erro |
+| `/api/search/messages` | 1 min | 30 req | Bucket próprio por IP (prefixo `rl:search:`), além do limite global |
 
 `TRUST_PROXY` (não definida por padrão) controla o `app.set('trust proxy', …)`, que por sua vez controla como o IP do cliente (e portanto a chave do rate limit) é obtido atrás de um proxy reverso. Deixe sem definir para manter o padrão do Express (`false`, só conexões diretas); defina como `true`/`false`, um número de hops (ex.: `1`) ou um preset/IP do Express como `loopback` ao rodar atrás de um proxy confiável — veja a seção Configuração, abaixo. Evite `TRUST_PROXY=true` fora de um ambiente controlado: ele confia em qualquer header `X-Forwarded-For`, então clientes podem forjar o IP e escapar do rate limit — prefira o número de hops ou os IPs/sub-redes dos proxies.
 
@@ -301,9 +322,10 @@ npm run test:watch     # jest --watch --coverage=false
 npm run db:migrate         # sequelize-cli db:migrate (via tsx, caminhos no .sequelizerc)
 npm run db:migrate:undo    # sequelize-cli db:migrate:undo
 npm run db:seed             # sequelize-cli db:seed:all
+npm run search:reindex      # sincroniza o índice de mensagens do Elasticsearch com o MongoDB (-- --recreate recria)
 ```
 
-**Testes** — 2.827 testes Jest em 189 suítes (unitários em `tests/unit`; testes de feature HTTP com supertest e de integração WebSocket com socket.io-client em `tests/feature`; o Redis é substituído por um fake em memória, `tests/support/redis/fakeRedis.ts`, com a semântica dos comandos conferida contra o Redis 7). O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e, a cada push e pull request, roda ESLint, uma checagem do Prettier, `tsc --noEmit` e a suíte. O build falha se a cobertura cair abaixo do `coverageThreshold` em `jest.config.ts` — statements, branches, funções e linhas todos em 90%. A cobertura é medida sobre todo arquivo em `src/`, não só os que algum teste importa; medida com `node node_modules/.bin/jest --coverage --all`, a cobertura atual é 100% statements, 100% branches, 100% funções, 100% linhas.
+**Testes** — 2.979 testes Jest em 203 suítes (unitários em `tests/unit`; testes de feature HTTP com supertest e de integração WebSocket com socket.io-client em `tests/feature`; o Redis e o Elasticsearch são substituídos por fakes em memória, `tests/support/redis/fakeRedis.ts` e `tests/support/elasticsearch/fakeSearchClient.ts`, com a semântica dos comandos e o formato das respostas conferidos contra o Redis 7 e o Elasticsearch 8.17). Os 14 testes de `tests/integration/search/elasticsearch.int.test.ts` rodam contra um Elasticsearch de verdade só quando `ELASTICSEARCH_IT_URL` está definida (ex.: `http://localhost:9200`) e são pulados nos demais casos, inclusive no CI — eles comprovam o analyzer (acentos, plurais, stemmer), o destaque escapado, as consultas exatas e que um índice recriado por uma escrita recebe o mapping do template. O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e, a cada push e pull request, roda ESLint, uma checagem do Prettier, `tsc --noEmit` e a suíte. O build falha se a cobertura cair abaixo do `coverageThreshold` em `jest.config.ts` — statements, branches, funções e linhas todos em 90%. A cobertura é medida sobre todo arquivo em `src/`, não só os que algum teste importa; medida com `node node_modules/.bin/jest --coverage --all`, a cobertura atual é 100% statements, 100% branches, 100% funções, 100% linhas.
 
 ## Estrutura do projeto
 
@@ -326,9 +348,13 @@ src/
 │   ├── realtime/             servidor Socket.IO · middlewares do handshake ·
 │   │                         handlers de mensagem/digitação · TypingService ·
 │   │                         ponte EventBus → rooms
-│   └── presence/             PresenceService (Redis) · hooks de conexão,
-│                             heartbeat e varredura · ponte presence:update ·
-│                             controller REST · listeners de invalidação
+│   ├── presence/             PresenceService (Redis) · hooks de conexão,
+│   │                         heartbeat e varredura · ponte presence:update ·
+│   │                         controller REST · listeners de invalidação
+│   └── search/               SearchIndexService (índice, reindex) ·
+│                             SearchService (consulta, hidratação) · listeners
+│                             do MessageIndexer · controller · rotas · comando de reindex
+├── scripts/                  reindexMessages.ts (npm run search:reindex)
 └── shared/
     ├── cache/                CacheService (JSON no Redis, TTL, degradação)
     ├── config/               env → config tipada (database, upload)
@@ -345,7 +371,8 @@ public/
 tests/
 ├── unit/                     espelha src/
 ├── feature/                  supertest contra o app Express
-└── support/                  fakes em memória (repositórios do chat, Redis, sockets)
+├── integration/              suítes opcionais contra serviços reais (ELASTICSEARCH_IT_URL)
+└── support/                  fakes em memória (repositórios do chat, Redis, Elasticsearch, sockets)
 ```
 
 ## Configuração
@@ -363,6 +390,7 @@ O `.env.example` lista todas as variáveis. As que importam:
 | `REDIS_PASSWORD` | Auth do Redis |
 | `MONGO_USER` / `MONGO_PASSWORD` / `MONGO_DB` | MongoDB |
 | `ELASTIC_PASSWORD` | Elasticsearch |
+| `ELASTICSEARCH_MESSAGES_INDEX` | Nome do índice de busca das mensagens (padrão `messages`) |
 | `STORAGE_PROVIDER` | `local` ou `s3` |
 | `LOCAL_STORAGE_PATH`, `PUBLIC_URL` | Provider local |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_S3_BUCKET` / `AWS_REGION` / `AWS_S3_ENDPOINT` | Provider S3 (qualquer endpoint compatível) |
@@ -379,7 +407,7 @@ O `.env.example` lista todas as variáveis. As que importam:
 - [x] Tempo real — Socket.IO com handshake JWT e rooms por usuário/conversa, envio idempotente, confirmações de entrega/leitura, indicador de digitação, Redis adapter e cliente demo em /demo
 - [x] Presença e cache — online/ausente/ocupado sobre conexões multi-aba no Redis com heartbeat, varredura e visto por último, avisos que respeitam bloqueios, e cache Redis de perfis, participantes, bloqueios e audiências com invalidação por evento
 - [ ] Notificações — entrega in-app e push
-- [ ] Busca — busca de mensagens no Elasticsearch
+- [x] Busca — busca full-text de mensagens no Elasticsearch: analyzer de português sem distinção de acentos e plurais, relevância, destaque, filtros por conversa, autor e data, facetas, resultados só das conversas do usuário, indexação automática e comando de reindex
 - [ ] Observabilidade — métricas e tracing
 - [ ] Hardening — rate limit por socket/usuário nos eventos do Socket.IO (adiado do subprojeto de tempo real), revisão de segurança e acabamento da entrega
 

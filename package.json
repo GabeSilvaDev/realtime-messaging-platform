@@ -47,7 +47,8 @@
     "test:watch": "jest --watch --coverage=false",
     "db:migrate": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:migrate",
     "db:migrate:undo": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:migrate:undo",
-    "db:seed": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:seed:all"
+    "db:seed": "node --import tsx node_modules/sequelize-cli/lib/sequelize db:seed:all",
+    "search:reindex": "node --import tsx src/scripts/reindexMessages.ts"
   },
   "repository": {
     "type": "git",
@@ -63,7 +64,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.806.0",
     "@aws-sdk/s3-request-presigner": "^3.806.0",
-    "@elastic/elasticsearch": "^9.2.0",
+    "@elastic/elasticsearch": "^8.19.2",
     "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",

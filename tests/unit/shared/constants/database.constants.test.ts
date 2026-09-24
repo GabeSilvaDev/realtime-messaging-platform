@@ -41,6 +41,10 @@ describe('Database Constants', () => {
       expect(ELASTICSEARCH_DEFAULTS.HOST).toBe('elasticsearch');
       expect(ELASTICSEARCH_DEFAULTS.PORT).toBe(9200);
     });
+
+    it('should limit every request to 10 seconds (the client default is 10 minutes)', () => {
+      expect(ELASTICSEARCH_DEFAULTS.REQUEST_TIMEOUT_MS).toBe(10_000);
+    });
   });
 
   describe('POOL_CONFIG', () => {

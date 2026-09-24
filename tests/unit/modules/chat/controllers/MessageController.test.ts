@@ -19,6 +19,8 @@ function createService(): jest.Mocked<IMessageService> {
     delete: jest.fn(),
     markDelivered: jest.fn(),
     markRead: jest.fn(),
+    findByIdsForSearch: jest.fn(),
+    forEachForIndexing: jest.fn(),
   };
 }
 

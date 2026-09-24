@@ -381,4 +381,55 @@ describe('MessageRepository', () => {
       await expect(repository.deleteByConversation(CONVERSATION_ID)).resolves.toBe(0);
     });
   });
+
+  describe('findActiveByIds', () => {
+    it('deve buscar só as não apagadas entre os ids informados', async () => {
+      query.exec.mockResolvedValue([fakeDoc()]);
+
+      const result = await repository.findActiveByIds([MESSAGE_ID, REPLY_ID]);
+
+      expect(MockMessageModel.find).toHaveBeenCalledWith({
+        _id: { $in: [MESSAGE_ID, REPLY_ID] },
+        deletedAt: null,
+      });
+      expect(result).toEqual([expectedRecord]);
+    });
+
+    it('deve ignorar ids que não são ObjectId e não consultar sem ids válidos', async () => {
+      query.exec.mockResolvedValue([]);
+
+      await repository.findActiveByIds(['nao-e-objectid', MESSAGE_ID]);
+      const result = await repository.findActiveByIds(['x', '']);
+
+      expect(MockMessageModel.find).toHaveBeenCalledTimes(1);
+      expect(MockMessageModel.find).toHaveBeenCalledWith({
+        _id: { $in: [MESSAGE_ID] },
+        deletedAt: null,
+      });
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('findPageAfter', () => {
+    it('sem cursor deve buscar desde o início, em ordem crescente de _id', async () => {
+      query.exec.mockResolvedValue([fakeDoc({ deletedAt: STATUS_AT })]);
+
+      const result = await repository.findPageAfter(null, 500);
+
+      expect(MockMessageModel.find).toHaveBeenCalledWith({});
+      expect(query.sort).toHaveBeenCalledWith({ _id: 1 });
+      expect(query.limit).toHaveBeenCalledWith(500);
+      expect(result).toEqual([{ ...expectedRecord, deletedAt: STATUS_AT }]);
+    });
+
+    it('com cursor deve buscar só os _id maiores (apagadas inclusive)', async () => {
+      query.exec.mockResolvedValue([]);
+
+      await repository.findPageAfter(MESSAGE_ID, 2);
+
+      const filter = MockMessageModel.find.mock.calls[0]![0] as { _id: { $gt: Types.ObjectId } };
+      expect(filter._id.$gt.toString()).toBe(MESSAGE_ID);
+      expect(query.limit).toHaveBeenCalledWith(2);
+    });
+  });
 });

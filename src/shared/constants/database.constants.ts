@@ -18,6 +18,11 @@ export const MONGO_DEFAULTS = {
 export const ELASTICSEARCH_DEFAULTS = {
   HOST: 'elasticsearch',
   PORT: 9200,
+  /**
+   * Tempo máximo de cada requisição (o padrão do cliente 8.x é 10 min): um Elasticsearch travado
+   * (não fora do ar) não segura a busca, a indexação assíncrona nem o bootstrap por minutos.
+   */
+  REQUEST_TIMEOUT_MS: 10_000,
 } as const;
 
 export const POOL_CONFIG = {

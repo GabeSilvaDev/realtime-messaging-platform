@@ -387,6 +387,19 @@ export class InMemoryMessageRepository implements IMessageRepository {
     this.store.messages = this.store.messages.filter((m) => m.conversationId !== conversationId);
     return before - this.store.messages.length;
   }
+
+  async findActiveByIds(ids: string[]): Promise<MessageRecord[]> {
+    return this.store.messages.filter((m) => ids.includes(m.id) && m.deletedAt === null).map(copy);
+  }
+
+  /** Ids aleatórios em hexadecimal: a ordem de `id` é estável, como a de `_id` no MongoDB. */
+  async findPageAfter(afterId: string | null, limit: number): Promise<MessageRecord[]> {
+    return [...this.store.messages]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .filter((m) => afterId === null || m.id > afterId)
+      .slice(0, limit)
+      .map(copy);
+  }
 }
 
 export function createInMemoryChatRepositories(): {
