@@ -306,6 +306,17 @@ describe('MessageService', () => {
       });
     });
 
+    it('deve aplicar limite mínimo de 1 quando limit=0', async () => {
+      messages.findByConversation.mockResolvedValue([]);
+
+      await service.list(USER_A, CONVERSATION_ID, { limit: 0 });
+
+      expect(messages.findByConversation).toHaveBeenCalledWith(CONVERSATION_ID, {
+        limit: 1,
+        before: undefined,
+      });
+    });
+
     it('deve converter o cursor before em createdAt/_id', async () => {
       messages.findById.mockResolvedValue(record({ id: MESSAGE_ID }));
       messages.findByConversation.mockResolvedValue([]);

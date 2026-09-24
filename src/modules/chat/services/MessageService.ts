@@ -122,9 +122,9 @@ export class MessageService implements IMessageService {
   ): Promise<PaginatedMessages> {
     await this.requireParticipant(conversationId, userId);
 
-    const pageSize = Math.min(
-      options.limit ?? CHAT_CONSTANTS.MESSAGE_PAGE_SIZE,
-      CHAT_CONSTANTS.MESSAGE_PAGE_SIZE
+    const pageSize = Math.max(
+      1,
+      Math.min(options.limit ?? CHAT_CONSTANTS.MESSAGE_PAGE_SIZE, CHAT_CONSTANTS.MESSAGE_PAGE_SIZE)
     );
 
     let before: MessageCursor | undefined;
