@@ -17,7 +17,6 @@ import type { Store } from 'express-rate-limit';
 import { authenticate } from '@/modules/auth/middlewares';
 import { searchController } from '@/modules/search/controllers/SearchController';
 import { createSearchRateLimiter, createSearchRoutes, searchRoutes } from '@/modules/search/routes';
-import { createRateLimiter } from '@/shared/middlewares/rateLimiter';
 
 type Layer = {
   route?: {
@@ -104,14 +103,7 @@ describe('search.routes', () => {
     };
 
     const app = express();
-    const limiter = createRateLimiter({
-      windowMs: 60_000,
-      max: 30,
-      keyPrefix: 'rl:search:',
-      message: 'Too many search requests, please try again later',
-      passOnStoreError: true,
-      store: failingStore as Store,
-    });
+    const limiter = createSearchRateLimiter(failingStore as Store);
 
     app.use('/api/search', createSearchRoutes(controller, limiter));
 

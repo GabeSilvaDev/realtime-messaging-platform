@@ -1,11 +1,12 @@
 import { Router, type RequestHandler } from 'express';
+import type { Store } from 'express-rate-limit';
 import { authenticate, asyncHandler } from '@/modules/auth/middlewares';
 import { createRateLimiter } from '@/shared/middlewares/rateLimiter';
 import { SEARCH_CONSTANTS } from '../constants';
 import { searchController, type SearchController } from '../controllers/SearchController';
 
 /** Rate limit próprio da busca: 30 requisições por minuto por IP (chave padrão do projeto). */
-export function createSearchRateLimiter(): RequestHandler {
+export function createSearchRateLimiter(store?: Store): RequestHandler {
   // Prioriza disponibilidade sobre o rate limiting em si — se o store falhar (ex.: Redis fora
   // do ar), deixa a requisição passar em vez de derrubar a busca.
   return createRateLimiter({
@@ -14,6 +15,7 @@ export function createSearchRateLimiter(): RequestHandler {
     keyPrefix: SEARCH_CONSTANTS.RATE_LIMIT_KEY_PREFIX,
     message: 'Too many search requests, please try again later',
     passOnStoreError: true,
+    ...(store !== undefined && { store }),
   });
 }
 
