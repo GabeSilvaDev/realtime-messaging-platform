@@ -107,6 +107,41 @@ describe('CacheService', () => {
       await expect(cache.getOrLoad('list', 120, loader)).rejects.toThrow('db down');
       expect(redis.keys()).toEqual([]);
     });
+
+    it('loader retorna undefined → devolve undefined mas não cacheia', async () => {
+      const loader = jest.fn().mockResolvedValue(undefined);
+
+      const result = await cache.getOrLoad('k', 120, loader);
+      expect(result).toBeUndefined();
+      expect(redis.keys()).toEqual([]);
+    });
+  });
+
+  describe('undefined não é cacheado', () => {
+    it('set com undefined não grava no Redis', async () => {
+      await cache.set('k', undefined);
+
+      expect(redis.keys()).toEqual([]);
+    });
+
+    it('setMany filtra undefined e não grava no Redis', async () => {
+      await cache.setMany([
+        ['a', 1],
+        ['b', undefined],
+        ['c', 3],
+      ]);
+
+      expect(redis.keys()).toEqual(['cache:a', 'cache:c']);
+    });
+
+    it('setMany com todos undefined não grava nada', async () => {
+      await cache.setMany([
+        ['a', undefined],
+        ['b', undefined],
+      ]);
+
+      expect(redis.keys()).toEqual([]);
+    });
   });
 
   describe('Redis indisponível → degrada para a fonte, com log warn', () => {
@@ -143,14 +178,31 @@ describe('CacheService', () => {
   });
 
   describe('falhas parciais', () => {
-    it('valor corrompido no Redis vira miss com warn', async () => {
+    it('valor corrompido no Redis vira miss com warn distinto', async () => {
       await redis.set('cache:k', '{nao-e-json');
 
       expect(await cache.get('k')).toBeNull();
-      expect(logger.warn).toHaveBeenCalledWith(
-        'Cache Redis indisponível; seguindo sem cache',
-        expect.objectContaining({ operation: 'get', key: 'k' })
-      );
+      expect(logger.warn).toHaveBeenCalledWith('Valor inválido no cache; seguindo sem cache', {
+        operation: 'get',
+        key: 'k',
+        error: expect.any(String),
+      });
+    });
+
+    it('mget com item corrompido no meio devolve [valor, null, valor] com log distinto', async () => {
+      await cache.setMany([
+        ['a', { n: 1 }],
+        ['c', { n: 3 }],
+      ]);
+      await redis.set('cache:b', '{corrupto');
+
+      const result = await cache.mget(['a', 'b', 'c']);
+      expect(result).toEqual([{ n: 1 }, null, { n: 3 }]);
+      expect(logger.warn).toHaveBeenCalledWith('Valor inválido no cache; seguindo sem cache', {
+        operation: 'mget',
+        key: 'b',
+        error: expect.any(String),
+      });
     });
 
     it('erro de um comando do pipeline do setMany é logado', async () => {

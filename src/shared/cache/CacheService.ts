@@ -12,7 +12,9 @@ function describeError(error: unknown): string {
  * nunca uma dependência: qualquer falha (conexão, timeout, valor corrompido) vira log `warn` e
  * o comportamento de "não estava no cache" — quem chamou segue com a fonte da verdade.
  *
- * Datas voltam como strings ISO (JSON): quem cacheia objetos com `Date` reconstrói os campos.
+ * Valores cacheados devem ser JSON-serializáveis. Datas voltam como strings ISO (JSON):
+ * quem cacheia objetos com `Date` reconstrói os campos. `undefined` nunca é cacheado
+ * (é um efeito colateral de `JSON.stringify`, não um valor válido no cache).
  */
 export class CacheService implements ICacheService {
   constructor(
@@ -23,7 +25,19 @@ export class CacheService implements ICacheService {
   async get<T>(key: string): Promise<T | null> {
     try {
       const raw = await this.client.get(this.key(key));
-      return raw === null ? null : (JSON.parse(raw) as T);
+      if (raw === null) {
+        return null;
+      }
+      try {
+        return JSON.parse(raw) as T;
+      } catch (parseError) {
+        logger.warn('Valor inválido no cache; seguindo sem cache', {
+          operation: 'get',
+          key,
+          error: describeError(parseError),
+        });
+        return null;
+      }
     } catch (error) {
       this.warn('get', error, { key });
       return null;
@@ -36,7 +50,21 @@ export class CacheService implements ICacheService {
     }
     try {
       const raws = await this.client.mget(...keys.map((key) => this.key(key)));
-      return raws.map((raw) => (raw === null ? null : (JSON.parse(raw) as T)));
+      return raws.map((raw, index) => {
+        if (raw === null) {
+          return null;
+        }
+        try {
+          return JSON.parse(raw) as T;
+        } catch (parseError) {
+          logger.warn('Valor inválido no cache; seguindo sem cache', {
+            operation: 'mget',
+            key: keys[index],
+            error: describeError(parseError),
+          });
+          return null;
+        }
+      });
     } catch (error) {
       this.warn('mget', error, { keys: keys.length });
       return keys.map(() => null);
@@ -48,6 +76,9 @@ export class CacheService implements ICacheService {
     value: unknown,
     ttlSeconds: number = this.defaultTtlSeconds
   ): Promise<void> {
+    if (value === undefined) {
+      return;
+    }
     try {
       await this.client.set(this.key(key), JSON.stringify(value), 'EX', ttlSeconds);
     } catch (error) {
@@ -59,13 +90,15 @@ export class CacheService implements ICacheService {
     entries: [string, unknown][],
     ttlSeconds: number = this.defaultTtlSeconds
   ): Promise<void> {
-    if (entries.length === 0) {
+    // Filter out undefined values
+    const validEntries = entries.filter(([, value]) => value !== undefined);
+    if (validEntries.length === 0) {
       return;
     }
     try {
       const results = await this.client
         .pipeline(
-          entries.map(([key, value]) => [
+          validEntries.map(([key, value]) => [
             'set',
             this.key(key),
             JSON.stringify(value),
@@ -81,7 +114,7 @@ export class CacheService implements ICacheService {
         throw failure;
       }
     } catch (error) {
-      this.warn('setMany', error, { keys: entries.length });
+      this.warn('setMany', error, { keys: validEntries.length });
     }
   }
 
@@ -103,7 +136,10 @@ export class CacheService implements ICacheService {
       return cached;
     }
     const value = await loader();
-    await this.set(key, value, ttlSeconds);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (value !== undefined) {
+      await this.set(key, value, ttlSeconds);
+    }
     return value;
   }
 
