@@ -6,6 +6,9 @@
   const TOKEN_KEY = 'rtm-demo-token';
   const USER_KEY = 'rtm-demo-user';
   const TYPING_RENEW_MS = 1000;
+  // Eventos em rajada (várias mensagens/conversas) não viram uma requisição cada: a lista é
+  // recarregada via REST no máximo uma vez a cada 2s.
+  const CONVERSATIONS_REFRESH_MS = 2000;
 
   const $ = (id) => document.getElementById(id);
   const state = {
@@ -18,7 +21,17 @@
     nextCursor: null,
     lastTypingAt: 0,
     typingTimer: null,
+    lastRefreshAt: 0,
+    refreshTimer: null,
   };
+
+  // Sessão inválida (401 no REST, token expirado ou sessões revogadas): limpa e volta ao login.
+  function endSession() {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    state.socket?.disconnect();
+    window.location.reload();
+  }
 
   async function api(method, path, body) {
     const response = await fetch(`/api${path}`, {
@@ -29,6 +42,10 @@
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    if (response.status === 401 && state.token) {
+      endSession();
+      throw new Error('Sessão expirada');
+    }
     if (response.status === 204) {
       return null;
     }
@@ -97,12 +114,7 @@
     }
   });
 
-  $('logout').addEventListener('click', () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    state.socket?.disconnect();
-    window.location.reload();
-  });
+  $('logout').addEventListener('click', endSession);
 
   // ---------- socket ----------
 
@@ -118,14 +130,20 @@
         void openConversation(state.current.id);
       }
     });
-    socket.on('disconnect', () => {
-      $('connection').textContent = 'reconectando…';
+    socket.on('disconnect', (reason) => {
       $('connection').classList.remove('online');
+      // O servidor derruba o socket quando o token expira ou as sessões são revogadas; sem
+      // refresh token na demo, a saída é logar de novo.
+      if (reason === 'io server disconnect') {
+        endSession();
+        return;
+      }
+      $('connection').textContent = 'reconectando…';
     });
     socket.on('connect_error', (error) => {
       $('connection').textContent = `erro: ${error.message}`;
       if (error.message === 'UNAUTHORIZED') {
-        $('logout').click();
+        endSession();
       }
     });
 
@@ -140,18 +158,25 @@
       }
     });
     socket.on('typing:indicator', ({ conversationId, userId, isTyping }) => {
+      // O próprio indicador (vindo de outra aba/dispositivo do mesmo usuário) é ignorado.
+      if (userId === state.user.id) {
+        return;
+      }
       if (state.current?.id === conversationId) {
         $('typing').textContent = isTyping ? `${participantName(userId)} está digitando…` : '';
       }
     });
-    socket.on('conversation:new', () => void loadConversations());
-    socket.on('conversation:updated', () => void loadConversations());
+    socket.on('conversation:new', scheduleConversationsRefresh);
+    socket.on('conversation:updated', scheduleConversationsRefresh);
     socket.on('conversation:deleted', ({ conversationId }) => {
       if (state.current?.id === conversationId) {
         state.current = null;
         $('conversation').hidden = true;
       }
-      void loadConversations();
+      // Remoção local imediata; a lista completa vem no próximo refresh.
+      state.conversations = state.conversations.filter((c) => c.id !== conversationId);
+      renderConversations();
+      scheduleConversationsRefresh();
     });
   }
 
@@ -163,7 +188,7 @@
         messageId: message.id,
       });
     }
-    void loadConversations();
+    bumpConversation(message.conversationId);
 
     if (state.current?.id !== message.conversationId) {
       return;
@@ -206,16 +231,46 @@
   // ---------- conversas ----------
 
   async function loadConversations() {
+    state.lastRefreshAt = Date.now();
     const page = await api('GET', '/conversations?limit=100');
     state.conversations = page.items;
-    const list = $('conversations');
-    list.replaceChildren(
-      ...page.items.map((conversation) => {
+    renderConversations();
+  }
+
+  function renderConversations() {
+    $('conversations').replaceChildren(
+      ...state.conversations.map((conversation) => {
         const item = el('li', state.current?.id === conversation.id ? 'active' : '', conversationTitle(conversation));
         item.addEventListener('click', () => void openConversation(conversation.id));
         return item;
       })
     );
+  }
+
+  // No máximo um GET /conversations a cada CONVERSATIONS_REFRESH_MS (o último evento da rajada
+  // sempre é refletido: o refresh atrasado busca o estado mais recente).
+  function scheduleConversationsRefresh() {
+    if (state.refreshTimer !== null) {
+      return;
+    }
+    const wait = Math.max(0, state.lastRefreshAt + CONVERSATIONS_REFRESH_MS - Date.now());
+    state.refreshTimer = setTimeout(() => {
+      state.refreshTimer = null;
+      void loadConversations();
+    }, wait);
+  }
+
+  // Mensagem nova: sobe a conversa para o topo localmente, sem ir ao servidor; conversa
+  // desconhecida (ainda não listada) agenda um refresh.
+  function bumpConversation(conversationId) {
+    const index = state.conversations.findIndex((c) => c.id === conversationId);
+    if (index === -1) {
+      scheduleConversationsRefresh();
+      return;
+    }
+    const [conversation] = state.conversations.splice(index, 1);
+    state.conversations.unshift(conversation);
+    renderConversations();
   }
 
   async function openConversation(conversationId) {
@@ -228,7 +283,12 @@
     $('typing').textContent = '';
     renderMessages(true);
     markRead();
-    void loadConversations();
+    // Conversa recém-criada (busca de usuário) ainda não está na lista local.
+    if (state.conversations.some((c) => c.id === conversationId)) {
+      renderConversations();
+    } else {
+      scheduleConversationsRefresh();
+    }
   }
 
   $('load-more').addEventListener('click', async () => {
@@ -346,7 +406,10 @@
             state.messages[index] = ack.data;
           }
         } else {
-          state.messages.splice(index, 1);
+          // index -1 (a otimista já saiu, ex.: conversa trocada): splice(-1, 1) apagaria a última.
+          if (index !== -1) {
+            state.messages.splice(index, 1);
+          }
           window.alert(`Falha ao enviar: ${ack.error.message}`);
         }
         renderMessages();
