@@ -27,6 +27,12 @@ export interface UserResponseDTO {
   createdAt: Date;
 }
 
+/**
+ * Perfil público INTERNO (cache `cache:user:<id>`, `userService.getMultiple`): inclui `status` e
+ * `lastSeenAt` porque a presença lê o `last_seen_at` daqui. Nunca é serializado para outro
+ * usuário — respostas sobre outros usuários usam `UserSummaryDTO` (a presença é a única fonte
+ * do estado e do visto por último, e ela esconde pares bloqueados).
+ */
 export interface PublicUserDTO {
   id: string;
   username: string;
@@ -34,6 +40,14 @@ export interface PublicUserDTO {
   avatarUrl: string | null;
   status: string;
   lastSeenAt: Date | null;
+}
+
+/** Outro usuário como sai nas respostas (contatos, bloqueios, busca): sem status/lastSeenAt. */
+export interface UserSummaryDTO {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
 }
 
 export interface UserSearchResultDTO {
@@ -88,7 +102,7 @@ export interface ContactResponseDTO {
   isFavorite: boolean;
   blockedAt: Date | null;
   createdAt: Date;
-  contact: PublicUserDTO;
+  contact: UserSummaryDTO;
 }
 
 export interface BlockUserDTO {

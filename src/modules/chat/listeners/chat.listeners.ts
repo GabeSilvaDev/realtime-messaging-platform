@@ -1,8 +1,10 @@
 import type { IContactService } from '@/modules/user/interfaces';
 import { contactService } from '@/modules/user/services/ContactService';
+import { cacheService, type ICacheService } from '@/shared/cache';
 import { eventBus, type EventBus } from '@/shared/event-bus';
 import { logger } from '@/shared/logger';
 import { ChatEvents } from '@/shared/types';
+import { CHAT_CACHE_KEYS } from '../constants';
 import type { IMessageRepository } from '../interfaces';
 import { messageRepository } from '../repositories';
 
@@ -63,6 +65,31 @@ export function registerChatListeners(
       },
       DETACHED
     ),
+  ];
+
+  return () => {
+    unsubscribers.forEach((unsubscribe) => {
+      unsubscribe();
+    });
+  };
+}
+
+/**
+ * Invalida `cache:conv:participants:<id>` em toda mudança de participação. Subscribers
+ * síncronos que devolvem a promise do `del`: quem publica só termina com o cache já limpo (o
+ * próximo envio/listagem relê do Postgres).
+ */
+export function registerChatCacheListeners(
+  bus: Pick<EventBus, 'subscribe'> = eventBus,
+  cache: Pick<ICacheService, 'del'> = cacheService
+): () => void {
+  const forget = ({ payload }: { payload: { conversationId: string } }): Promise<void> =>
+    cache.del(CHAT_CACHE_KEYS.participants(payload.conversationId));
+
+  const unsubscribers = [
+    bus.subscribe(ChatEvents.CONVERSATION_CREATED, forget),
+    bus.subscribe(ChatEvents.CONVERSATION_UPDATED, forget),
+    bus.subscribe(ChatEvents.CONVERSATION_DELETED, forget),
   ];
 
   return () => {

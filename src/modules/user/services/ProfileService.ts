@@ -1,4 +1,7 @@
-import { UserStatus } from '@/shared/types';
+import type { IPresenceService } from '@/modules/presence/interfaces';
+import { presenceService } from '@/modules/presence/services/PresenceService';
+import { UserEvents, UserStatus, type ManualPresenceStatus } from '@/shared/types';
+import { eventBus, type EventBus } from '@/shared/event-bus';
 import { logger } from '@/shared/logger';
 import { userRepository } from '../repositories';
 import { avatarService } from './AvatarService';
@@ -10,6 +13,7 @@ import {
   InvalidAvatarUrlException,
   BioTooLongException,
   DisplayNameTooLongException,
+  OfflineStatusNotAllowedException,
 } from '../errors';
 import { PROFILE_CONSTANTS } from '../constants';
 import type {
@@ -29,9 +33,24 @@ export {
   InvalidAvatarUrlException,
   BioTooLongException,
   DisplayNameTooLongException,
+  OfflineStatusNotAllowedException,
 } from '../errors';
 
 export type { IProfileService } from '../interfaces';
+
+/** Status legado (`users.status`) → status manual da presença; offline não é manual (400). */
+function toManualStatus(status: UserStatus): ManualPresenceStatus {
+  switch (status) {
+    case UserStatus.ONLINE:
+      return 'available';
+    case UserStatus.AWAY:
+      return 'away';
+    case UserStatus.BUSY:
+      return 'busy';
+    case UserStatus.OFFLINE:
+      throw new OfflineStatusNotAllowedException();
+  }
+}
 
 export class ProfileService implements IProfileService {
   private readonly MAX_BIO_LENGTH = PROFILE_CONSTANTS.MAX_BIO_LENGTH;
@@ -39,7 +58,9 @@ export class ProfileService implements IProfileService {
 
   constructor(
     private readonly users: IUserRepository = userRepository,
-    private readonly avatar: IAvatarService = avatarService
+    private readonly avatar: IAvatarService = avatarService,
+    private readonly events: Pick<EventBus, 'publish'> = eventBus,
+    private readonly presence: Pick<IPresenceService, 'setManualStatus'> = presenceService
   ) {}
 
   async getProfile(userId: string): Promise<UserProfile> {
@@ -51,6 +72,10 @@ export class ProfileService implements IProfileService {
     return this.mapToUserProfile(user as unknown as Record<string, unknown>);
   }
 
+  /**
+   * Perfil de outro usuário, sem `status`/`lastSeenAt`: o estado e o visto por último saem só pela
+   * presença (`GET /api/presence`), que esconde pares bloqueados.
+   */
   async getPublicProfile(userId: string): Promise<PublicProfile> {
     const user = await this.users.findById(userId);
     if (!user) {
@@ -64,8 +89,6 @@ export class ProfileService implements IProfileService {
       displayName: user.displayName,
       avatarUrl: user.avatarUrl,
       bio: (userData.bio as string | null) ?? null,
-      status: user.status,
-      lastSeenAt: user.lastSeenAt,
     };
   }
 
@@ -112,7 +135,9 @@ export class ProfileService implements IProfileService {
       throw new ProfileNotFoundException();
     }
 
-    logger.info('Profile updated', { userId, fields: Object.keys(updateData) });
+    const fields = Object.keys(updateData);
+    logger.info('Profile updated', { userId, fields });
+    await this.publishUpdated(userId, fields);
 
     return this.mapToUserProfile(updated as unknown as Record<string, unknown>);
   }
@@ -143,6 +168,7 @@ export class ProfileService implements IProfileService {
       userId,
       avatarUrl: result.urls.medium,
     });
+    await this.publishUpdated(userId, ['avatarUrl']);
 
     return result;
   }
@@ -166,35 +192,41 @@ export class ProfileService implements IProfileService {
     await this.users.update(userId, { avatarUrl: null });
 
     logger.info('Avatar removed', { userId, filesDeleted: result.deletedFiles.length });
+    await this.publishUpdated(userId, ['avatarUrl']);
 
     return result;
   }
 
+  /**
+   * Endpoints legados (`PUT /profile/status`, `POST /profile/online|offline`): delegam ao status
+   * manual da presença (`online` → `available`, `away`, `busy`) e não gravam mais `users.status`.
+   * `offline` responde 400 — o usuário fica offline ao desconectar.
+   */
   async updateStatus(userId: string, status: UserStatus): Promise<void> {
+    const manual = toManualStatus(status);
     const user = await this.users.findById(userId);
     if (!user) {
       throw new ProfileNotFoundException();
     }
 
-    await this.users.updateStatus(userId, status);
-    logger.debug('User status updated', { userId, status });
+    await this.presence.setManualStatus(userId, manual);
+    logger.debug('User status updated', { userId, status: manual });
   }
 
   async setOnline(userId: string): Promise<void> {
-    await this.users.updateStatus(userId, UserStatus.ONLINE);
+    await this.presence.setManualStatus(userId, 'available');
   }
 
-  async setOffline(userId: string): Promise<void> {
-    await this.users.updateStatus(userId, UserStatus.OFFLINE);
-    await this.users.updateLastSeen(userId);
+  setOffline(_userId: string): Promise<void> {
+    return Promise.reject(new OfflineStatusNotAllowedException());
   }
 
   async setAway(userId: string): Promise<void> {
-    await this.users.updateStatus(userId, UserStatus.AWAY);
+    await this.presence.setManualStatus(userId, 'away');
   }
 
   async setBusy(userId: string): Promise<void> {
-    await this.users.updateStatus(userId, UserStatus.BUSY);
+    await this.presence.setManualStatus(userId, 'busy');
   }
 
   async getProfileStats(userId: string): Promise<ProfileStats> {
@@ -247,6 +279,13 @@ export class ProfileService implements IProfileService {
     logger.info('Profile settings updated', { userId, settings: Object.keys(settings) });
 
     return this.getProfileSettings(userId);
+  }
+
+  /** `user:updated` invalida o cache do perfil público; nada gravado ⇒ nada publicado. */
+  private async publishUpdated(userId: string, fields: string[]): Promise<void> {
+    if (fields.length > 0) {
+      await this.events.publish(UserEvents.UPDATED, { userId, fields });
+    }
   }
 
   private isValidUrl(url: string): boolean {

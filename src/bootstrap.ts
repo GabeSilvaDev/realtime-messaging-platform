@@ -8,7 +8,9 @@ import {
   disconnectMongo,
   disconnectElasticsearch,
 } from './shared/database';
-import { registerChatListeners } from './modules/chat/listeners';
+import { registerChatCacheListeners, registerChatListeners } from './modules/chat/listeners';
+import { registerPresenceCacheListeners } from './modules/presence/listeners';
+import { registerUserCacheListeners } from './modules/user/listeners';
 
 export async function bootstrap(): Promise<void> {
   await connectPostgres();
@@ -16,6 +18,10 @@ export async function bootstrap(): Promise<void> {
   await connectMongo();
   await connectElasticsearch();
   registerChatListeners();
+  // Invalidação do cache Redis por evento (perfis, bloqueios, participantes, audiência).
+  registerUserCacheListeners();
+  registerChatCacheListeners();
+  registerPresenceCacheListeners();
 }
 
 export async function shutdown(): Promise<void> {

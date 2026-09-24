@@ -1,5 +1,6 @@
 import type { DisconnectReason, ExtendedError, Server, Socket } from 'socket.io';
 import type { ConversationChange, ConversationType, MessageDTO } from '@/modules/chat/types';
+import type { PresenceStateDTO } from '@/shared/types';
 
 /** Dados do socket preenchidos pelo middleware de autenticação do handshake. */
 export interface SocketData {
@@ -38,6 +39,7 @@ export interface ClientToServerEvents {
   'message:read': (payload: unknown, ack?: unknown) => void;
   'typing:start': (payload: unknown, ack?: unknown) => void;
   'typing:stop': (payload: unknown, ack?: unknown) => void;
+  'presence:set': (payload: unknown, ack?: unknown) => void;
 }
 
 export interface MessageDeletedPayload {
@@ -86,6 +88,14 @@ export interface ConversationDeletedPayload {
   conversationId: string;
 }
 
+/** Mudança de presença de alguém que o usuário observa (`lastSeenAt` só quando `offline`). */
+export type PresenceUpdatePayload = PresenceStateDTO;
+
+/** Enviado ao próprio socket ao conectar: estado de todos que o usuário observa. */
+export interface PresenceSnapshotPayload {
+  states: PresenceStateDTO[];
+}
+
 /** Eventos servidor → cliente (datas chegam ao cliente como strings ISO). */
 export interface ServerToClientEvents {
   'message:new': (message: MessageDTO) => void;
@@ -95,6 +105,8 @@ export interface ServerToClientEvents {
   'conversation:new': (payload: ConversationNewPayload) => void;
   'conversation:updated': (payload: ConversationUpdatedPayload) => void;
   'conversation:deleted': (payload: ConversationDeletedPayload) => void;
+  'presence:update': (payload: PresenceUpdatePayload) => void;
+  'presence:snapshot': (payload: PresenceSnapshotPayload) => void;
 }
 
 /** Sem eventos entre servidores além dos do próprio adapter. */

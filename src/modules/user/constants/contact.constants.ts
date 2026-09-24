@@ -9,5 +9,6 @@ export const CONTACT_CONSTANTS = {
   MAX_SEARCH_LIMIT: 50,
 } as const;
 
-export const CONTACT_ORDER_BY = ['nickname', 'createdAt', 'lastInteraction'] as const;
+/** `presence` ordena a página já carregada (online/away/busy primeiro, depois offline). */
+export const CONTACT_ORDER_BY = ['nickname', 'createdAt', 'lastInteraction', 'presence'] as const;
 export type ContactOrderBy = (typeof CONTACT_ORDER_BY)[number];

@@ -56,6 +56,8 @@ describe('Types Index Exports', () => {
       expect(UserEvents.DELETED).toBe('user:deleted');
       expect(UserEvents.BLOCKED).toBe('user:blocked');
       expect(UserEvents.UNBLOCKED).toBe('user:unblocked');
+      expect(UserEvents.CONTACT_ADDED).toBe('user:contact-added');
+      expect(UserEvents.CONTACT_REMOVED).toBe('user:contact-removed');
     });
 
     it('should export ChatEvents enum', () => {

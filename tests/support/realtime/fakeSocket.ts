@@ -24,6 +24,10 @@ export interface FakeSocket {
   /** Marca `connected = false`. */
   disconnect: jest.Mock;
   on: jest.Mock;
+  /** Emite direto para o próprio socket; registra em `emitted`. */
+  emit: jest.Mock;
+  /** Emissões feitas via `socket.emit(event, payload)`, na ordem: `[event, payload]`. */
+  emitted: [string, unknown][];
   to: jest.Mock;
   /** Emissões feitas via `socket.to(room).emit(...)`, na ordem: `[room, event, payload]`. */
   broadcasts: [string, string, unknown][];
@@ -36,6 +40,7 @@ export function createFakeSocket(
   overrides: Partial<Pick<FakeSocket, 'id' | 'data'>> = {}
 ): FakeSocket {
   const broadcasts: [string, string, unknown][] = [];
+  const emitted: [string, unknown][] = [];
   const handlers = new Map<string, (...args: unknown[]) => void>();
   const id = overrides.id ?? 'socket-1';
   const rooms = new Set<string>([id]);
@@ -59,6 +64,11 @@ export function createFakeSocket(
       handlers.set(event, handler);
       return socket;
     }),
+    emit: jest.fn((event: string, payload: unknown) => {
+      emitted.push([event, payload]);
+      return true;
+    }),
+    emitted,
     to: jest.fn((room: string) => ({
       emit: (event: string, payload: unknown) => {
         broadcasts.push([room, event, payload]);

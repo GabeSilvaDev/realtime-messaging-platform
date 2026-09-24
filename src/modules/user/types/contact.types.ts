@@ -1,3 +1,6 @@
+import type { PresenceStateDTO } from '@/shared/types';
+import type { UserSummaryDTO } from './user.dto';
+
 export interface ContactAttributes {
   id: string;
   userId: string;
@@ -29,15 +32,9 @@ export interface ContactCreationAttributes {
   createdByBlock?: boolean;
 }
 
+/** Contato + usuário do contato (sem status/lastSeenAt: o estado vem só da presença). */
 export interface ContactWithUser extends ContactAttributes {
-  contact: {
-    id: string;
-    username: string;
-    displayName: string | null;
-    avatarUrl: string | null;
-    status: string;
-    lastSeenAt: Date | null;
-  };
+  contact: UserSummaryDTO;
 }
 
 export interface ContactListFilters {
@@ -85,4 +82,15 @@ export interface BlockResult {
   contact: ContactAttributes;
   /** `true` quando a linha foi criada ou passou de não bloqueada para bloqueada. */
   changed: boolean;
+}
+
+/** Presença de um contato como quem lista a vê (bloqueio ⇒ offline sem `lastSeenAt`). */
+export type ContactPresence = Pick<PresenceStateDTO, 'state' | 'lastSeenAt'>;
+
+/**
+ * Contato com a presença do usuário. `presence: null` só em `GET /contacts` quando a presença
+ * (Redis) está indisponível — a listagem degrada em vez de falhar.
+ */
+export interface ContactWithPresence extends ContactWithUser {
+  presence: ContactPresence | null;
 }

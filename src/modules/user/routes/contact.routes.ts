@@ -38,6 +38,17 @@ router.get(
 );
 
 /**
+ * @route GET /contacts/online
+ * @description Contatos conectados (online, ausente ou ocupado), ordenados por nome
+ * @access Private
+ */
+router.get(
+  '/online',
+  authenticate,
+  asyncHandler((req, res) => contactController.online(req, res))
+);
+
+/**
  * @route GET /contacts/stats
  * @description Retorna estatísticas de contatos
  * @access Private

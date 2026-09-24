@@ -32,6 +32,29 @@ function buildContactOrder(
   return [[orderBy, order]];
 }
 
+/**
+ * Atributos do usuário do contato incluídos nas listagens. Sem `status`/`lastSeenAt`: o estado e
+ * o visto por último de outro usuário saem só pela presença (que esconde pares bloqueados).
+ */
+const CONTACT_USER_ATTRIBUTES = ['id', 'username', 'displayName', 'avatarUrl'];
+
+/** Linha de contato + resumo do usuário (placeholder se o usuário não veio no include). */
+function toContactWithUser(row: Contact): ContactWithUser {
+  const user = row.contact;
+  return {
+    ...row.toJSON(),
+    contact:
+      user === undefined
+        ? { id: row.contactId, username: '', displayName: null, avatarUrl: null }
+        : {
+            id: user.id,
+            username: user.username,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
+          },
+  };
+}
+
 export class ContactRepository implements IContactRepository {
   async findById(id: string): Promise<ContactAttributes | null> {
     const contact = await Contact.findByPk(id);
@@ -63,7 +86,7 @@ export class ContactRepository implements IContactRepository {
       {
         model: User,
         as: 'contact',
-        attributes: ['id', 'username', 'displayName', 'avatarUrl', 'status', 'lastSeenAt'],
+        attributes: CONTACT_USER_ATTRIBUTES,
         where:
           filters.search !== undefined && filters.search !== ''
             ? {
@@ -88,17 +111,7 @@ export class ContactRepository implements IContactRepository {
     const contacts = rows.slice(0, limit);
 
     return {
-      contacts: contacts.map((c) => ({
-        ...c.toJSON(),
-        contact: c.contact?.toPublicJSON() ?? {
-          id: c.contactId,
-          username: '',
-          displayName: null,
-          avatarUrl: null,
-          status: 'offline',
-          lastSeenAt: null,
-        },
-      })) as ContactWithUser[],
+      contacts: contacts.map(toContactWithUser),
       total: count,
       limit,
       offset,
@@ -113,23 +126,13 @@ export class ContactRepository implements IContactRepository {
         {
           model: User,
           as: 'contact',
-          attributes: ['id', 'username', 'displayName', 'avatarUrl', 'status', 'lastSeenAt'],
+          attributes: CONTACT_USER_ATTRIBUTES,
         },
       ],
       order: [['blockedAt', 'DESC']],
     });
 
-    return contacts.map((c) => ({
-      ...c.toJSON(),
-      contact: c.contact?.toPublicJSON() ?? {
-        id: c.contactId,
-        username: '',
-        displayName: null,
-        avatarUrl: null,
-        status: 'offline',
-        lastSeenAt: null,
-      },
-    })) as ContactWithUser[];
+    return contacts.map(toContactWithUser);
   }
 
   async findFavoritesByUser(userId: string): Promise<ContactWithUser[]> {
@@ -139,23 +142,13 @@ export class ContactRepository implements IContactRepository {
         {
           model: User,
           as: 'contact',
-          attributes: ['id', 'username', 'displayName', 'avatarUrl', 'status', 'lastSeenAt'],
+          attributes: CONTACT_USER_ATTRIBUTES,
         },
       ],
       order: [['createdAt', 'DESC']],
     });
 
-    return contacts.map((c) => ({
-      ...c.toJSON(),
-      contact: c.contact?.toPublicJSON() ?? {
-        id: c.contactId,
-        username: '',
-        displayName: null,
-        avatarUrl: null,
-        status: 'offline',
-        lastSeenAt: null,
-      },
-    })) as ContactWithUser[];
+    return contacts.map(toContactWithUser);
   }
 
   async create(data: ContactCreationAttributes): Promise<ContactAttributes> {
@@ -261,6 +254,41 @@ export class ContactRepository implements IContactRepository {
     );
 
     return affected > 0;
+  }
+
+  async listWatcherIds(userId: string): Promise<string[]> {
+    const rows = await Contact.findAll({
+      where: { contactId: userId, isBlocked: false },
+      attributes: ['userId'],
+    });
+    return rows.map((row) => row.userId);
+  }
+
+  async listContactIds(userId: string): Promise<string[]> {
+    const rows = await Contact.findAll({
+      where: { userId, isBlocked: false },
+      attributes: ['contactId'],
+    });
+    return rows.map((row) => row.contactId);
+  }
+
+  async listBlockedEitherIds(userId: string): Promise<string[]> {
+    const rows = await Contact.findAll({
+      where: { isBlocked: true, [Op.or]: [{ userId }, { contactId: userId }] },
+      attributes: ['userId', 'contactId'],
+    });
+    return [...new Set(rows.map((row) => (row.userId === userId ? row.contactId : row.userId)))];
+  }
+
+  async findByUserAndContactIds(userId: string, contactIds: string[]): Promise<ContactWithUser[]> {
+    if (contactIds.length === 0) {
+      return [];
+    }
+    const rows = await Contact.findAll({
+      where: { userId, contactId: { [Op.in]: contactIds }, isBlocked: false },
+      include: [{ model: User, as: 'contact', attributes: CONTACT_USER_ATTRIBUTES }],
+    });
+    return rows.map(toContactWithUser);
   }
 
   async touchInteraction(userId: string, otherUserId: string, at: Date): Promise<void> {

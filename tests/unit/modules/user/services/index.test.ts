@@ -8,6 +8,7 @@ import {
   BioTooLongException,
   DisplayNameTooLongException,
   InvalidAvatarUrlException,
+  OfflineStatusNotAllowedException,
   ProfileNotFoundException,
   ProfileService,
   profileService,
@@ -95,6 +96,12 @@ describe('services/index exports', () => {
     it('deve exportar DisplayNameTooLongException', () => {
       expect(DisplayNameTooLongException).toBeDefined();
       expect(new DisplayNameTooLongException()).toBeInstanceOf(DisplayNameTooLongException);
+    });
+
+    it('deve exportar OfflineStatusNotAllowedException', () => {
+      expect(new OfflineStatusNotAllowedException()).toBeInstanceOf(
+        OfflineStatusNotAllowedException
+      );
     });
   });
 

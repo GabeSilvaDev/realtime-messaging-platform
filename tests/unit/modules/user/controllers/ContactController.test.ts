@@ -1,14 +1,43 @@
 jest.mock('@/modules/user/services/ContactService', () => ({
   contactService: {},
 }));
+jest.mock('@/modules/presence/services/PresenceService', () => ({ presenceService: {} }));
+jest.mock('@/shared/logger', () => ({ logger: { warn: jest.fn() } }));
 
 import type { Request, Response } from 'express';
 import { ContactController } from '@/modules/user/controllers/ContactController';
 import type { IContactService } from '@/modules/user/interfaces';
+import type { ContactWithUser } from '@/modules/user/types';
 import { HttpStatus, UnauthorizedError } from '@/shared/errors';
+import { logger } from '@/shared/logger';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CONTACT_ID = '22222222-2222-4222-8222-222222222222';
+const OTHER_ID = '33333333-3333-4333-8333-333333333333';
+const THIRD_ID = '44444444-4444-4444-8444-444444444444';
+
+function contactRow(
+  contactId: string,
+  names: { nickname?: string | null; displayName?: string | null; username: string }
+): ContactWithUser {
+  return {
+    id: `row-${contactId}`,
+    userId: USER_ID,
+    contactId,
+    nickname: names.nickname ?? null,
+    isBlocked: false,
+    isFavorite: false,
+    blockedAt: null,
+    createdAt: new Date('2026-01-01'),
+    updatedAt: new Date('2026-01-01'),
+    contact: {
+      id: contactId,
+      username: names.username,
+      displayName: names.displayName ?? null,
+      avatarUrl: null,
+    },
+  };
+}
 
 function createService(): jest.Mocked<IContactService> {
   return {
@@ -29,6 +58,10 @@ function createService(): jest.Mocked<IContactService> {
     getStats: jest.fn(),
     searchUsers: jest.fn(),
     recordInteraction: jest.fn(),
+    listWatchers: jest.fn(),
+    listContactIds: jest.fn(),
+    listBlockedEitherIds: jest.fn(),
+    getContactsByIds: jest.fn(),
   };
 }
 
@@ -52,12 +85,14 @@ function createRes(): jest.Mocked<Response> {
 
 describe('ContactController', () => {
   let service: jest.Mocked<IContactService>;
+  let presence: { getVisibleStates: jest.Mock };
   let controller: ContactController;
   let res: jest.Mocked<Response>;
 
   beforeEach(() => {
     service = createService();
-    controller = new ContactController(service);
+    presence = { getVisibleStates: jest.fn().mockResolvedValue([]) };
+    controller = new ContactController(service, presence);
     res = createRes();
   });
 
@@ -267,6 +302,194 @@ describe('ContactController', () => {
 
       expect(res.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
       expect(service.removeContact).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('presença nos contatos', () => {
+    const page = (contacts: ContactWithUser[]) => ({
+      contacts,
+      total: contacts.length,
+      limit: 20,
+      offset: 0,
+      hasMore: false,
+    });
+
+    it('list anexa presence { state, lastSeenAt } a cada contato (visto por quem lista)', async () => {
+      const lastSeenAt = new Date('2026-09-26T09:00:00.000Z');
+      service.listContacts.mockResolvedValue(
+        page([
+          contactRow(CONTACT_ID, { username: 'bia' }),
+          contactRow(OTHER_ID, { username: 'caio' }),
+        ])
+      );
+      presence.getVisibleStates.mockResolvedValue([
+        { userId: CONTACT_ID, state: 'busy', lastSeenAt: null },
+        { userId: OTHER_ID, state: 'offline', lastSeenAt },
+      ]);
+
+      await controller.list(createReq(), res);
+
+      expect(presence.getVisibleStates).toHaveBeenCalledWith(USER_ID, [CONTACT_ID, OTHER_ID]);
+      const { data } = res.json.mock.calls[0]![0] as { data: { contacts: unknown[] } };
+      expect(data.contacts).toEqual([
+        expect.objectContaining({
+          contactId: CONTACT_ID,
+          presence: { state: 'busy', lastSeenAt: null },
+        }),
+        expect.objectContaining({
+          contactId: OTHER_ID,
+          presence: { state: 'offline', lastSeenAt },
+        }),
+      ]);
+    });
+
+    it('contato sem estado conhecido sai offline', async () => {
+      service.listContacts.mockResolvedValue(page([contactRow(CONTACT_ID, { username: 'bia' })]));
+
+      await controller.list(createReq(), res);
+
+      const { data } = res.json.mock.calls[0]![0] as {
+        data: { contacts: { presence: unknown }[] };
+      };
+      expect(data.contacts[0]!.presence).toEqual({ state: 'offline', lastSeenAt: null });
+    });
+
+    it('orderBy=presence: banco na ordem padrão; página online → away → busy → offline (visto mais recente primeiro)', async () => {
+      const ids = ['a', 'b', 'c', 'd', 'e', 'f'].map(
+        (letter) => `${letter.repeat(8)}-0000-4000-8000-000000000000`
+      );
+      service.listContacts.mockResolvedValue(
+        page(ids.map((id) => contactRow(id, { username: id.slice(0, 1) })))
+      );
+      presence.getVisibleStates.mockResolvedValue([
+        { userId: ids[0], state: 'offline', lastSeenAt: null },
+        { userId: ids[1], state: 'busy', lastSeenAt: null },
+        { userId: ids[2], state: 'offline', lastSeenAt: new Date('2026-09-26T08:00:00.000Z') },
+        { userId: ids[3], state: 'online', lastSeenAt: null },
+        { userId: ids[4], state: 'offline', lastSeenAt: new Date('2026-09-26T09:00:00.000Z') },
+        { userId: ids[5], state: 'away', lastSeenAt: null },
+      ]);
+
+      await controller.list(createReq({ query: { orderBy: 'presence' } }), res);
+
+      expect(service.listContacts).toHaveBeenCalledWith(
+        USER_ID,
+        expect.objectContaining({ orderBy: undefined })
+      );
+      const { data } = res.json.mock.calls[0]![0] as {
+        data: { contacts: { contact: { username: string } }[] };
+      };
+      expect(data.contacts.map((c) => c.contact.username).join('')).toBe('dfbeca');
+    });
+
+    it('online: só os conectados, carregados em lote e ordenados pelo nome exibido', async () => {
+      service.listContactIds.mockResolvedValue([CONTACT_ID, OTHER_ID, THIRD_ID]);
+      presence.getVisibleStates.mockResolvedValue([
+        { userId: CONTACT_ID, state: 'online', lastSeenAt: null },
+        { userId: OTHER_ID, state: 'offline', lastSeenAt: null },
+        { userId: THIRD_ID, state: 'away', lastSeenAt: null },
+      ]);
+      service.getContactsByIds.mockResolvedValue([
+        contactRow(CONTACT_ID, { username: 'zeca', displayName: 'Zeca' }),
+        contactRow(THIRD_ID, { username: 'yuri', nickname: 'Álvaro' }),
+      ]);
+
+      await controller.online(createReq(), res);
+
+      expect(presence.getVisibleStates).toHaveBeenCalledWith(USER_ID, [
+        CONTACT_ID,
+        OTHER_ID,
+        THIRD_ID,
+      ]);
+      expect(service.getContactsByIds).toHaveBeenCalledWith(USER_ID, [CONTACT_ID, THIRD_ID]);
+      expect(res.status).toHaveBeenCalledWith(HttpStatus.OK);
+      const { data } = res.json.mock.calls[0]![0] as {
+        data: { contactId: string; presence: { state: string } }[];
+      };
+      expect(data.map((c) => [c.contactId, c.presence.state])).toEqual([
+        [THIRD_ID, 'away'],
+        [CONTACT_ID, 'online'],
+      ]);
+    });
+
+    it('online ordena por username quando não há apelido nem nome de exibição', async () => {
+      service.listContactIds.mockResolvedValue([CONTACT_ID, OTHER_ID]);
+      presence.getVisibleStates.mockResolvedValue([
+        { userId: CONTACT_ID, state: 'online', lastSeenAt: null },
+        { userId: OTHER_ID, state: 'busy', lastSeenAt: null },
+      ]);
+      service.getContactsByIds.mockResolvedValue([
+        contactRow(CONTACT_ID, { username: 'marta' }),
+        contactRow(OTHER_ID, { username: 'bruno' }),
+      ]);
+
+      await controller.online(createReq(), res);
+
+      const { data } = res.json.mock.calls[0]![0] as { data: { contactId: string }[] };
+      expect(data.map((c) => c.contactId)).toEqual([OTHER_ID, CONTACT_ID]);
+    });
+
+    describe('presença indisponível (Redis fora do ar)', () => {
+      it('list responde 200 com presence: null em cada contato e loga warn', async () => {
+        service.listContacts.mockResolvedValue(
+          page([
+            contactRow(CONTACT_ID, { username: 'bia' }),
+            contactRow(OTHER_ID, { username: 'caio' }),
+          ])
+        );
+        presence.getVisibleStates.mockRejectedValue(new Error('ECONNREFUSED'));
+
+        await controller.list(createReq(), res);
+
+        expect(res.status).toHaveBeenCalledWith(HttpStatus.OK);
+        const { data } = res.json.mock.calls[0]![0] as {
+          data: { contacts: { contactId: string; presence: unknown }[]; total: number };
+        };
+        expect(data.total).toBe(2);
+        expect(data.contacts.map((c) => [c.contactId, c.presence])).toEqual([
+          [CONTACT_ID, null],
+          [OTHER_ID, null],
+        ]);
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Presença indisponível; contatos listados sem presence',
+          { userId: USER_ID, error: 'ECONNREFUSED' }
+        );
+      });
+
+      it('orderBy=presence cai na ordem do banco', async () => {
+        service.listContacts.mockResolvedValue(
+          page([
+            contactRow(OTHER_ID, { username: 'caio' }),
+            contactRow(CONTACT_ID, { username: 'bia' }),
+          ])
+        );
+        presence.getVisibleStates.mockRejectedValue('timeout');
+
+        await controller.list(createReq({ query: { orderBy: 'presence' } }), res);
+
+        const { data } = res.json.mock.calls[0]![0] as {
+          data: { contacts: { contactId: string }[] };
+        };
+        expect(data.contacts.map((c) => c.contactId)).toEqual([OTHER_ID, CONTACT_ID]);
+        expect(logger.warn).toHaveBeenCalledWith(
+          'Presença indisponível; contatos listados sem presence',
+          { userId: USER_ID, error: 'timeout' }
+        );
+      });
+
+      it('online continua falhando (é um endpoint da presença)', async () => {
+        service.listContactIds.mockResolvedValue([CONTACT_ID]);
+        presence.getVisibleStates.mockRejectedValue(new Error('ECONNREFUSED'));
+
+        await expect(controller.online(createReq(), res)).rejects.toThrow('ECONNREFUSED');
+        expect(res.json).not.toHaveBeenCalled();
+      });
+    });
+
+    it('online sem usuário autenticado lança UnauthorizedError', async () => {
+      await expect(controller.online(createReq({ user: undefined }), res)).rejects.toThrow(
+        UnauthorizedError
+      );
     });
   });
 });

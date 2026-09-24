@@ -21,7 +21,8 @@ export interface IUserService {
   search(options: UserSearchOptions): Promise<UserSearchResult>;
   list(options?: UserListOptions): Promise<PaginatedUsers>;
   exists(id: string): Promise<boolean>;
-  updateLastSeen(userId: string): Promise<void>;
+  /** Grava `users.last_seen_at` (padrão: agora) e invalida o perfil público cacheado. */
+  updateLastSeen(userId: string, at?: Date): Promise<void>;
   updateStatus(userId: string, status: UserStatus): Promise<void>;
   getMultiple(ids: string[]): Promise<PublicUserDTO[]>;
 }

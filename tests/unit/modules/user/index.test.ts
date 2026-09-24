@@ -67,6 +67,10 @@ describe('user module index', () => {
       expect(userModuleIndex.blockRoutes).toBeDefined();
       expect(userModuleIndex.userRoutes).toBeDefined();
     });
+
+    it('deve exportar os listeners de invalidação do cache', () => {
+      expect(userModuleIndex.registerUserCacheListeners).toBeInstanceOf(Function);
+    });
   });
 
   describe('types index exports', () => {

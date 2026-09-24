@@ -26,6 +26,7 @@ describe('realtime constants', () => {
       MESSAGE_READ: 'message:read',
       TYPING_START: 'typing:start',
       TYPING_STOP: 'typing:stop',
+      PRESENCE_SET: 'presence:set',
     });
   });
 
@@ -38,6 +39,8 @@ describe('realtime constants', () => {
       CONVERSATION_NEW: 'conversation:new',
       CONVERSATION_UPDATED: 'conversation:updated',
       CONVERSATION_DELETED: 'conversation:deleted',
+      PRESENCE_UPDATE: 'presence:update',
+      PRESENCE_SNAPSHOT: 'presence:snapshot',
     });
   });
 

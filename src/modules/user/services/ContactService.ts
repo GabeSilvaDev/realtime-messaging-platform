@@ -1,6 +1,8 @@
 import type { UserAttributes } from '@/shared/types';
+import { cacheService, type ICacheService } from '@/shared/cache';
 import { eventBus, type EventBus } from '@/shared/event-bus';
 import { UserEvents } from '@/shared/types';
+import { USER_CACHE_KEYS, USER_CACHE_TTL_SECONDS } from '../constants';
 import { contactRepository, userRepository } from '../repositories';
 import type { IContactRepository, IContactService, IUserRepository } from '../interfaces';
 import {
@@ -19,8 +21,8 @@ import type {
   ContactStats,
   ContactWithUser,
   PaginatedContacts,
-  PublicUserDTO,
   UpdateContactDTO,
+  UserSummaryDTO,
   UserWithContactInfo,
 } from '../types';
 
@@ -33,11 +35,25 @@ export {
   UserNotFoundException,
 } from '../errors';
 
+/**
+ * Outro usuário como sai nas respostas: sem `status`/`lastSeenAt` — o estado e o visto por último
+ * vêm só da presença, que esconde pares bloqueados.
+ */
+function toUserSummary(user: UserAttributes | UserWithContactInfo): UserSummaryDTO {
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName ?? null,
+    avatarUrl: user.avatarUrl ?? null,
+  };
+}
+
 export class ContactService implements IContactService {
   constructor(
     private readonly contacts: IContactRepository = contactRepository,
     private readonly users: IUserRepository = userRepository,
-    private readonly events: Pick<EventBus, 'publish'> = eventBus
+    private readonly events: Pick<EventBus, 'publish'> = eventBus,
+    private readonly cache: Pick<ICacheService, 'getOrLoad'> = cacheService
   ) {}
 
   async addContact(userId: string, data: AddContactDTO): Promise<ContactResponseDTO> {
@@ -65,10 +81,11 @@ export class ContactService implements IContactService {
       contactId: data.contactId,
       nickname: data.nickname ?? null,
     });
+    await this.events.publish(UserEvents.CONTACT_ADDED, { userId, contactId: data.contactId });
 
     return {
       ...contact,
-      contact: this.toPublicUser(contactUser),
+      contact: toUserSummary(contactUser),
     };
   }
 
@@ -95,7 +112,7 @@ export class ContactService implements IContactService {
 
     return {
       ...updated,
-      contact: this.toPublicUser(contactUser),
+      contact: toUserSummary(contactUser),
     };
   }
 
@@ -103,6 +120,7 @@ export class ContactService implements IContactService {
     const contact = await this.findVisibleContact(userId, contactId);
 
     await this.contacts.delete(contact.id);
+    await this.events.publish(UserEvents.CONTACT_REMOVED, { userId, contactId });
   }
 
   async getContact(userId: string, contactId: string): Promise<ContactResponseDTO> {
@@ -115,7 +133,7 @@ export class ContactService implements IContactService {
 
     return {
       ...contact,
-      contact: this.toPublicUser(contactUser),
+      contact: toUserSummary(contactUser),
     };
   }
 
@@ -176,12 +194,27 @@ export class ContactService implements IContactService {
     return this.contacts.isBlocked(userId, targetId);
   }
 
+  /** Uma consulta (cacheada) cobre os dois sentidos do bloqueio. */
   async isBlockedByEither(userId: string, targetId: string): Promise<boolean> {
-    const [blockedByUser, blockedByTarget] = await Promise.all([
-      this.contacts.isBlocked(userId, targetId),
-      this.contacts.isBlocked(targetId, userId),
-    ]);
-    return blockedByUser || blockedByTarget;
+    return (await this.listBlockedEitherIds(userId)).includes(targetId);
+  }
+
+  async listBlockedEitherIds(userId: string): Promise<string[]> {
+    return this.cache.getOrLoad(USER_CACHE_KEYS.blocks(userId), USER_CACHE_TTL_SECONDS, () =>
+      this.contacts.listBlockedEitherIds(userId)
+    );
+  }
+
+  async listWatchers(userId: string): Promise<string[]> {
+    return this.contacts.listWatcherIds(userId);
+  }
+
+  async listContactIds(userId: string): Promise<string[]> {
+    return this.contacts.listContactIds(userId);
+  }
+
+  async getContactsByIds(userId: string, contactIds: string[]): Promise<ContactWithUser[]> {
+    return this.contacts.findByUserAndContactIds(userId, contactIds);
   }
 
   async isContact(userId: string, contactId: string): Promise<boolean> {
@@ -200,7 +233,7 @@ export class ContactService implements IContactService {
     userId: string,
     query: string,
     options: { limit?: number; excludeBlocked?: boolean } = {}
-  ): Promise<PublicUserDTO[]> {
+  ): Promise<UserSummaryDTO[]> {
     const { limit = 20, excludeBlocked = true } = options;
 
     const result = await this.users.search({
@@ -212,7 +245,7 @@ export class ContactService implements IContactService {
       limit,
     });
 
-    return result.users.map((u: UserWithContactInfo): PublicUserDTO => this.toPublicUser(u));
+    return result.users.map(toUserSummary);
   }
 
   /**
@@ -225,17 +258,6 @@ export class ContactService implements IContactService {
       throw new ContactNotFoundException();
     }
     return contact;
-  }
-
-  private toPublicUser(user: UserAttributes | UserWithContactInfo): PublicUserDTO {
-    return {
-      id: user.id,
-      username: user.username,
-      displayName: user.displayName ?? null,
-      avatarUrl: user.avatarUrl ?? null,
-      status: user.status,
-      lastSeenAt: user.lastSeenAt ?? null,
-    };
   }
 }
 

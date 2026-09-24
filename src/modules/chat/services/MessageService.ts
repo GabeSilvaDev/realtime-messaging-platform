@@ -19,6 +19,7 @@ import type {
   IParticipantRepository,
 } from '../interfaces';
 import { conversationRepository, messageRepository, participantRepository } from '../repositories';
+import { ParticipantDirectory } from './ParticipantDirectory';
 import type {
   ListMessagesOptions,
   MessageCursor,
@@ -26,7 +27,6 @@ import type {
   MessageMetadata,
   MessageRecord,
   PaginatedMessages,
-  ParticipantAttributes,
   SendMessageDTO,
 } from '../types';
 
@@ -72,7 +72,11 @@ export class MessageService implements IMessageService {
     private readonly conversations: IConversationRepository = conversationRepository,
     private readonly participants: IParticipantRepository = participantRepository,
     private readonly contacts: Pick<IContactService, 'isBlockedByEither'> = contactService,
-    private readonly events: Pick<EventBus, 'publish'> = eventBus
+    private readonly events: Pick<EventBus, 'publish'> = eventBus,
+    private readonly directory: Pick<
+      ParticipantDirectory,
+      'userIds' | 'isParticipant' | 'forget'
+    > = new ParticipantDirectory(participants)
   ) {}
 
   async send(
@@ -81,8 +85,7 @@ export class MessageService implements IMessageService {
     data: SendMessageDTO,
     metadata: MessageMetadata
   ): Promise<MessageDTO> {
-    const members = await this.participants.listByConversation(conversationId);
-    const participantIds = members.map((member) => member.userId);
+    const participantIds = await this.directory.userIds(conversationId);
     if (!participantIds.includes(userId)) {
       throw new ConversationNotFoundException();
     }
@@ -237,7 +240,11 @@ export class MessageService implements IMessageService {
   }
 
   async markRead(userId: string, conversationId: string, messageId: string): Promise<void> {
-    const membership = await this.requireParticipant(conversationId, userId);
+    // A linha da participação (e não o cache): `last_read_at` muda a cada leitura.
+    const membership = await this.participants.find(conversationId, userId);
+    if (membership === null) {
+      throw new ConversationNotFoundException();
+    }
     const message = await this.requireMessage(conversationId, messageId);
 
     // Tudo até `last_read_at` já foi marcado numa leitura anterior: a varredura começa ali
@@ -267,16 +274,11 @@ export class MessageService implements IMessageService {
     return message;
   }
 
-  /** Não participante → 404; devolve a participação (ex.: `lastReadAt`). */
-  private async requireParticipant(
-    conversationId: string,
-    userId: string
-  ): Promise<ParticipantAttributes> {
-    const membership = await this.participants.find(conversationId, userId);
-    if (membership === null) {
+  /** Não participante → 404 (consulta o cache de participantes). */
+  private async requireParticipant(conversationId: string, userId: string): Promise<void> {
+    if (!(await this.directory.isParticipant(conversationId, userId))) {
       throw new ConversationNotFoundException();
     }
-    return membership;
   }
 }
 

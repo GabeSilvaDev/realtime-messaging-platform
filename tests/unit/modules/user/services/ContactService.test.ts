@@ -20,6 +20,10 @@ jest.mock('@/modules/user/repositories', () => ({
     block: jest.fn(),
     unblock: jest.fn(),
     touchInteraction: jest.fn(),
+    listWatcherIds: jest.fn(),
+    listContactIds: jest.fn(),
+    listBlockedEitherIds: jest.fn(),
+    findByUserAndContactIds: jest.fn(),
   },
   userRepository: {
     findById: jest.fn(),
@@ -49,12 +53,15 @@ import {
 import { contactRepository, userRepository } from '@/modules/user/repositories';
 import { UserStatus } from '@/shared/types';
 import { HttpStatus, ErrorCode } from '@/shared/errors';
+import { CacheService } from '@/shared/cache';
+import { FakeRedis } from '../../../../support/redis/fakeRedis';
 
 const mockContactRepository = contactRepository as jest.Mocked<typeof contactRepository>;
 const mockUserRepository = userRepository as jest.Mocked<typeof userRepository>;
 
 describe('ContactService', () => {
   let contactService: ContactService;
+  let redis: FakeRedis;
 
   const mockUser = {
     id: 'user-123',
@@ -92,7 +99,13 @@ describe('ContactService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    contactService = new ContactService(mockContactRepository, mockUserRepository);
+    redis = new FakeRedis();
+    contactService = new ContactService(
+      mockContactRepository,
+      mockUserRepository,
+      undefined,
+      new CacheService(redis)
+    );
   });
 
   describe('ContactNotFoundException', () => {
@@ -158,7 +171,7 @@ describe('ContactService', () => {
     it('deve adicionar contato com sucesso', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
       mockContactRepository.findByUserAndContact.mockResolvedValue(null);
-      mockContactRepository.isBlocked.mockResolvedValue(false);
+      mockContactRepository.listBlockedEitherIds.mockResolvedValue([]);
       mockContactRepository.create.mockResolvedValue(mockContact);
 
       const result = await contactService.addContact('user-123', {
@@ -171,7 +184,7 @@ describe('ContactService', () => {
         'user-123',
         'contact-456'
       );
-      expect(mockContactRepository.isBlocked).toHaveBeenCalledWith('user-123', 'contact-456');
+      expect(mockContactRepository.listBlockedEitherIds).toHaveBeenCalledWith('user-123');
       expect(mockContactRepository.create).toHaveBeenCalledWith({
         userId: 'user-123',
         contactId: 'contact-456',
@@ -183,7 +196,7 @@ describe('ContactService', () => {
     it('deve adicionar contato sem nickname', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
       mockContactRepository.findByUserAndContact.mockResolvedValue(null);
-      mockContactRepository.isBlocked.mockResolvedValue(false);
+      mockContactRepository.listBlockedEitherIds.mockResolvedValue([]);
       mockContactRepository.create.mockResolvedValue({ ...mockContact, nickname: null });
 
       const result = await contactService.addContact('user-123', {
@@ -214,6 +227,7 @@ describe('ContactService', () => {
 
     it('deve lançar ContactAlreadyExistsException quando contato já existe', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
+      mockContactRepository.listBlockedEitherIds.mockResolvedValue([]);
       mockContactRepository.findByUserAndContact.mockResolvedValue(mockContact);
 
       await expect(
@@ -221,20 +235,10 @@ describe('ContactService', () => {
       ).rejects.toThrow(ContactAlreadyExistsException);
     });
 
-    it('deve lançar UserBlockedException quando usuário está bloqueado', async () => {
+    it('deve lançar UserBlockedException quando há bloqueio em qualquer sentido', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
       mockContactRepository.findByUserAndContact.mockResolvedValue(null);
-      mockContactRepository.isBlocked.mockResolvedValue(true);
-
-      await expect(
-        contactService.addContact('user-123', { contactId: 'contact-456' })
-      ).rejects.toThrow(UserBlockedException);
-    });
-
-    it('deve lançar UserBlockedException quando o alvo bloqueou o usuário (direção reversa)', async () => {
-      mockUserRepository.findById.mockResolvedValue(mockContactUser);
-      mockContactRepository.findByUserAndContact.mockResolvedValue(null);
-      mockContactRepository.isBlocked.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      mockContactRepository.listBlockedEitherIds.mockResolvedValue(['contact-456']);
 
       await expect(
         contactService.addContact('user-123', { contactId: 'contact-456' })
@@ -243,7 +247,7 @@ describe('ContactService', () => {
 
     it('deve lançar UserBlockedException (403) mesmo quando já existe um contato criado pelo bloqueio, sem consultar findByUserAndContact antes', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
-      mockContactRepository.isBlocked.mockResolvedValue(true);
+      mockContactRepository.listBlockedEitherIds.mockResolvedValue(['contact-456']);
       mockContactRepository.findByUserAndContact.mockResolvedValue({
         ...mockContact,
         isBlocked: true,
@@ -335,6 +339,13 @@ describe('ContactService', () => {
 
       expect(result.id).toBe(mockContact.id);
       expect(result.contact.username).toBe('contactuser');
+      // status/lastSeenAt do outro usuário saem só pela presença.
+      expect(Object.keys(result.contact).sort()).toEqual([
+        'avatarUrl',
+        'displayName',
+        'id',
+        'username',
+      ]);
     });
 
     it('deve lançar ContactNotFoundException quando contato não existe', async () => {
@@ -584,36 +595,57 @@ describe('ContactService', () => {
   });
 
   describe('isBlockedByEither', () => {
-    it('deve retornar true quando userId bloqueou targetId', async () => {
-      mockContactRepository.isBlocked.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    it('deve retornar true quando o alvo está no conjunto de bloqueios (qualquer sentido)', async () => {
+      mockContactRepository.listBlockedEitherIds.mockResolvedValue(['contact-456']);
 
-      const result = await contactService.isBlockedByEither('user-123', 'contact-456');
-
-      expect(result).toBe(true);
+      await expect(contactService.isBlockedByEither('user-123', 'contact-456')).resolves.toBe(true);
+      expect(mockContactRepository.listBlockedEitherIds).toHaveBeenCalledWith('user-123');
     });
 
-    it('deve retornar true quando targetId bloqueou userId', async () => {
-      mockContactRepository.isBlocked.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    it('deve retornar false quando não há bloqueio entre os dois', async () => {
+      mockContactRepository.listBlockedEitherIds.mockResolvedValue(['outro']);
 
-      const result = await contactService.isBlockedByEither('user-123', 'contact-456');
+      await expect(contactService.isBlockedByEither('user-123', 'contact-456')).resolves.toBe(
+        false
+      );
+    });
+  });
 
-      expect(result).toBe(true);
+  describe('listBlockedEitherIds (cache:blocks:<id>)', () => {
+    it('consulta o repositório uma vez e serve as próximas do cache (TTL 300 s)', async () => {
+      mockContactRepository.listBlockedEitherIds.mockResolvedValue(['b1']);
+
+      expect(await contactService.listBlockedEitherIds('user-123')).toEqual(['b1']);
+      expect(await contactService.isBlockedByEither('user-123', 'b1')).toBe(true);
+
+      expect(mockContactRepository.listBlockedEitherIds).toHaveBeenCalledTimes(1);
+      expect(await redis.get('cache:blocks:user-123')).toBe('["b1"]');
+      expect(await redis.ttl('cache:blocks:user-123')).toBe(300);
+    });
+  });
+
+  describe('consultas da audiência de presença', () => {
+    it('listWatchers delega ao repositório (quem tem o usuário como contato)', async () => {
+      mockContactRepository.listWatcherIds.mockResolvedValue(['w1']);
+
+      await expect(contactService.listWatchers('user-123')).resolves.toEqual(['w1']);
+      expect(mockContactRepository.listWatcherIds).toHaveBeenCalledWith('user-123');
     });
 
-    it('deve retornar false quando nenhum bloqueou o outro', async () => {
-      mockContactRepository.isBlocked.mockResolvedValue(false);
+    it('listContactIds delega ao repositório', async () => {
+      mockContactRepository.listContactIds.mockResolvedValue(['c1']);
 
-      const result = await contactService.isBlockedByEither('user-123', 'contact-456');
-
-      expect(result).toBe(false);
+      await expect(contactService.listContactIds('user-123')).resolves.toEqual(['c1']);
+      expect(mockContactRepository.listContactIds).toHaveBeenCalledWith('user-123');
     });
 
-    it('deve retornar true quando ambos se bloquearam', async () => {
-      mockContactRepository.isBlocked.mockResolvedValue(true);
+    it('getContactsByIds delega ao repositório', async () => {
+      mockContactRepository.findByUserAndContactIds.mockResolvedValue([]);
 
-      const result = await contactService.isBlockedByEither('user-123', 'contact-456');
-
-      expect(result).toBe(true);
+      await expect(contactService.getContactsByIds('user-123', ['c1'])).resolves.toEqual([]);
+      expect(mockContactRepository.findByUserAndContactIds).toHaveBeenCalledWith('user-123', [
+        'c1',
+      ]);
     });
   });
 
@@ -706,7 +738,7 @@ describe('ContactService', () => {
       });
     });
 
-    it('deve converter campos undefined para null no toPublicUser', async () => {
+    it('devolve o resumo do usuário (campos undefined viram null; sem status/lastSeenAt)', async () => {
       const userWithUndefinedFields = {
         id: 'user-789',
         username: 'undefineduser',
@@ -734,8 +766,6 @@ describe('ContactService', () => {
         username: 'undefineduser',
         displayName: null,
         avatarUrl: null,
-        status: UserStatus.OFFLINE,
-        lastSeenAt: null,
       });
     });
   });

@@ -19,6 +19,9 @@ describe('ContactService — eventos de bloqueio', () => {
     block: jest.fn(),
     unblock: jest.fn(),
     isBlocked: jest.fn(),
+    findByUserAndContact: jest.fn(),
+    create: jest.fn(),
+    delete: jest.fn(),
   } as unknown as jest.Mocked<IContactRepository>;
   const users = {
     findById: jest.fn(),
@@ -83,5 +86,61 @@ describe('ContactService — eventos de bloqueio', () => {
 
     await expect(service.unblockUser('user-1', 'target-1')).rejects.toThrow();
     expect(events.publish).not.toHaveBeenCalled();
+  });
+
+  describe('contatos (quem vê a presença de contactId mudou)', () => {
+    const contactRow = {
+      id: 'row-1',
+      userId: 'user-1',
+      contactId: 'target-1',
+      nickname: null,
+      isBlocked: false,
+      isFavorite: false,
+      blockedAt: null,
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
+    };
+
+    it('addContact publica user:contact-added', async () => {
+      (users.findById as jest.Mock).mockResolvedValue({ id: 'target-1', username: 'alvo' });
+      jest.spyOn(service, 'isBlockedByEither').mockResolvedValue(false);
+      (contacts.findByUserAndContact as jest.Mock).mockResolvedValue(null);
+      (contacts.create as jest.Mock).mockResolvedValue(contactRow);
+
+      await service.addContact('user-1', { contactId: 'target-1' });
+
+      expect(events.publish).toHaveBeenCalledWith(UserEvents.CONTACT_ADDED, {
+        userId: 'user-1',
+        contactId: 'target-1',
+      });
+    });
+
+    it('addContact recusado (já é contato) não publica', async () => {
+      (users.findById as jest.Mock).mockResolvedValue({ id: 'target-1', username: 'alvo' });
+      jest.spyOn(service, 'isBlockedByEither').mockResolvedValue(false);
+      (contacts.findByUserAndContact as jest.Mock).mockResolvedValue(contactRow);
+
+      await expect(service.addContact('user-1', { contactId: 'target-1' })).rejects.toThrow();
+      expect(events.publish).not.toHaveBeenCalled();
+    });
+
+    it('removeContact publica user:contact-removed', async () => {
+      (contacts.findByUserAndContact as jest.Mock).mockResolvedValue(contactRow);
+      (contacts.delete as jest.Mock).mockResolvedValue(true);
+
+      await service.removeContact('user-1', 'target-1');
+
+      expect(events.publish).toHaveBeenCalledWith(UserEvents.CONTACT_REMOVED, {
+        userId: 'user-1',
+        contactId: 'target-1',
+      });
+    });
+
+    it('removeContact de quem não é contato não publica', async () => {
+      (contacts.findByUserAndContact as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.removeContact('user-1', 'target-1')).rejects.toThrow();
+      expect(events.publish).not.toHaveBeenCalled();
+    });
   });
 });

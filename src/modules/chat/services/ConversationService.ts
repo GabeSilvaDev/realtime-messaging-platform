@@ -21,6 +21,7 @@ import type {
   IParticipantRepository,
 } from '../interfaces';
 import { conversationRepository, participantRepository } from '../repositories';
+import { ParticipantDirectory } from './ParticipantDirectory';
 import type {
   ChatTransaction,
   ConversationChange,
@@ -51,7 +52,11 @@ export class ConversationService implements IConversationService {
     private readonly participants: IParticipantRepository = participantRepository,
     private readonly users: Pick<IUserService, 'exists' | 'getMultiple'> = userService,
     private readonly contacts: Pick<IContactService, 'isBlockedByEither'> = contactService,
-    private readonly events: Pick<EventBus, 'publish'> = eventBus
+    private readonly events: Pick<EventBus, 'publish'> = eventBus,
+    private readonly directory: Pick<
+      ParticipantDirectory,
+      'userIds' | 'isParticipant' | 'forget'
+    > = new ParticipantDirectory(participants)
   ) {}
 
   async createDirect(userId: string, otherUserId: string): Promise<CreateDirectResult> {
@@ -109,6 +114,7 @@ export class ConversationService implements IConversationService {
       memberIds,
     });
 
+    // Cache pré-populado pela criação; não precisa forget aqui (listener invalida).
     await this.events.publish(ChatEvents.CONVERSATION_CREATED, {
       conversationId: conversation.id,
       type: 'group',
@@ -204,6 +210,8 @@ export class ConversationService implements IConversationService {
       return this.removeParticipant(conversationId, userId, transaction);
     });
 
+    // Cache invalidado antes do publish (requer leitura após saída).
+    await this.directory.forget(conversationId);
     await this.publishRemoval(conversationId, userId, userId, 'member_left', removal);
   }
 
@@ -239,6 +247,8 @@ export class ConversationService implements IConversationService {
     );
 
     if (toAdd.length > 0) {
+      // Cache invalidado antes do publish (membros novos precisam saber).
+      await this.directory.forget(conversationId);
       await this.publishUpdate(
         conversationId,
         'members_added',
@@ -269,20 +279,27 @@ export class ConversationService implements IConversationService {
       return this.removeParticipant(conversationId, memberId, transaction);
     });
 
+    // Cache invalidado antes do publish (membro removido não pode mais enviar).
+    await this.directory.forget(conversationId);
     await this.publishRemoval(conversationId, userId, memberId, 'member_removed', removal);
   }
 
+  /** Via cache de participantes (`cache:conv:participants:<id>`). */
   async isParticipant(conversationId: string, userId: string): Promise<boolean> {
-    return (await this.participants.find(conversationId, userId)) !== null;
+    return this.directory.isParticipant(conversationId, userId);
   }
 
+  /** Via cache de participantes (`cache:conv:participants:<id>`). */
   async getParticipantIds(conversationId: string): Promise<string[]> {
-    const participants = await this.participants.listByConversation(conversationId);
-    return participants.map((p) => p.userId);
+    return this.directory.userIds(conversationId);
   }
 
   async getUserConversationIds(userId: string): Promise<string[]> {
     return this.participants.listConversationIdsByUser(userId);
+  }
+
+  async getDirectPartnerIds(userId: string): Promise<string[]> {
+    return this.participants.listDirectPartnerIds(userId);
   }
 
   async getTypeForParticipant(userId: string, conversationId: string): Promise<ConversationType> {

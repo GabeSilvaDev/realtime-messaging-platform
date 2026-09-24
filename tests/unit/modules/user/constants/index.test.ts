@@ -10,6 +10,8 @@ import {
   SORT_ORDER,
   CONTACT_CONSTANTS,
   CONTACT_ORDER_BY,
+  USER_CACHE_KEYS,
+  USER_CACHE_TTL_SECONDS,
 } from '@/modules/user/constants';
 
 describe('user/constants index', () => {
@@ -31,5 +33,11 @@ describe('user/constants index', () => {
   it('deve exportar constantes de contact', () => {
     expect(CONTACT_CONSTANTS).toBeDefined();
     expect(CONTACT_ORDER_BY).toBeDefined();
+  });
+
+  it('deve exportar as chaves e o TTL do cache do módulo', () => {
+    expect(USER_CACHE_KEYS.publicUser('u1')).toBe('user:u1');
+    expect(USER_CACHE_KEYS.blocks('u1')).toBe('blocks:u1');
+    expect(USER_CACHE_TTL_SECONDS).toBe(300);
   });
 });

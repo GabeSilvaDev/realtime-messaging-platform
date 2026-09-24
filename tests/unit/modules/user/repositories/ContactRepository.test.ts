@@ -51,8 +51,16 @@ describe('ContactRepository', () => {
     updatedAt: new Date('2026-01-01'),
     toJSON: jest.fn(),
     update: jest.fn(),
+    // Linha do usuário como o Sequelize a devolveria com todas as colunas (inclusive status e
+    // last_seen_at): o repositório só pode repassar o resumo público.
     contact: {
-      toPublicJSON: jest.fn(),
+      id: 'contact-456',
+      username: 'contactuser',
+      email: 'contact@example.com',
+      displayName: 'Contact User',
+      avatarUrl: 'https://example.com/avatar.jpg',
+      status: UserStatus.ONLINE,
+      lastSeenAt: new Date('2026-01-01'),
     },
   };
 
@@ -61,8 +69,6 @@ describe('ContactRepository', () => {
     username: 'contactuser',
     displayName: 'Contact User',
     avatarUrl: 'https://example.com/avatar.jpg',
-    status: UserStatus.ONLINE,
-    lastSeenAt: new Date('2026-01-01'),
   };
 
   beforeEach(() => {
@@ -80,7 +86,6 @@ describe('ContactRepository', () => {
       createdAt: mockContactInstance.createdAt,
       updatedAt: mockContactInstance.updatedAt,
     });
-    mockContactInstance.contact.toPublicJSON.mockReturnValue(mockContactUser);
   });
 
   describe('IContactRepository interface', () => {
@@ -175,6 +180,7 @@ describe('ContactRepository', () => {
         })
       );
       expect(result.contacts).toHaveLength(1);
+      expect(result.contacts[0]!.contact).toEqual(mockContactUser);
       expect(result.total).toBe(1);
       expect(result.limit).toBe(50);
       expect(result.offset).toBe(0);
@@ -311,7 +317,33 @@ describe('ContactRepository', () => {
       expect(result.contacts).toHaveLength(50);
     });
 
-    it('deve usar valores padrão quando contact.toPublicJSON não está disponível', async () => {
+    it('não seleciona nem devolve status/lastSeenAt do usuário do contato', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({
+        count: 1,
+        rows: [mockContactInstance],
+      } as any);
+
+      const result = await repository.findAllByUser('user-123');
+
+      expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: [
+            expect.objectContaining({
+              as: 'contact',
+              attributes: ['id', 'username', 'displayName', 'avatarUrl'],
+            }),
+          ],
+        })
+      );
+      expect(Object.keys(result.contacts[0]!.contact).sort()).toEqual([
+        'avatarUrl',
+        'displayName',
+        'id',
+        'username',
+      ]);
+    });
+
+    it('deve usar valores padrão quando o usuário do contato não veio no include', async () => {
       const contactWithoutUser = {
         ...mockContactInstance,
         contact: undefined,
@@ -332,8 +364,6 @@ describe('ContactRepository', () => {
         username: '',
         displayName: null,
         avatarUrl: null,
-        status: 'offline',
-        lastSeenAt: null,
       });
     });
   });
@@ -373,7 +403,12 @@ describe('ContactRepository', () => {
       const result = await repository.findBlockedByUser('user-123');
 
       expect(result[0]!.contact.id).toBe('contact-456');
-      expect(result[0]!.contact.status).toBe('offline');
+      expect(result[0]!.contact).toEqual({
+        id: 'contact-456',
+        username: '',
+        displayName: null,
+        avatarUrl: null,
+      });
     });
   });
 
@@ -685,6 +720,80 @@ describe('ContactRepository', () => {
           silent: true,
         }
       );
+    });
+  });
+
+  describe('consultas da presença', () => {
+    it('listWatcherIds: quem tem o usuário como contato não bloqueado', async () => {
+      MockContact.findAll.mockResolvedValue([{ userId: 'w1' }, { userId: 'w2' }] as any);
+
+      const result = await repository.listWatcherIds('user-123');
+
+      expect(MockContact.findAll).toHaveBeenCalledWith({
+        where: { contactId: 'user-123', isBlocked: false },
+        attributes: ['userId'],
+      });
+      expect(result).toEqual(['w1', 'w2']);
+    });
+
+    it('listContactIds: contatos não bloqueados do usuário', async () => {
+      MockContact.findAll.mockResolvedValue([{ contactId: 'c1' }] as any);
+
+      const result = await repository.listContactIds('user-123');
+
+      expect(MockContact.findAll).toHaveBeenCalledWith({
+        where: { userId: 'user-123', isBlocked: false },
+        attributes: ['contactId'],
+      });
+      expect(result).toEqual(['c1']);
+    });
+
+    it('listBlockedEitherIds: os dois sentidos numa consulta, sem repetição', async () => {
+      MockContact.findAll.mockResolvedValue([
+        { userId: 'user-123', contactId: 'b1' },
+        { userId: 'b2', contactId: 'user-123' },
+        { userId: 'b1', contactId: 'user-123' },
+      ] as any);
+
+      const result = await repository.listBlockedEitherIds('user-123');
+
+      expect(MockContact.findAll).toHaveBeenCalledWith({
+        where: {
+          isBlocked: true,
+          [Op.or]: [{ userId: 'user-123' }, { contactId: 'user-123' }],
+        },
+        attributes: ['userId', 'contactId'],
+      });
+      expect(result).toEqual(['b1', 'b2']);
+    });
+
+    it('findByUserAndContactIds: contatos não bloqueados entre os ids, com o usuário', async () => {
+      const publicUser = { id: 'c1', username: 'c1', displayName: null, avatarUrl: null };
+      const row = {
+        contactId: 'c1',
+        toJSON: () => ({ id: 'row-1', contactId: 'c1' }),
+        contact: { ...publicUser, status: 'online', lastSeenAt: new Date() },
+      };
+      MockContact.findAll.mockResolvedValue([row] as any);
+
+      const result = await repository.findByUserAndContactIds('user-123', ['c1', 'c2']);
+
+      expect(MockContact.findAll).toHaveBeenCalledWith({
+        where: { userId: 'user-123', contactId: { [Op.in]: ['c1', 'c2'] }, isBlocked: false },
+        include: [
+          {
+            model: expect.anything(),
+            as: 'contact',
+            attributes: ['id', 'username', 'displayName', 'avatarUrl'],
+          },
+        ],
+      });
+      expect(result).toEqual([{ id: 'row-1', contactId: 'c1', contact: publicUser }]);
+    });
+
+    it('findByUserAndContactIds: lista vazia não consulta', async () => {
+      await expect(repository.findByUserAndContactIds('user-123', [])).resolves.toEqual([]);
+      expect(MockContact.findAll).not.toHaveBeenCalled();
     });
   });
 });

@@ -31,3 +31,10 @@ export class DisplayNameTooLongException extends AppError {
     );
   }
 }
+
+/** Offline não é status manual: o usuário fica offline ao desconectar o último socket. */
+export class OfflineStatusNotAllowedException extends AppError {
+  constructor(message = 'Não é possível definir offline manualmente: use a desconexão') {
+    super(message, HttpStatus.BAD_REQUEST, ErrorCode.BAD_REQUEST);
+  }
+}

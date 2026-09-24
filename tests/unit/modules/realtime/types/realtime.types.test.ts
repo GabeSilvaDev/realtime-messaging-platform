@@ -1,6 +1,8 @@
 import type {
   AckResponse,
   MessageStatusPayload,
+  PresenceSnapshotPayload,
+  PresenceUpdatePayload,
   ServerToClientEvents,
   SocketData,
 } from '@/modules/realtime/types';
@@ -33,5 +35,14 @@ describe('realtime types', () => {
       'u1',
       true,
     ]);
+  });
+
+  it('descrevem os payloads de presença', () => {
+    const update: PresenceUpdatePayload = { userId: 'u1', state: 'busy', lastSeenAt: null };
+    const snapshot: PresenceSnapshotPayload = {
+      states: [update, { userId: 'u2', state: 'offline', lastSeenAt: new Date(0) }],
+    };
+
+    expect(snapshot.states.map((entry) => entry.state)).toEqual(['busy', 'offline']);
   });
 });

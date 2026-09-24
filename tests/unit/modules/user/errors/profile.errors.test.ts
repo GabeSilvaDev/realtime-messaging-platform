@@ -4,6 +4,7 @@ import {
   InvalidAvatarUrlException,
   BioTooLongException,
   DisplayNameTooLongException,
+  OfflineStatusNotAllowedException,
 } from '@/modules/user/errors/profile.errors';
 
 describe('profile.errors', () => {
@@ -63,6 +64,21 @@ describe('profile.errors', () => {
       expect(new DisplayNameTooLongException(50).message).toBe(
         'Nome de exibição muito longo. Máximo: 50 caracteres'
       );
+    });
+  });
+
+  describe('OfflineStatusNotAllowedException', () => {
+    it('deve responder 400 orientando a usar a desconexão', () => {
+      const error = new OfflineStatusNotAllowedException();
+
+      expect(error).toBeInstanceOf(AppError);
+      expect(error.message).toBe('Não é possível definir offline manualmente: use a desconexão');
+      expect(error.statusCode).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.code).toBe(ErrorCode.BAD_REQUEST);
+    });
+
+    it('deve aceitar mensagem personalizada', () => {
+      expect(new OfflineStatusNotAllowedException('Outra').message).toBe('Outra');
     });
   });
 });

@@ -25,7 +25,9 @@ export {
   MessageService,
   messageService,
   buildDirectKey,
+  ParticipantDirectory,
 } from './services';
+export type { ParticipantSummary } from './services';
 
 export {
   ConversationController,
@@ -36,4 +38,4 @@ export {
 
 export { conversationRoutes } from './routes';
 
-export { registerChatListeners } from './listeners';
+export { registerChatListeners, registerChatCacheListeners } from './listeners';

@@ -166,14 +166,12 @@ describe('contact.types', () => {
           username: 'contactuser',
           displayName: 'Contact User',
           avatarUrl: 'https://example.com/avatar.jpg',
-          status: 'online',
-          lastSeenAt: new Date(),
         },
       };
 
       expect(contact.contact.id).toBe('user-456');
       expect(contact.contact.username).toBe('contactuser');
-      expect(contact.contact.status).toBe('online');
+      expect(contact.contact).not.toHaveProperty('status');
     });
 
     it('deve aceitar dados do usuário com valores null', () => {
@@ -192,14 +190,12 @@ describe('contact.types', () => {
           username: 'contactuser',
           displayName: null,
           avatarUrl: null,
-          status: 'offline',
-          lastSeenAt: null,
         },
       };
 
       expect(contact.contact.displayName).toBeNull();
       expect(contact.contact.avatarUrl).toBeNull();
-      expect(contact.contact.lastSeenAt).toBeNull();
+      expect(contact.contact).not.toHaveProperty('lastSeenAt');
     });
   });
 
@@ -291,8 +287,6 @@ describe('contact.types', () => {
               username: 'contactuser',
               displayName: 'Contact User',
               avatarUrl: null,
-              status: 'online',
-              lastSeenAt: new Date(),
             },
           },
         ],

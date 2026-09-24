@@ -14,6 +14,8 @@ export interface IParticipantRepository {
   ): Promise<ParticipantAttributes[]>;
   listByConversations(conversationIds: string[]): Promise<ParticipantAttributes[]>;
   listConversationIdsByUser(userId: string): Promise<string[]>;
+  /** Quem conversa com `userId` em conversas `direct` (o outro participante de cada uma). */
+  listDirectPartnerIds(userId: string): Promise<string[]>;
   /** Adiciona como `member`, ignorando quem já participa. */
   addMembers(
     conversationId: string,

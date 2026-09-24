@@ -64,8 +64,6 @@ export interface PublicProfileResponseDTO {
   displayName: string | null;
   avatarUrl: string | null;
   bio: string | null;
-  status: string;
-  lastSeenAt: string | null;
 }
 
 export interface ProfileStatsDTO {

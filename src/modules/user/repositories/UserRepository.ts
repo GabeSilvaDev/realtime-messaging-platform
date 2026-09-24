@@ -143,8 +143,8 @@ export class UserRepository implements IUserRepository {
     };
   }
 
-  async updateLastSeen(userId: string): Promise<void> {
-    await User.update({ lastSeenAt: new Date() }, { where: { id: userId } });
+  async updateLastSeen(userId: string, at: Date = new Date()): Promise<void> {
+    await User.update({ lastSeenAt: at }, { where: { id: userId } });
   }
 
   async updateStatus(userId: string, status: UserStatus): Promise<void> {

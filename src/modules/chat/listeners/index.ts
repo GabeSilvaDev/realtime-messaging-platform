@@ -1,1 +1,1 @@
-export { registerChatListeners } from './chat.listeners';
+export { registerChatListeners, registerChatCacheListeners } from './chat.listeners';

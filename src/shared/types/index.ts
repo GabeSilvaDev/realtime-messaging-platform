@@ -16,6 +16,7 @@ export type {
   MessageStatusDTO,
   MessageStatusEntry,
 } from './chat-message.types';
+export type { ManualPresenceStatus, PresenceState, PresenceStateDTO } from './presence.types';
 export type {
   ValidationTarget,
   ValidationSchemas,

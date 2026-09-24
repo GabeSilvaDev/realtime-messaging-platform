@@ -6,6 +6,11 @@ export const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 export interface StopHandlerDeps {
   realtime: Pick<RealtimeServerHandle, 'close'>;
+  /**
+   * Roda antes de fechar o realtime: para o que não pode seguir durante o encerramento (timers
+   * de heartbeat/varredura da presença e a ponte dela no EventBus).
+   */
+  beforeClose?: () => void;
   shutdown: () => Promise<void>;
   exit: (code: number) => void;
   logger: Pick<ILogger, 'info' | 'error'>;
@@ -32,10 +37,17 @@ function toError(error: unknown): Error {
  * algo falhou), logando cada falha antes de seguir para o próximo passo.
  */
 async function closeGracefully(
-  deps: Pick<StopHandlerDeps, 'realtime' | 'shutdown' | 'logger'>
+  deps: Pick<StopHandlerDeps, 'realtime' | 'beforeClose' | 'shutdown' | 'logger'>
 ): Promise<number> {
-  const { realtime, shutdown, logger } = deps;
+  const { realtime, beforeClose, shutdown, logger } = deps;
   let hadError = false;
+
+  try {
+    beforeClose?.();
+  } catch (error) {
+    hadError = true;
+    logger.error('Falha ao parar os serviços antes do encerramento', toError(error));
+  }
 
   try {
     await realtime.close();
@@ -64,7 +76,7 @@ async function closeGracefully(
  * criação e é cancelado assim que o encerramento gracioso termina, sem deixar handles abertos.
  */
 export function createStopHandler(deps: StopHandlerDeps): StopHandler {
-  const { realtime, shutdown, exit, logger, timeoutMs = SHUTDOWN_TIMEOUT_MS } = deps;
+  const { realtime, beforeClose, shutdown, exit, logger, timeoutMs = SHUTDOWN_TIMEOUT_MS } = deps;
   let stopping = false;
 
   return (reason: string, options: StopOptions = {}): void => {
@@ -90,7 +102,7 @@ export function createStopHandler(deps: StopHandlerDeps): StopHandler {
     }, timeoutMs);
     timer.unref();
 
-    void closeGracefully({ realtime, shutdown, logger }).then((code) => {
+    void closeGracefully({ realtime, beforeClose, shutdown, logger }).then((code) => {
       if (settled) {
         return;
       }

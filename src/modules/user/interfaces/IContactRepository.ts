@@ -25,4 +25,12 @@ export interface IContactRepository {
   unblock(userId: string, contactId: string): Promise<boolean>;
   /** Grava `last_interaction_at` nas linhas de contato dos dois sentidos, se existirem. */
   touchInteraction(userId: string, otherUserId: string, at: Date): Promise<void>;
+  /** Ids de quem tem `userId` como contato (linha não bloqueada). */
+  listWatcherIds(userId: string): Promise<string[]>;
+  /** Ids dos contatos (não bloqueados) de `userId`. */
+  listContactIds(userId: string): Promise<string[]>;
+  /** Ids com bloqueio em qualquer sentido com `userId` (sem repetição). */
+  listBlockedEitherIds(userId: string): Promise<string[]>;
+  /** Contatos não bloqueados de `userId` entre `contactIds`, com o usuário de cada um. */
+  findByUserAndContactIds(userId: string, contactIds: string[]): Promise<ContactWithUser[]>;
 }

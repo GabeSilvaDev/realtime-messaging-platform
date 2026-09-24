@@ -11,6 +11,14 @@
       <h1>Real-Time Messaging — demo</h1>
       <span id="connection" class="badge">desconectado</span>
       <span id="me"></span>
+      <label id="status-label" hidden>
+        Status
+        <select id="status">
+          <option value="available">Disponível</option>
+          <option value="away">Ausente</option>
+          <option value="busy">Ocupado</option>
+        </select>
+      </label>
       <button id="logout" type="button" hidden>Sair</button>
     </header>
 
@@ -39,6 +47,7 @@
 
       <section id="conversation" hidden>
         <h2 id="conversation-title"></h2>
+        <p id="conversation-presence" class="presence-line"></p>
         <button id="load-more" type="button" hidden>Carregar mais</button>
         <ol id="messages"></ol>
         <p id="typing" class="typing"></p>

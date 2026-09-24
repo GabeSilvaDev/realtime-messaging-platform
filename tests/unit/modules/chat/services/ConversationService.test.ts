@@ -16,6 +16,9 @@ import {
   UsersNotFoundException,
 } from '@/modules/chat/errors';
 import type { IConversationRepository, IParticipantRepository } from '@/modules/chat/interfaces';
+import { ParticipantDirectory } from '@/modules/chat/services/ParticipantDirectory';
+import { CacheService } from '@/shared/cache';
+import { FakeRedis } from '../../../../support/redis/fakeRedis';
 import {
   ConversationService,
   buildDirectKey,
@@ -117,6 +120,7 @@ describe('ConversationService', () => {
       listByConversation: jest.fn(),
       listByConversations: jest.fn(),
       listConversationIdsByUser: jest.fn(),
+      listDirectPartnerIds: jest.fn(),
       addMembers: jest.fn(),
       remove: jest.fn(),
       setRole: jest.fn(),
@@ -127,7 +131,14 @@ describe('ConversationService', () => {
     contacts = { isBlockedByEither: jest.fn() };
     events = { publish: jest.fn().mockResolvedValue('event-id') };
     conversations.withLock.mockImplementation(async (_id, work) => work(TX));
-    service = new ConversationService(conversations, participants, users, contacts, events);
+    service = new ConversationService(
+      conversations,
+      participants,
+      users,
+      contacts,
+      events,
+      new ParticipantDirectory(participants, new CacheService(new FakeRedis()))
+    );
   });
 
   it('deve exportar a instância padrão', () => {
@@ -514,6 +525,35 @@ describe('ConversationService', () => {
       expect(events.publish).toHaveBeenCalledTimes(1);
     });
 
+    it('forget() invalida cache após commit e antes de publish', async () => {
+      givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
+      participants.listByConversation.mockResolvedValue([participant(USER_B)]);
+      let forgetCalled = false;
+      const originalLeave = service.leave.bind(service);
+      service.leave = async (userId: string, conversationId: string) => {
+        // Espiona durante a execução
+        const originalForget = (service as any)['directory'].forget.bind(
+          (service as any)['directory']
+        );
+        (service as any)['directory'].forget = async (cid: string) => {
+          forgetCalled = true;
+          return originalForget(cid);
+        };
+        return originalLeave(userId, conversationId);
+      };
+
+      conversations.withLock.mockImplementation(async (_id, work) => {
+        const result = await work(TX);
+        expect(forgetCalled).toBe(false);
+        return result;
+      });
+
+      await service.leave(USER_A, CONVERSATION_ID);
+
+      expect(forgetCalled).toBe(true);
+      expect(events.publish).toHaveBeenCalled();
+    });
+
     it('último admin saindo promove o membro mais antigo', async () => {
       givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
       participants.listByConversation.mockResolvedValue([participant(USER_B), participant(USER_C)]);
@@ -703,17 +743,22 @@ describe('ConversationService', () => {
   });
 
   describe('consultas para outros módulos', () => {
-    it('isParticipant', async () => {
-      participants.find.mockResolvedValueOnce(participant(USER_A)).mockResolvedValueOnce(null);
+    it('isParticipant e getParticipantIds vêm do cache de participantes (uma leitura)', async () => {
+      participants.listByConversation.mockResolvedValue([participant(USER_A), participant(USER_B)]);
 
       await expect(service.isParticipant(CONVERSATION_ID, USER_A)).resolves.toBe(true);
       await expect(service.isParticipant(CONVERSATION_ID, USER_D)).resolves.toBe(false);
+      await expect(service.getParticipantIds(CONVERSATION_ID)).resolves.toEqual([USER_A, USER_B]);
+
+      expect(participants.listByConversation).toHaveBeenCalledTimes(1);
+      expect(participants.find).not.toHaveBeenCalled();
     });
 
-    it('getParticipantIds', async () => {
-      participants.listByConversation.mockResolvedValue([participant(USER_A), participant(USER_B)]);
+    it('getDirectPartnerIds delega ao repositório', async () => {
+      participants.listDirectPartnerIds.mockResolvedValue([USER_B]);
 
-      await expect(service.getParticipantIds(CONVERSATION_ID)).resolves.toEqual([USER_A, USER_B]);
+      await expect(service.getDirectPartnerIds(USER_A)).resolves.toEqual([USER_B]);
+      expect(participants.listDirectPartnerIds).toHaveBeenCalledWith(USER_A);
     });
 
     it('getTypeForParticipant devolve o tipo para participante e 404 para quem não participa', async () => {

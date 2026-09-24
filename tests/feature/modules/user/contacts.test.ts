@@ -15,10 +15,16 @@ const mockContactService = {
   unblockUser: jest.fn(),
   listBlocked: jest.fn(),
   searchUsers: jest.fn(),
+  listContactIds: jest.fn(),
+  getContactsByIds: jest.fn(),
 };
+const mockPresenceService = { getVisibleStates: jest.fn() };
 
 jest.mock('@/modules/user/services/ContactService', () => ({
   contactService: mockContactService,
+}));
+jest.mock('@/modules/presence/services/PresenceService', () => ({
+  presenceService: mockPresenceService,
 }));
 
 jest.mock('@/modules/auth/middlewares/authenticate', () => ({
@@ -59,6 +65,10 @@ describe('Contacts / Blocks / Users — Feature', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Todos online (a presença em si é testada no módulo presence).
+    mockPresenceService.getVisibleStates.mockImplementation(async (_viewer, ids: string[]) =>
+      ids.map((userId) => ({ userId, state: 'online', lastSeenAt: null }))
+    );
     app = express();
     app.use(express.json());
     app.use('/api/contacts', contactRoutes);
@@ -72,6 +82,7 @@ describe('Contacts / Blocks / Users — Feature', () => {
       ['get', '/api/contacts'],
       ['post', '/api/contacts'],
       ['get', '/api/contacts/favorites'],
+      ['get', '/api/contacts/online'],
       ['get', '/api/contacts/stats'],
       ['get', `/api/contacts/${CONTACT_ID}`],
       ['patch', `/api/contacts/${CONTACT_ID}`],
@@ -171,6 +182,66 @@ describe('Contacts / Blocks / Users — Feature', () => {
         .send({ contactId: CONTACT_ID });
 
       expect(response.status).toBe(HttpStatus.CONFLICT);
+    });
+
+    it('GET /api/contacts com a presença fora do ar responde 200 com presence: null; /online responde 500', async () => {
+      mockContactService.listContacts.mockResolvedValue({
+        contacts: [
+          { id: 'c-2', contactId: '33333333-3333-4333-8333-333333333333' },
+          { id: 'c-1', contactId: CONTACT_ID },
+        ],
+        total: 2,
+        limit: 20,
+        offset: 0,
+        hasMore: false,
+      });
+      mockContactService.listContactIds.mockResolvedValue([CONTACT_ID]);
+      mockPresenceService.getVisibleStates.mockRejectedValue(new Error('Redis indisponível'));
+
+      const listed = await request(app).get('/api/contacts?orderBy=presence').set(AUTH);
+      const online = await request(app).get('/api/contacts/online').set(AUTH);
+
+      expect(listed.status).toBe(HttpStatus.OK);
+      expect(
+        listed.body.data.contacts.map((c: { id: string; presence: unknown }) => [c.id, c.presence])
+      ).toEqual([
+        ['c-2', null],
+        ['c-1', null],
+      ]);
+      expect(online.status).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+    });
+
+    it('GET /api/contacts traz presence em cada contato e aceita orderBy=presence', async () => {
+      mockContactService.listContacts.mockResolvedValue({
+        contacts: [{ id: 'c-1', contactId: CONTACT_ID }],
+        total: 1,
+        limit: 20,
+        offset: 0,
+        hasMore: false,
+      });
+
+      const listed = await request(app).get('/api/contacts?orderBy=presence').set(AUTH);
+
+      expect(listed.status).toBe(HttpStatus.OK);
+      expect(listed.body.data.contacts[0].presence).toEqual({ state: 'online', lastSeenAt: null });
+    });
+
+    it('GET /api/contacts/online não deve ser capturado por /:contactId', async () => {
+      mockContactService.listContactIds.mockResolvedValue([CONTACT_ID]);
+      mockContactService.getContactsByIds.mockResolvedValue([
+        { id: 'c-1', contactId: CONTACT_ID, nickname: 'Bia', contact: { username: 'bia' } },
+      ]);
+
+      const response = await request(app).get('/api/contacts/online').set(AUTH);
+
+      expect(response.status).toBe(HttpStatus.OK);
+      expect(response.body.data).toEqual([
+        expect.objectContaining({
+          contactId: CONTACT_ID,
+          presence: { state: 'online', lastSeenAt: null },
+        }),
+      ]);
+      expect(mockContactService.getContact).not.toHaveBeenCalled();
     });
   });
 

@@ -22,8 +22,10 @@ const mockUserService = {
         username: `user_${id.slice(0, 4)}`,
         displayName: null,
         avatarUrl: null,
-        status: 'offline',
-        lastSeenAt: null,
+        // O DTO interno do módulo user traz status e visto por último (a presença lê daqui);
+        // nenhum dos dois pode sair nos participantes.
+        status: 'online',
+        lastSeenAt: new Date('2026-09-26T09:00:00.000Z'),
       })),
 };
 const mockContactService = {
@@ -38,6 +40,11 @@ jest.mock('@/modules/user/services/ContactService', () => ({
 jest.mock('@/modules/chat/repositories', () =>
   jest.requireActual('../../../support/chat/inMemoryChat').createInMemoryChatRepositories()
 );
+// Cache de participantes sobre um Redis em memória (nunca o Redis real da máquina).
+jest.mock('@/shared/database/redis', () => {
+  const { FakeRedis } = jest.requireActual('../../../support/redis/fakeRedis');
+  return { redis: new FakeRedis() };
+});
 jest.mock('@/modules/auth/middlewares/authenticate', () => ({
   // O token do teste é o próprio id do usuário: "Authorization: Bearer <uuid>".
   authenticate: (req: Request, _res: Response, next: NextFunction): void => {
@@ -62,20 +69,36 @@ jest.mock('@/modules/auth/middlewares/authenticate', () => ({
   },
 }));
 
+import { registerChatCacheListeners } from '@/modules/chat/listeners';
 import * as chatRepositories from '@/modules/chat/repositories';
 import { conversationRoutes } from '@/modules/chat/routes/conversation.routes';
+import { redis } from '@/shared/database/redis';
 import type { InMemoryChatStore } from '../../../support/chat/inMemoryChat';
+import type { FakeRedis } from '../../../support/redis/fakeRedis';
 
 const store = (chatRepositories as unknown as { store: InMemoryChatStore }).store;
 const as = (userId: string): { Authorization: string } => ({ Authorization: `Bearer ${userId}` });
 const FAKE_CONVERSATION = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const FAKE_MESSAGE = '65f000000000000000000001';
 
+const fakeRedis = redis as unknown as FakeRedis;
+
 describe('Chat — Feature', () => {
   let app: Application;
+  let unregisterCacheListeners: () => void;
+
+  beforeAll(() => {
+    // Em produção o bootstrap registra a invalidação; aqui o teste faz o mesmo.
+    unregisterCacheListeners = registerChatCacheListeners();
+  });
+
+  afterAll(() => {
+    unregisterCacheListeners();
+  });
 
   beforeEach(() => {
     store.reset();
+    fakeRedis.flushall();
     mockBlocks.clear();
     app = express();
     app.use(express.json());
@@ -275,6 +298,35 @@ describe('Chat — Feature', () => {
       expect(newDirect.status).toBe(HttpStatus.FORBIDDEN);
     });
 
+    it.each([
+      ['Bob bloqueou a Ana', BOB, ANA],
+      ['Ana bloqueou o Bob', ANA, BOB],
+    ])('participantes nunca expõem status/lastSeenAt (%s)', async (_case, blocker, blocked) => {
+      const created = await createDirect(ANA, BOB);
+      const conversationId = created.body.data.id as string;
+      mockBlocks.add(`${blocker}:${blocked}`);
+
+      for (const viewer of [ANA, BOB]) {
+        const one = await request(app).get(`/api/conversations/${conversationId}`).set(as(viewer));
+        const list = await request(app).get('/api/conversations').set(as(viewer));
+        const participants = [
+          ...(one.body.data.participants as Record<string, unknown>[]),
+          ...(list.body.data.items[0].participants as Record<string, unknown>[]),
+        ];
+
+        expect(participants).toHaveLength(4);
+        participants.forEach((participant) => {
+          expect(Object.keys(participant).sort()).toEqual([
+            'avatarUrl',
+            'displayName',
+            'id',
+            'role',
+            'username',
+          ]);
+        });
+      }
+    });
+
     it('não participante recebe 404 em conversa e mensagens', async () => {
       const created = await createDirect(ANA, BOB);
       const conversationId = created.body.data.id as string;
@@ -442,6 +494,56 @@ describe('Chat — Feature', () => {
       const carolView = await request(app).get(`/api/conversations/${groupId}`).set(as(CAROL));
       expect(carolView.status).toBe(HttpStatus.OK);
       expect(carolView.body.data.membership.role).toBe('member');
+    });
+  });
+
+  describe('cache de participantes (cache:conv:participants:<id>)', () => {
+    it('leituras seguidas não voltam ao repositório; mudança de membros invalida', async () => {
+      const created = await request(app)
+        .post('/api/conversations/group')
+        .set(as(ANA))
+        .send({ name: 'Cache', participantIds: [BOB] });
+      const groupId = created.body.data.id as string;
+      const listByConversation = jest.spyOn(
+        chatRepositories.participantRepository,
+        'listByConversation'
+      );
+
+      await send(ANA, groupId, 'um');
+      await send(BOB, groupId, 'dois');
+      await request(app).get(`/api/conversations/${groupId}/messages`).set(as(ANA));
+      expect(listByConversation).toHaveBeenCalledTimes(1);
+      expect(await fakeRedis.ttl(`cache:conv:participants:${groupId}`)).toBe(60);
+
+      const outsider = await send(CAROL, groupId, 'ainda não');
+      expect(outsider.status).toBe(HttpStatus.NOT_FOUND);
+
+      const added = await request(app)
+        .post(`/api/conversations/${groupId}/members`)
+        .set(as(ANA))
+        .send({ userIds: [CAROL] });
+      expect(added.status).toBe(HttpStatus.OK);
+      listByConversation.mockClear();
+
+      const member = await send(CAROL, groupId, 'agora sim');
+      expect(member.status).toBe(HttpStatus.CREATED);
+      expect(listByConversation).toHaveBeenCalledTimes(1);
+    });
+
+    it('membro removido deixa de enviar imediatamente (invalidação síncrona)', async () => {
+      const created = await request(app)
+        .post('/api/conversations/group')
+        .set(as(ANA))
+        .send({ name: 'Cache', participantIds: [BOB, CAROL] });
+      const groupId = created.body.data.id as string;
+      expect((await send(CAROL, groupId, 'oi')).status).toBe(HttpStatus.CREATED);
+
+      const deleted = await request(app)
+        .delete(`/api/conversations/${groupId}/members/${CAROL}`)
+        .set(as(ANA));
+      expect(deleted.status).toBe(HttpStatus.NO_CONTENT);
+
+      expect((await send(CAROL, groupId, 'ainda estou?')).status).toBe(HttpStatus.NOT_FOUND);
     });
   });
 });

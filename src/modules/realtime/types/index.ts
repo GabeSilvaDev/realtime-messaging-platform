@@ -15,6 +15,8 @@ export type {
   ConversationNewPayload,
   ConversationUpdatedPayload,
   ConversationDeletedPayload,
+  PresenceUpdatePayload,
+  PresenceSnapshotPayload,
   RealtimeServer,
   RealtimeSocket,
   SocketMiddleware,

@@ -1,5 +1,7 @@
 import { PasswordService } from '@/modules/auth/services/PasswordService';
+import { cacheService, type ICacheService } from '@/shared/cache';
 import type { UserAttributes, UserStatus } from '@/shared/types';
+import { USER_CACHE_KEYS, USER_CACHE_TTL_SECONDS } from '../constants';
 import { userRepository } from '../repositories';
 import type { IUserRepository, IUserService } from '../interfaces';
 import {
@@ -26,10 +28,18 @@ export {
   CannotDeleteSelfException,
 } from '../errors';
 
+/** `PublicUserDTO` como volta do cache (JSON): datas viram strings ISO. */
+type CachedPublicUser = Omit<PublicUserDTO, 'lastSeenAt'> & { lastSeenAt: string | null };
+
+function reviveUser(cached: CachedPublicUser): PublicUserDTO {
+  return { ...cached, lastSeenAt: cached.lastSeenAt === null ? null : new Date(cached.lastSeenAt) };
+}
+
 export class UserService implements IUserService {
   constructor(
     private readonly users: IUserRepository = userRepository,
-    private readonly passwords: PasswordService = new PasswordService()
+    private readonly passwords: PasswordService = new PasswordService(),
+    private readonly cache: Pick<ICacheService, 'mget' | 'setMany' | 'del'> = cacheService
   ) {}
 
   async findById(id: string): Promise<UserResponseDTO> {
@@ -40,12 +50,13 @@ export class UserService implements IUserService {
     return this.toUserResponse(user);
   }
 
+  /** Perfil público via cache (`cache:user:<id>`). */
   async findByIdPublic(id: string): Promise<PublicUserDTO> {
-    const user = await this.users.findById(id);
-    if (!user) {
+    const [user] = await this.getMultiple([id]);
+    if (user === undefined) {
       throw new UserNotFoundException();
     }
-    return this.toPublicUser(user);
+    return user;
   }
 
   async findByEmail(email: string): Promise<UserResponseDTO | null> {
@@ -104,6 +115,7 @@ export class UserService implements IUserService {
       throw new UserNotFoundException();
     }
 
+    await this.forget(id);
     return this.toUserResponse(updated);
   }
 
@@ -121,6 +133,7 @@ export class UserService implements IUserService {
     if (!deleted) {
       throw new UserNotFoundException();
     }
+    await this.forget(id);
   }
 
   async search(options: UserSearchOptions): Promise<UserSearchResult> {
@@ -158,17 +171,54 @@ export class UserService implements IUserService {
     return user !== null;
   }
 
-  async updateLastSeen(userId: string): Promise<void> {
-    await this.users.updateLastSeen(userId);
+  async updateLastSeen(userId: string, at: Date = new Date()): Promise<void> {
+    await this.users.updateLastSeen(userId, at);
+    await this.forget(userId);
   }
 
   async updateStatus(userId: string, status: UserStatus): Promise<void> {
     await this.users.updateStatus(userId, status);
+    await this.forget(userId);
   }
 
+  /**
+   * Perfis públicos na ordem de `ids` (sem repetição; inexistentes ficam de fora). Lê do cache
+   * (`cache:user:<id>`, um MGET) e busca no Postgres, numa só consulta `IN`, apenas os ausentes,
+   * que passam a ser cacheados.
+   */
   async getMultiple(ids: string[]): Promise<PublicUserDTO[]> {
-    const users = await this.users.findByIds(ids);
-    return users.map((u) => this.toPublicUser(u));
+    const unique = [...new Set(ids)];
+    const cached = await this.cache.mget<CachedPublicUser>(unique.map(USER_CACHE_KEYS.publicUser));
+
+    const byId = new Map<string, PublicUserDTO>();
+    const missing: string[] = [];
+    unique.forEach((id, index) => {
+      const hit = cached[index] ?? null;
+      if (hit === null) {
+        missing.push(id);
+      } else {
+        byId.set(id, reviveUser(hit));
+      }
+    });
+
+    if (missing.length > 0) {
+      const loaded = (await this.users.findByIds(missing)).map((u) => this.toPublicUser(u));
+      await this.cache.setMany(
+        loaded.map((user) => [USER_CACHE_KEYS.publicUser(user.id), user]),
+        USER_CACHE_TTL_SECONDS
+      );
+      loaded.forEach((user) => byId.set(user.id, user));
+    }
+
+    return unique.flatMap((id) => {
+      const user = byId.get(id);
+      return user === undefined ? [] : [user];
+    });
+  }
+
+  /** Escritas do próprio service invalidam o perfil público cacheado. */
+  private async forget(userId: string): Promise<void> {
+    await this.cache.del(USER_CACHE_KEYS.publicUser(userId));
   }
 
   private toUserResponse(user: UserAttributes): UserResponseDTO {

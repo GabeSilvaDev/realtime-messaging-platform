@@ -54,6 +54,60 @@ describe('createStopHandler', () => {
     expect(exit).toHaveBeenCalledWith(1);
   });
 
+  it('beforeClose roda antes de fechar o realtime', async () => {
+    const order: string[] = [];
+    const realtime = {
+      close: jest.fn(async () => {
+        order.push('realtime.close');
+      }),
+    };
+    const beforeClose = jest.fn(() => {
+      order.push('beforeClose');
+    });
+    const exit = jest.fn();
+
+    createStopHandler({
+      realtime,
+      beforeClose,
+      shutdown: jest.fn().mockResolvedValue(undefined),
+      exit,
+      logger: makeLogger(),
+    })('SIGTERM');
+    await flushPromises();
+    await flushPromises();
+
+    expect(order).toEqual(['beforeClose', 'realtime.close']);
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it('beforeClose falha: loga, fecha o resto mesmo assim e sai com 1', async () => {
+    const realtime = { close: jest.fn().mockResolvedValue(undefined) };
+    const shutdown = jest.fn().mockResolvedValue(undefined);
+    const exit = jest.fn();
+    const logger = makeLogger();
+    const failure = new Error('timer travado');
+
+    createStopHandler({
+      realtime,
+      beforeClose: () => {
+        throw failure;
+      },
+      shutdown,
+      exit,
+      logger,
+    })('SIGTERM');
+    await flushPromises();
+    await flushPromises();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      'Falha ao parar os serviços antes do encerramento',
+      failure
+    );
+    expect(realtime.close).toHaveBeenCalled();
+    expect(shutdown).toHaveBeenCalled();
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
   it('shutdown() falha: loga e sai com 1', async () => {
     const shutdownError = new Error('falhou o shutdown');
     const realtime = { close: jest.fn().mockResolvedValue(undefined) };
