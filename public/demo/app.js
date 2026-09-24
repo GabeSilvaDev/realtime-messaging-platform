@@ -24,6 +24,7 @@
     lastRefreshAt: 0,
     refreshTimer: null,
     presence: new Map(), // userId → { state, lastSeenAt } (snapshot + presence:update)
+    confirmedStatus: 'available', // último status confirmado pelo servidor
   };
 
   const PRESENCE_LABELS = { online: 'online', away: 'ausente', busy: 'ocupado', offline: 'offline' };
@@ -149,11 +150,29 @@
   $('status').addEventListener('change', (event) => {
     const status = event.target.value;
     state.socket?.emit('presence:set', { status }, (ack) => {
-      if (!ack.ok) {
+      if (ack.ok) {
+        state.confirmedStatus = status;
+      } else {
         window.alert(`Falha ao mudar o status: ${ack.error.message}`);
+        $('status').value = state.confirmedStatus;
       }
     });
   });
+
+  // Restaura o seletor de status com o valor do servidor após conectar.
+  async function restoreStatusSelector() {
+    try {
+      const { items } = await api('GET', `/presence?userIds=${state.user.id}`);
+      if (items.length > 0) {
+        const { state: serverState } = items[0];
+        const selectorValue = serverState === 'online' ? 'available' : serverState;
+        $('status').value = selectorValue;
+        state.confirmedStatus = selectorValue;
+      }
+    } catch {
+      // Silenciosamente ignora falhas
+    }
+  }
 
   // ---------- socket ----------
 
@@ -164,6 +183,7 @@
     socket.on('connect', () => {
       $('connection').textContent = 'conectado';
       $('connection').classList.add('online');
+      void restoreStatusSelector();
       // Reconexão: o servidor restaura as rooms; o que chegou no intervalo vem pelo REST.
       if (state.current) {
         void openConversation(state.current.id);
@@ -213,7 +233,9 @@
     socket.on('presence:update', (entry) => {
       if (entry.userId === state.user.id) {
         // Status mudado em outra aba deste usuário.
-        $('status').value = entry.state === 'online' ? 'available' : entry.state;
+        const selectorValue = entry.state === 'online' ? 'available' : entry.state;
+        $('status').value = selectorValue;
+        state.confirmedStatus = selectorValue;
         return;
       }
       state.presence.set(entry.userId, entry);
@@ -361,9 +383,7 @@
     renderMessages(true);
     markRead();
     // Conversa recém-criada (busca de usuário) ainda não está na lista local.
-    if (state.conversations.some((c) => c.id === conversationId)) {
-      renderConversations();
-    } else {
+    if (!state.conversations.some((c) => c.id === conversationId)) {
       scheduleConversationsRefresh();
     }
   }
