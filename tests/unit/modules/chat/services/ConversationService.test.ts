@@ -320,6 +320,34 @@ describe('ConversationService', () => {
       });
     });
 
+    it('deve montar participantes por conversa via mapas, sem vazar entre conversas (múltiplas conversas/usuários)', async () => {
+      const convB = conversation({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'B' });
+      const convC = conversation({ id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'C' });
+      conversations.listForUser.mockResolvedValue({
+        total: 3,
+        rows: [
+          { conversation: conversation(), membership: participant(USER_A, 'admin') },
+          { conversation: convB, membership: participant(USER_A) },
+          { conversation: convC, membership: participant(USER_A) },
+        ],
+      });
+      participants.listByConversations.mockResolvedValue([
+        participant(USER_A, 'admin'),
+        participant(USER_B, 'member', { conversationId: convB.id }),
+        participant(USER_A, 'member', { conversationId: convB.id }),
+        participant(USER_D, 'member', { conversationId: convC.id }),
+      ]);
+      users.getMultiple.mockResolvedValue([user(USER_A, 'ana'), user(USER_B, 'bob')]);
+
+      const result = await service.list(USER_A);
+
+      expect(result.items[0]!.participants.map((p) => p.username)).toEqual(['ana']);
+      expect(result.items[1]!.participants.map((p) => p.username)).toEqual(['bob', 'ana']);
+      // USER_D não veio em users.getMultiple (usuário removido/ausente) — omitido, sem
+      // vazar participantes de outras conversas para dentro de convC.
+      expect(result.items[2]!.participants).toEqual([]);
+    });
+
     it('deve usar defaults (archived=false, limit=20, offset=0) e limitar a 100', async () => {
       conversations.listForUser.mockResolvedValue({ total: 0, rows: [] });
       participants.listByConversations.mockResolvedValue([]);

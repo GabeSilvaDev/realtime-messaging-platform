@@ -133,12 +133,11 @@ export class ConversationService implements IConversationService {
     );
     const users = await this.users.getMultiple([...new Set(participants.map((p) => p.userId))]);
 
+    const participantsByConversation = groupParticipantsByConversation(participants);
+    const usersById = indexUsersById(users);
+
     const items = page.rows.map((entry) =>
-      this.toDTO(
-        entry,
-        participants.filter((p) => p.conversationId === entry.conversation.id),
-        users
-      )
+      this.toDTO(entry, participantsByConversation.get(entry.conversation.id) ?? [], usersById)
     );
 
     return {
@@ -154,7 +153,7 @@ export class ConversationService implements IConversationService {
     const context = await this.requireMembership(conversationId, userId);
     const participants = await this.participants.listByConversation(conversationId);
     const users = await this.users.getMultiple(participants.map((p) => p.userId));
-    return this.toDTO(context, participants, users);
+    return this.toDTO(context, participants, indexUsersById(users));
   }
 
   async rename(userId: string, conversationId: string, name: string): Promise<ConversationDTO> {
@@ -322,7 +321,7 @@ export class ConversationService implements IConversationService {
   private toDTO(
     { conversation, membership }: ConversationListEntry,
     participants: ParticipantAttributes[],
-    users: PublicUserDTO[]
+    usersById: Map<string, PublicUserDTO>
   ): ConversationDTO {
     return {
       id: conversation.id,
@@ -334,7 +333,7 @@ export class ConversationService implements IConversationService {
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
       participants: participants.flatMap((participant) => {
-        const user = users.find((u) => u.id === participant.userId);
+        const user = usersById.get(participant.userId);
         return user === undefined
           ? []
           : [
@@ -354,6 +353,27 @@ export class ConversationService implements IConversationService {
       },
     };
   }
+}
+
+/** Agrupa em uma única passada — evita um `.filter` por conversa (O(n·m) → O(n)). */
+function groupParticipantsByConversation(
+  participants: ParticipantAttributes[]
+): Map<string, ParticipantAttributes[]> {
+  const byConversation = new Map<string, ParticipantAttributes[]>();
+  for (const participant of participants) {
+    const bucket = byConversation.get(participant.conversationId);
+    if (bucket === undefined) {
+      byConversation.set(participant.conversationId, [participant]);
+    } else {
+      bucket.push(participant);
+    }
+  }
+  return byConversation;
+}
+
+/** Indexa por id — evita um `.find` por participante (O(n·m) → O(n)). */
+function indexUsersById(users: PublicUserDTO[]): Map<string, PublicUserDTO> {
+  return new Map(users.map((user) => [user.id, user]));
 }
 
 export const conversationService = new ConversationService();
