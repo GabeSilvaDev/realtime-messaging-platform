@@ -24,6 +24,7 @@ describe('search constants', () => {
       RATE_LIMIT_KEY_PREFIX: 'rl:search:',
       SEARCH_REQUEST_TIMEOUT_MS: 3_000,
       SEARCH_MAX_RETRIES: 1,
+      INDEX_TEMPLATE_PRIORITY: 500,
     });
   });
 

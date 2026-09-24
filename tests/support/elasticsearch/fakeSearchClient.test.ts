@@ -2,10 +2,24 @@
 // para as chamadas usadas pela busca (conferidas contra um servidor real na escrita do plano) e a
 // avaliação simplificada da `search` (sem analyzer — ver o cabeçalho do fake).
 import type { estypes } from '@elastic/elasticsearch';
+import { MESSAGES_INDEX_MAPPINGS, MESSAGES_INDEX_SETTINGS } from '@/modules/search/constants';
 import type { MessageDocument } from '@/modules/search/types';
 import { FakeResponseError, FakeSearchClient } from './fakeSearchClient';
 
 const INDEX = 'messages';
+
+/** O template que o SearchIndexService instala (`<índice>-template`). */
+function template(
+  overrides: Partial<estypes.IndicesPutIndexTemplateRequest> = {}
+): estypes.IndicesPutIndexTemplateRequest {
+  return {
+    name: `${INDEX}-template`,
+    index_patterns: [INDEX],
+    priority: 500,
+    template: { settings: MESSAGES_INDEX_SETTINGS, mappings: MESSAGES_INDEX_MAPPINGS },
+    ...overrides,
+  };
+}
 
 function doc(overrides: Partial<MessageDocument> = {}): MessageDocument {
   return {
@@ -71,6 +85,101 @@ describe('FakeSearchClient', () => {
     });
   });
 
+  describe('template de índice e criação automática na escrita', () => {
+    it('putIndexTemplate reconhece e substitui o template de mesmo nome', async () => {
+      await expect(fake.indices.putIndexTemplate(template())).resolves.toEqual({
+        acknowledged: true,
+      });
+      await expect(fake.indices.putIndexTemplate(template())).resolves.toEqual({
+        acknowledged: true,
+      });
+      expect(fake.callsOf('indices.putIndexTemplate')).toEqual([
+        { method: 'indices.putIndexTemplate', params: template() },
+        { method: 'indices.putIndexTemplate', params: template() },
+      ]);
+    });
+
+    it('sem template, a escrita cria o índice com mapping dinâmico (auto_create_index)', async () => {
+      await fake.index({ index: INDEX, id: 'm1', document: doc() });
+      await fake.bulk({ operations: [{ index: { _index: 'outro', _id: 'm2' } }, doc()] });
+
+      expect(fake.hasIndex(INDEX)).toBe(true);
+      expect(fake.mappingOf(INDEX)).toBeUndefined();
+      expect(fake.mappingOf('outro')).toBeUndefined();
+    });
+
+    it('com template, index e bulk criam o índice com o mapping dele (strict vale)', async () => {
+      await fake.indices.putIndexTemplate(template());
+      const extra = { ...doc(), extra: 1 } as unknown as MessageDocument;
+
+      // Como no Elasticsearch: o índice é criado antes, mesmo que o documento seja recusado.
+      await expect(fake.index({ index: INDEX, id: 'm1', document: extra })).rejects.toMatchObject({
+        meta: { statusCode: 400, body: { error: { type: 'strict_dynamic_mapping_exception' } } },
+      });
+      expect(fake.mappingOf(INDEX)).toEqual(MESSAGES_INDEX_MAPPINGS);
+
+      await fake.indices.delete({ index: INDEX });
+      const response = await fake.bulk({
+        operations: [
+          { index: { _index: INDEX, _id: 'm1' } },
+          extra,
+          { index: { _index: INDEX, _id: 'm2' } },
+          doc({ messageId: 'm2' }),
+        ],
+      });
+
+      expect(response.items.map((item) => item.index?.status)).toEqual([400, 201]);
+      expect(fake.mappingOf(INDEX)).toEqual(MESSAGES_INDEX_MAPPINGS);
+      expect(fake.documents(INDEX)).toEqual([doc({ messageId: 'm2' })]);
+    });
+
+    it('create sem mappings usa o do template; com mappings, o informado', async () => {
+      await fake.indices.putIndexTemplate(template());
+      const own: estypes.MappingTypeMapping = { properties: { messageId: { type: 'keyword' } } };
+
+      await fake.indices.create({ index: INDEX });
+      await fake.indices.putIndexTemplate(template({ name: 'x', index_patterns: ['explicito'] }));
+      await fake.indices.create({ index: 'explicito', mappings: own });
+
+      expect(fake.mappingOf(INDEX)).toEqual(MESSAGES_INDEX_MAPPINGS);
+      expect(fake.mappingOf('explicito')).toEqual(own);
+    });
+
+    it('padrões com * e prioridade: vale o template de maior prioridade que casa', async () => {
+      const low: estypes.MappingTypeMapping = { dynamic: 'strict', properties: {} };
+      await fake.indices.putIndexTemplate(
+        template({
+          name: 'baixa',
+          index_patterns: 'mess*',
+          priority: 1,
+          template: { mappings: low },
+        })
+      );
+      await fake.indices.putIndexTemplate(
+        template({ name: 'nada', index_patterns: ['outro'], priority: 900 })
+      );
+      // Sem prioridade (vale 0) e sem corpo: o índice criado continua dinâmico.
+      await fake.indices.putIndexTemplate({ name: 'sem-template', index_patterns: ['vazio'] });
+
+      await fake.index({ index: 'messages-2', id: 'm1', document: doc() }).catch(() => undefined);
+      await fake.index({ index: 'vazio', id: 'm1', document: doc() });
+      expect(fake.mappingOf('messages-2')).toEqual(low);
+      expect(fake.mappingOf('vazio')).toBeUndefined();
+
+      await fake.indices.putIndexTemplate(template());
+      await fake.index({ index: INDEX, id: 'm1', document: doc() });
+      expect(fake.mappingOf(INDEX)).toEqual(MESSAGES_INDEX_MAPPINGS);
+    });
+
+    it('strict sem properties recusa qualquer campo', async () => {
+      await fake.indices.create({ index: INDEX, mappings: { dynamic: 'strict' } });
+
+      await expect(fake.index({ index: INDEX, id: 'm1', document: doc() })).rejects.toMatchObject({
+        meta: { body: { error: { type: 'strict_dynamic_mapping_exception' } } },
+      });
+    });
+  });
+
   describe('index/delete', () => {
     it('index cria (e o índice, se faltar) e depois atualiza', async () => {
       expect(await fake.index({ index: INDEX, id: 'm1', document: doc() })).toMatchObject({
@@ -86,12 +195,23 @@ describe('FakeSearchClient', () => {
       expect(fake.documents(INDEX)).toEqual([doc({ content: 'outro' })]);
     });
 
-    it('campo fora do mapping → 400 strict_dynamic_mapping_exception', async () => {
+    it('índice com mapping strict: campo fora do mapping → 400 strict_dynamic_mapping_exception', async () => {
+      await fake.indices.create({ index: INDEX, mappings: MESSAGES_INDEX_MAPPINGS });
       const document = { ...doc(), extra: true } as unknown as MessageDocument;
 
       await expect(fake.index({ index: INDEX, id: 'm1', document })).rejects.toMatchObject({
         meta: { statusCode: 400, body: { error: { type: 'strict_dynamic_mapping_exception' } } },
       });
+      expect(fake.documents(INDEX)).toEqual([]);
+    });
+
+    it('índice sem mapping (dinâmico): aceita qualquer campo, como o Elasticsearch', async () => {
+      const document = { ...doc(), extra: true } as unknown as MessageDocument;
+
+      await expect(fake.index({ index: INDEX, id: 'm1', document })).resolves.toMatchObject({
+        result: 'created',
+      });
+      expect(fake.mappingOf(INDEX)).toBeUndefined();
     });
 
     it('delete: deleted; ausente → 404 not_found, ou resposta normal com ignore [404]', async () => {
@@ -144,6 +264,7 @@ describe('FakeSearchClient', () => {
     });
 
     it('erro item a item (strict e failingBulkIds) → errors: true e os demais seguem', async () => {
+      await fake.indices.create({ index: INDEX, mappings: MESSAGES_INDEX_MAPPINGS });
       fake.failingBulkIds.add('m2');
       await fake.index({ index: INDEX, id: 'm3', document: doc({ messageId: 'm3' }) });
 
@@ -370,10 +491,15 @@ describe('FakeSearchClient', () => {
         hits: { hits: [] },
       };
 
+      await fake.indices.putIndexTemplate(template());
       fake.reset();
+      await fake.index({ index: INDEX, id: 'm1', document: doc() });
 
       expect(fake.client).toBe(fake);
-      expect(fake.calls).toEqual([]);
+      expect(fake.calls.map((call) => call.method)).toEqual(['index']);
+      // O template sumiu: o índice recriado pela escrita é dinâmico.
+      expect(fake.mappingOf(INDEX)).toBeUndefined();
+      fake.reset();
       expect(fake.hasIndex(INDEX)).toBe(false);
       expect(fake.documents(INDEX)).toEqual([]);
       expect(fake.failingBulkIds.size).toBe(0);

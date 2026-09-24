@@ -2,7 +2,8 @@
 // (ex.: http://localhost:19200 ou http://elastic:<senha>@localhost:9201). Fora disso a suíte é
 // pulada — o CI e a suíte normal nunca abrem conexão com um Elasticsearch. Prova o que o
 // FakeSearchClient não reproduz: o analyzer pt_folded (acentos, caixa, plural e stemmer), o
-// highlight escapado, o mapping strict e as consultas exatas do SearchService.
+// highlight escapado, o mapping strict, as consultas exatas do SearchService e o template que dá o
+// mapping certo ao índice recriado automaticamente por uma escrita.
 jest.mock('@/shared/database/redis', () => ({ redis: {} }));
 jest.mock('@/shared/database/elasticsearch', () => ({ elasticsearch: {} }));
 jest.mock('@/shared/logger', () => ({ logger: { info: jest.fn(), error: jest.fn() } }));
@@ -108,10 +109,14 @@ describeWithEs('Elasticsearch real (opcional: ELASTICSEARCH_IT_URL)', () => {
       failed: 0,
     });
     await raw.indices.refresh({ index });
+    // Aquecimento: a primeira consulta num nó recém-iniciado (JVM fria) passa dos 300 ms; o
+    // requisito de latência vale para o regime normal.
+    await run('aquecimento');
   });
 
   afterAll(async () => {
     await raw.indices.delete({ index, ignore_unavailable: true });
+    await raw.indices.deleteIndexTemplate({ name: `${index}-template` }, { ignore: [404] });
     await raw.close();
   });
 
@@ -230,5 +235,39 @@ describeWithEs('Elasticsearch real (opcional: ELASTICSEARCH_IT_URL)', () => {
     await raw.indices.refresh({ index });
 
     expect((await raw.count({ index })).count).toBe(5);
+  });
+  it('índice apagado com a aplicação no ar: a escrita o recria pelo template, com o mapping certo', async () => {
+    const { index_templates: templates } = await raw.indices.getIndexTemplate({
+      name: `${index}-template`,
+    });
+    expect(templates[0]?.index_template).toMatchObject({ index_patterns: [index], priority: 500 });
+
+    await raw.indices.delete({ index });
+    const m7 = message('m7', CONV_A, ANA, 'Corações recriados', 60);
+    current = [...current, m7];
+    // Sem o template, esta escrita criaria o índice com mapping dinâmico (conversationId `text`).
+    await indexer.indexMessage({
+      messageId: m7.id,
+      conversationId: m7.conversationId,
+      senderId: m7.senderId,
+      content: 'Corações recriados',
+      createdAt: m7.createdAt.toISOString(),
+    });
+    await raw.indices.refresh({ index });
+
+    const mapping = (await raw.indices.getMapping({ index }))[index]?.mappings;
+    expect(mapping?.dynamic).toBe('strict');
+    expect(mapping?.properties?.conversationId).toEqual({ type: 'keyword' });
+    expect(mapping?.properties?.content).toMatchObject({
+      type: 'text',
+      analyzer: 'pt_folded',
+      fields: { exact: { type: 'text', analyzer: 'pt_exact' } },
+    });
+    // O índice recriado responde à busca (analyzer e agregação por conversationId funcionando).
+    const result = await run('coração');
+    expect(result.items.map((item) => item.message.id)).toEqual(['m7']);
+    expect(result.total).toBe(1);
+    expect(result.facets.conversations).toEqual([{ conversationId: CONV_A, count: 1 }]);
+    await expect(indexer.ensureIndex()).resolves.toBe(false);
   });
 });

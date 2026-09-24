@@ -27,6 +27,9 @@ export interface SearchClient {
     exists(params: estypes.IndicesExistsRequest): Promise<boolean>;
     create(params: estypes.IndicesCreateRequest): Promise<estypes.IndicesCreateResponse>;
     delete(params: estypes.IndicesDeleteRequest): Promise<estypes.IndicesDeleteResponse>;
+    putIndexTemplate(
+      params: estypes.IndicesPutIndexTemplateRequest
+    ): Promise<estypes.IndicesPutIndexTemplateResponse>;
   };
   index(params: estypes.IndexRequest<MessageDocument>): Promise<estypes.IndexResponse>;
   delete(

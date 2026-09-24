@@ -57,7 +57,22 @@ export class SearchIndexService implements ISearchIndexService {
     this.batchSize = batchSize;
   }
 
+  /**
+   * Instala (sempre, idempotente) o template `<índice>-template` e cria o índice se faltar. O
+   * template existe porque o Elasticsearch cria na hora um índice ausente ao receber uma escrita
+   * (`action.auto_create_index`): sem ele, uma indexação que chegasse com o índice apagado (o
+   * `--recreate` com a aplicação no ar, ou o índice removido à mão) o criaria com mapping
+   * dinâmico — sem o `pt_folded` e com `conversationId` como `text` —, e este método, vendo o
+   * índice existir, nunca o corrigiria. Com o template, a criação automática recebe os mesmos
+   * settings e mapping do `create`.
+   */
   async ensureIndex(): Promise<boolean> {
+    await this.client.indices.putIndexTemplate({
+      name: `${this.index}-template`,
+      index_patterns: [this.index],
+      priority: SEARCH_CONSTANTS.INDEX_TEMPLATE_PRIORITY,
+      template: { settings: MESSAGES_INDEX_SETTINGS, mappings: MESSAGES_INDEX_MAPPINGS },
+    });
     if (await this.client.indices.exists({ index: this.index })) {
       return false;
     }
@@ -94,6 +109,8 @@ export class SearchIndexService implements ISearchIndexService {
 
   async reindexAll({ recreate = false }: ReindexOptions = {}): Promise<ReindexResult> {
     if (recreate) {
+      // Uma escrita que chegue entre o delete e o ensureIndex recria o índice pelo template
+      // (instalado no bootstrap), já com o mapping certo; o ensureIndex então só o encontra.
       await this.client.indices.delete({ index: this.index, ignore_unavailable: true });
     }
     await this.ensureIndex();

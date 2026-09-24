@@ -71,6 +71,57 @@ describe('SearchIndexService', () => {
   });
 
   describe('ensureIndex', () => {
+    const TEMPLATE = {
+      name: `${INDEX}-template`,
+      index_patterns: [INDEX],
+      priority: 500,
+      template: { settings: MESSAGES_INDEX_SETTINGS, mappings: MESSAGES_INDEX_MAPPINGS },
+    };
+
+    it('instala o template do índice (settings + mapping) antes de verificar/criar o índice', async () => {
+      await service().ensureIndex();
+
+      expect(fake.calls.map((call) => call.method)).toEqual([
+        'indices.putIndexTemplate',
+        'indices.exists',
+        'indices.create',
+      ]);
+      expect(fake.callsOf('indices.putIndexTemplate')).toEqual([
+        { method: 'indices.putIndexTemplate', params: TEMPLATE },
+      ]);
+    });
+
+    it('reinstala o template a cada chamada, mesmo com o índice já existente', async () => {
+      await service().ensureIndex();
+      await service().ensureIndex();
+
+      expect(fake.callsOf('indices.putIndexTemplate').map((call) => call.params)).toEqual([
+        TEMPLATE,
+        TEMPLATE,
+      ]);
+      expect(fake.callsOf('indices.create')).toHaveLength(1);
+    });
+
+    it('índice apagado com a aplicação no ar: a escrita seguinte o recria com o mapping certo', async () => {
+      await service().ensureIndex();
+      await fake.indices.delete({ index: INDEX });
+
+      await service().indexMessage(document('m1'));
+
+      expect(fake.hasIndex(INDEX)).toBe(true);
+      expect(fake.mappingOf(INDEX)).toEqual(MESSAGES_INDEX_MAPPINGS);
+      expect(fake.documents(INDEX)).toEqual([document('m1')]);
+    });
+
+    it('falha ao instalar o template propaga (sem tentar criar o índice)', async () => {
+      jest
+        .spyOn(fake.indices, 'putIndexTemplate')
+        .mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+      await expect(service().ensureIndex()).rejects.toThrow('ECONNREFUSED');
+      expect(fake.callsOf('indices.exists')).toEqual([]);
+    });
+
     it('cria o índice com settings e mapping quando não existe', async () => {
       await expect(service().ensureIndex()).resolves.toBe(true);
 
@@ -226,14 +277,38 @@ describe('SearchIndexService', () => {
       expect(fake.documents(INDEX)).toEqual([document('m1')]);
       expect(fake.calls.map((call) => call.method)).toEqual([
         'indices.delete',
+        'indices.putIndexTemplate',
         'indices.exists',
         'indices.create',
         'bulk',
       ]);
+      expect(fake.mappingOf(INDEX)).toEqual(MESSAGES_INDEX_MAPPINGS);
       expect(fake.callsOf('indices.delete')[0]?.params).toEqual({
         index: INDEX,
         ignore_unavailable: true,
       });
+    });
+
+    it('--recreate com a aplicação no ar: escrita entre o delete e o ensureIndex recria o índice pelo template', async () => {
+      await service().ensureIndex(); // bootstrap da aplicação: template instalado
+      const deleteIndex = fake.indices.delete;
+      jest.spyOn(fake.indices, 'delete').mockImplementation(async (params) => {
+        const response = await deleteIndex(params);
+        // Uma mensagem nova chega (MessageIndexer) logo depois do delete.
+        await service().indexMessage(document('nova'));
+        return response;
+      });
+
+      const result = await service([message('m1')]).reindexAll({ recreate: true });
+
+      expect(result).toEqual({ scanned: 1, indexed: 1, deleted: 0, failed: 0 });
+      expect(fake.mappingOf(INDEX)).toEqual(MESSAGES_INDEX_MAPPINGS);
+      expect(
+        fake
+          .documents(INDEX)
+          .map((doc) => doc.messageId)
+          .sort()
+      ).toEqual(['m1', 'nova']);
     });
 
     it('--recreate com o índice ausente também funciona', async () => {

@@ -39,6 +39,12 @@ export const SEARCH_CONSTANTS = {
    */
   SEARCH_REQUEST_TIMEOUT_MS: 3_000,
   SEARCH_MAX_RETRIES: 1,
+  /**
+   * Prioridade do template `<índice>-template` (`index_patterns: [<índice>]`), instalado pelo
+   * `ensureIndex`. Qualquer valor > 0 serve: os templates embutidos do Elasticsearch (`logs-*-*`,
+   * `metrics-*-*`, ...) usam 100 e não casam com o nome do índice; 500 deixa folga acima deles.
+   */
+  INDEX_TEMPLATE_PRIORITY: 500,
 } as const;
 
 /**

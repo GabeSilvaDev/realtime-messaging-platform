@@ -2,8 +2,10 @@ import type { MessageDocument, ReindexOptions, ReindexResult } from '../types';
 
 export interface ISearchIndexService {
   /**
-   * Cria o índice de mensagens (settings + mapping) se ainda não existe; se existe, não mexe.
-   * Idempotente também sob corrida entre instâncias. Devolve `true` só quando criou.
+   * Instala (a cada chamada) o template do índice — para que uma criação automática por escrita
+   * receba o mesmo mapping — e cria o índice de mensagens (settings + mapping) se ainda não
+   * existe; se existe, não mexe. Idempotente também sob corrida entre instâncias. Devolve `true`
+   * só quando criou.
    */
   ensureIndex(): Promise<boolean>;
   /** Indexa (ou sobrescreve) o documento com `_id = messageId`, sem forçar refresh. */
