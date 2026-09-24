@@ -136,6 +136,11 @@ export type WildcardCallback = (eventName: string, event: BaseEvent) => Promise<
 export interface SubscriptionOptions {
   once?: boolean;
   priority?: number;
+  /**
+   * Roda o callback fora do caminho de quem publica (agendado com setImmediate): `publish`
+   * não o aguarda e erros só contam em `totalErrors`. Para listeners com I/O pesado.
+   */
+  async?: boolean;
 }
 
 export interface PublishOptions {

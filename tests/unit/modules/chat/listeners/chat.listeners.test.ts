@@ -17,6 +17,12 @@ import { ChatEvents } from '@/shared/types';
 
 const mockLogger = logger as jest.Mocked<typeof logger>;
 
+/** Os listeners do chat são `{ async: true }`: rodam num setImmediate depois do publish. */
+async function flushDetached(): Promise<void> {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const USER_B = '22222222-2222-4222-8222-222222222222';
 const USER_C = '33333333-3333-4333-8333-333333333333';
@@ -82,8 +88,24 @@ describe('registerChatListeners', () => {
     registerChatListeners(bus, contacts, messages);
 
     await bus.publish(ChatEvents.MESSAGE_SENT, messageSent());
+    await flushDetached();
 
     expect(contacts.recordInteraction).toHaveBeenCalledWith(USER_A, USER_B);
+  });
+
+  it('roda fora do caminho de quem publica (subscribers com { async: true })', async () => {
+    registerChatListeners(bus, contacts, messages);
+
+    await bus.publish(ChatEvents.MESSAGE_SENT, messageSent());
+    await bus.publish(ChatEvents.CONVERSATION_DELETED, conversationDeleted());
+
+    expect(contacts.recordInteraction).not.toHaveBeenCalled();
+    expect(messages.deleteByConversation).not.toHaveBeenCalled();
+
+    await flushDetached();
+
+    expect(contacts.recordInteraction).toHaveBeenCalledTimes(1);
+    expect(messages.deleteByConversation).toHaveBeenCalledTimes(1);
   });
 
   it('deve ignorar mensagens de grupo', async () => {
@@ -93,6 +115,7 @@ describe('registerChatListeners', () => {
       ChatEvents.MESSAGE_SENT,
       messageSent({ conversationType: 'group', participantIds: [USER_A, USER_B, USER_C] })
     );
+    await flushDetached();
 
     expect(contacts.recordInteraction).not.toHaveBeenCalled();
   });
@@ -101,6 +124,7 @@ describe('registerChatListeners', () => {
     registerChatListeners(bus, contacts, messages);
 
     await bus.publish(ChatEvents.MESSAGE_SENT, messageSent({ participantIds: [USER_A] }));
+    await flushDetached();
 
     expect(contacts.recordInteraction).not.toHaveBeenCalled();
   });
@@ -111,6 +135,7 @@ describe('registerChatListeners', () => {
     unregister();
     await bus.publish(ChatEvents.MESSAGE_SENT, messageSent());
     await bus.publish(ChatEvents.CONVERSATION_DELETED, conversationDeleted());
+    await flushDetached();
 
     expect(contacts.recordInteraction).not.toHaveBeenCalled();
     expect(messages.deleteByConversation).not.toHaveBeenCalled();
@@ -130,6 +155,7 @@ describe('registerChatListeners', () => {
       registerChatListeners(bus, contacts, messages);
 
       await bus.publish(ChatEvents.CONVERSATION_DELETED, conversationDeleted());
+      await flushDetached();
 
       expect(messages.deleteByConversation).toHaveBeenCalledWith(CONVERSATION_ID);
     });
@@ -142,6 +168,7 @@ describe('registerChatListeners', () => {
       await expect(
         bus.publish(ChatEvents.CONVERSATION_DELETED, conversationDeleted())
       ).resolves.not.toThrow();
+      await flushDetached();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.any(String),
@@ -155,6 +182,7 @@ describe('registerChatListeners', () => {
       registerChatListeners(bus, contacts, messages);
 
       await bus.publish(ChatEvents.CONVERSATION_DELETED, conversationDeleted());
+      await flushDetached();
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.any(String),
