@@ -113,6 +113,7 @@ describe('Chat — Feature', () => {
       ['get', `/api/conversations/${FAKE_CONVERSATION}/messages`],
       ['post', `/api/conversations/${FAKE_CONVERSATION}/messages`],
       ['delete', `/api/conversations/${FAKE_CONVERSATION}/messages/${FAKE_MESSAGE}`],
+      ['post', `/api/conversations/${FAKE_CONVERSATION}/read`],
     ] as const)('%s %s sem token deve retornar 401', async (method, url) => {
       const response = await request(app)[method](url);
       expect(response.status).toBe(HttpStatus.UNAUTHORIZED);
@@ -205,6 +206,59 @@ describe('Chat — Feature', () => {
         .get(`/api/conversations/${conversationId}/messages`)
         .set(as(BOB));
       expect(page.body.data.messages).toHaveLength(1);
+    });
+
+    it('POST /:id/read marca como lidas (e entregues) as mensagens do outro até a indicada', async () => {
+      const created = await createDirect(ANA, BOB);
+      const conversationId = created.body.data.id as string;
+      const m1 = await send(ANA, conversationId, 'm1');
+      const m2 = await send(ANA, conversationId, 'm2');
+      const own = await send(BOB, conversationId, 'minha');
+
+      const read = await request(app)
+        .post(`/api/conversations/${conversationId}/read`)
+        .set(as(BOB))
+        .send({ messageId: m2.body.data.id });
+      expect(read.status).toBe(HttpStatus.NO_CONTENT);
+
+      const page = await request(app)
+        .get(`/api/conversations/${conversationId}/messages`)
+        .set(as(ANA));
+      const byId = new Map(
+        page.body.data.messages.map((m: { id: string; status: unknown }) => [m.id, m.status])
+      );
+      for (const id of [m1.body.data.id, m2.body.data.id]) {
+        expect(byId.get(id)).toEqual(
+          expect.objectContaining({
+            deliveredTo: [expect.objectContaining({ userId: BOB })],
+            readBy: [expect.objectContaining({ userId: BOB })],
+          })
+        );
+      }
+      expect(byId.get(own.body.data.id)).toEqual(expect.objectContaining({ readBy: [] }));
+
+      const membership = store.participants.find(
+        (p) => p.conversationId === conversationId && p.userId === BOB
+      );
+      expect(membership?.lastReadAt?.toISOString()).toBe(m2.body.data.createdAt);
+    });
+
+    it('POST /:id/read valida o corpo (400) e esconde mensagens de outras conversas (404)', async () => {
+      const first = await createDirect(ANA, BOB);
+      const second = await createDirect(ANA, CAROL);
+      const elsewhere = await send(ANA, second.body.data.id as string, 'noutra conversa');
+
+      const invalid = await request(app)
+        .post(`/api/conversations/${String(first.body.data.id)}/read`)
+        .set(as(BOB))
+        .send({ messageId: 'x' });
+      const foreign = await request(app)
+        .post(`/api/conversations/${String(first.body.data.id)}/read`)
+        .set(as(BOB))
+        .send({ messageId: elsewhere.body.data.id });
+
+      expect(invalid.status).toBe(HttpStatus.BAD_REQUEST);
+      expect(foreign.status).toBe(HttpStatus.NOT_FOUND);
     });
 
     it('bloqueio em qualquer sentido → 403 ao criar e ao enviar', async () => {

@@ -148,4 +148,15 @@ router.delete(
   asyncHandler((req, res) => messageController.delete(req, res))
 );
 
+/**
+ * @route POST /conversations/:id/read
+ * @description Marca como lidas as mensagens até `messageId` (inclusive) — 204
+ * @access Private
+ */
+router.post(
+  '/:id/read',
+  authenticate,
+  asyncHandler((req, res) => messageController.markRead(req, res))
+);
+
 export { router as conversationRoutes };

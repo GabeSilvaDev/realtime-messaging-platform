@@ -128,6 +128,33 @@ describe('MessageController', () => {
     });
   });
 
+  describe('markRead', () => {
+    it('deve marcar como lido até a mensagem e responder 204', async () => {
+      service.markRead.mockResolvedValue(undefined);
+
+      await controller.markRead(createReq({ body: { messageId: MESSAGE_ID } }), res);
+
+      expect(service.markRead).toHaveBeenCalledWith(USER_A, CONVERSATION_ID, MESSAGE_ID);
+      expect(res.status).toHaveBeenCalledWith(HttpStatus.NO_CONTENT);
+      expect(res.send).toHaveBeenCalled();
+    });
+
+    it('deve responder 400 para id da conversa ou messageId inválidos', async () => {
+      await controller.markRead(
+        createReq({ params: { id: 'x' }, body: { messageId: MESSAGE_ID } }),
+        res
+      );
+      await controller.markRead(createReq({ body: { messageId: 'x' } }), res);
+      await controller.markRead(createReq({ body: {} }), res);
+
+      expect(res.status).toHaveBeenCalledTimes(3);
+      expect(res.status).toHaveBeenNthCalledWith(1, HttpStatus.BAD_REQUEST);
+      expect(res.status).toHaveBeenNthCalledWith(2, HttpStatus.BAD_REQUEST);
+      expect(res.status).toHaveBeenNthCalledWith(3, HttpStatus.BAD_REQUEST);
+      expect(service.markRead).not.toHaveBeenCalled();
+    });
+  });
+
   describe('delete', () => {
     it('deve responder 204', async () => {
       service.delete.mockResolvedValue(undefined);

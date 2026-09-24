@@ -104,6 +104,10 @@ export const sendMessageSchema = z.object({
   clientMessageId: uuid('clientMessageId inválido').optional(),
 });
 
+export const markReadSchema = z.object({
+  messageId: objectId('ID de mensagem inválido'),
+});
+
 export type CreateDirectConversationInput = z.infer<typeof createDirectConversationSchema>;
 export type CreateGroupConversationInput = z.infer<typeof createGroupConversationSchema>;
 export type RenameConversationInput = z.infer<typeof renameConversationSchema>;
@@ -111,3 +115,4 @@ export type AddMembersInput = z.infer<typeof addMembersSchema>;
 export type ListConversationsQuery = z.infer<typeof listConversationsQuerySchema>;
 export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+export type MarkReadInput = z.infer<typeof markReadSchema>;

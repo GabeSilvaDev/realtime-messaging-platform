@@ -5,6 +5,7 @@ import {
   createGroupConversationSchema,
   listConversationsQuerySchema,
   listMessagesQuerySchema,
+  markReadSchema,
   memberParamSchema,
   messageParamSchema,
   renameConversationSchema,
@@ -123,6 +124,14 @@ describe('chat.schemas', () => {
     it('rejeita limit acima de 50 e cursor inválido', () => {
       expect(listMessagesQuerySchema.safeParse({ limit: '51' }).success).toBe(false);
       expect(listMessagesQuerySchema.safeParse({ before: 'abc' }).success).toBe(false);
+    });
+  });
+
+  describe('markReadSchema', () => {
+    it('exige messageId ObjectId (24 hex)', () => {
+      expect(markReadSchema.parse({ messageId: MESSAGE_ID })).toEqual({ messageId: MESSAGE_ID });
+      expect(markReadSchema.safeParse({ messageId: 'x' }).success).toBe(false);
+      expect(markReadSchema.safeParse({}).success).toBe(false);
     });
   });
 
