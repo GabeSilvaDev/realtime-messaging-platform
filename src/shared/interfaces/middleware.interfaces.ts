@@ -1,4 +1,5 @@
 import type { Request } from 'express';
+import type { Store } from 'express-rate-limit';
 import type { HelmetOptions } from 'helmet';
 import type { HttpStatus, ErrorCode } from '../types';
 
@@ -18,6 +19,9 @@ export interface RateLimiterOptions {
   keyPrefix?: string;
   skip?: (req: Request) => boolean;
   keyGenerator?: (req: Request) => string;
+  skipSuccessfulRequests?: boolean;
+  store?: Store;
+  passOnStoreError?: boolean;
 }
 
 export interface SecurityConfig {

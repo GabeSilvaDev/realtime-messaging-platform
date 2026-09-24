@@ -84,6 +84,7 @@ describe('ContactService', () => {
     isBlocked: false,
     isFavorite: false,
     blockedAt: null,
+    createdByBlock: false,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
   };
@@ -227,6 +228,32 @@ describe('ContactService', () => {
       await expect(
         contactService.addContact('user-123', { contactId: 'contact-456' })
       ).rejects.toThrow(UserBlockedException);
+    });
+
+    it('deve lançar UserBlockedException quando o alvo bloqueou o usuário (direção reversa)', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockContactUser);
+      mockContactRepository.findByUserAndContact.mockResolvedValue(null);
+      mockContactRepository.isBlocked.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+      await expect(
+        contactService.addContact('user-123', { contactId: 'contact-456' })
+      ).rejects.toThrow(UserBlockedException);
+    });
+
+    it('deve lançar UserBlockedException (403) mesmo quando já existe um contato criado pelo bloqueio, sem consultar findByUserAndContact antes', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockContactUser);
+      mockContactRepository.isBlocked.mockResolvedValue(true);
+      mockContactRepository.findByUserAndContact.mockResolvedValue({
+        ...mockContact,
+        isBlocked: true,
+        createdByBlock: true,
+      });
+
+      await expect(
+        contactService.addContact('user-123', { contactId: 'contact-456' })
+      ).rejects.toThrow(UserBlockedException);
+
+      expect(mockContactRepository.findByUserAndContact).not.toHaveBeenCalled();
     });
   });
 
@@ -427,15 +454,26 @@ describe('ContactService', () => {
   describe('blockUser', () => {
     it('deve bloquear usuário com sucesso', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
+      mockContactRepository.isBlocked.mockResolvedValue(false);
       mockContactRepository.block.mockResolvedValue({
         ...mockContact,
         isBlocked: true,
         blockedAt: new Date(),
+        createdByBlock: true,
       });
 
       await contactService.blockUser('user-123', 'contact-456');
 
       expect(mockContactRepository.block).toHaveBeenCalledWith('user-123', 'contact-456');
+    });
+
+    it('não deve chamar block nem publicar evento quando já está bloqueado (idempotente)', async () => {
+      mockUserRepository.findById.mockResolvedValue(mockContactUser);
+      mockContactRepository.isBlocked.mockResolvedValue(true);
+
+      await contactService.blockUser('user-123', 'contact-456');
+
+      expect(mockContactRepository.block).not.toHaveBeenCalled();
     });
 
     it('deve lançar CannotBlockSelfException ao bloquear a si mesmo', async () => {
@@ -462,11 +500,14 @@ describe('ContactService', () => {
       expect(mockContactRepository.unblock).toHaveBeenCalledWith('user-123', 'contact-456');
     });
 
-    it('deve lançar ContactNotFoundException quando contato não está bloqueado', async () => {
+    it('deve lançar ContactNotFoundException com mensagem clara quando contato não está bloqueado', async () => {
       mockContactRepository.unblock.mockResolvedValue(false);
 
       await expect(contactService.unblockUser('user-123', 'contact-456')).rejects.toThrow(
         ContactNotFoundException
+      );
+      await expect(contactService.unblockUser('user-123', 'contact-456')).rejects.toThrow(
+        'Usuário não está bloqueado'
       );
     });
   });

@@ -5,6 +5,7 @@ export {
   getRateLimiter,
   getStrictRateLimiter,
   getAuthRateLimiter,
+  getLoginRateLimiter,
 } from './rateLimiter';
 export { corsMiddleware, createCorsMiddleware } from './cors';
 export { helmetMiddleware, createHelmetMiddleware } from './helmet';

@@ -5,6 +5,14 @@ import type { IUserRepository } from '../interfaces';
 import Contact from '../models/Contact';
 import type { UserSearchOptions, UserSearchResult, UserWithContactInfo } from '../types';
 
+/**
+ * Escapa os caracteres especiais do LIKE/ILIKE (`\`, `%`, `_`) para que um termo de busca
+ * livre não seja interpretado como padrão de wildcard do SQL.
+ */
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 export class UserRepository implements IUserRepository {
   async findById(id: string): Promise<UserAttributes | null> {
     const user = await User.findByPk(id);
@@ -68,10 +76,11 @@ export class UserRepository implements IUserRepository {
     const where: Record<string, unknown> = {};
 
     if (filters.query !== undefined && filters.query !== '') {
+      const escapedQuery = escapeLikePattern(filters.query);
       where[Op.or as unknown as string] = [
-        { username: { [Op.iLike]: `%${filters.query}%` } },
-        { displayName: { [Op.iLike]: `%${filters.query}%` } },
-        { email: { [Op.iLike]: `%${filters.query}%` } },
+        { username: { [Op.iLike]: `%${escapedQuery}%` } },
+        { displayName: { [Op.iLike]: `%${escapedQuery}%` } },
+        { email: { [Op.iLike]: escapedQuery } },
       ];
     }
 
@@ -79,8 +88,30 @@ export class UserRepository implements IUserRepository {
       where.status = filters.status;
     }
 
+    let contactsMap = new Map<string, Contact>();
     if (filters.excludeUserId !== undefined) {
       where.id = { [Op.ne]: filters.excludeUserId };
+
+      const contacts = await Contact.findAll({
+        where: { userId: filters.excludeUserId },
+      });
+      contactsMap = new Map(contacts.map((c) => [c.contactId, c]));
+
+      if (filters.excludeBlocked === true) {
+        const blockedByOthers = await Contact.findAll({
+          where: { contactId: filters.excludeUserId, isBlocked: true },
+          attributes: ['userId'],
+        });
+
+        const blockedIds = [
+          ...contacts.filter((c) => c.isBlocked).map((c) => c.contactId),
+          ...blockedByOthers.map((c) => c.userId),
+        ];
+
+        if (blockedIds.length > 0) {
+          where.id = { ...(where.id as Record<symbol, unknown>), [Op.notIn]: blockedIds };
+        }
+      }
     }
 
     const { count, rows } = await User.findAndCountAll({
@@ -94,14 +125,6 @@ export class UserRepository implements IUserRepository {
     const hasMore = rows.length > limit;
     const users = rows.slice(0, limit);
 
-    let contactsMap = new Map<string, Contact>();
-    if (filters.excludeUserId !== undefined) {
-      const contacts = await Contact.findAll({
-        where: { userId: filters.excludeUserId },
-      });
-      contactsMap = new Map(contacts.map((c) => [c.contactId, c]));
-    }
-
     const usersWithContactInfo: UserWithContactInfo[] = users.map((user) => {
       const contact = contactsMap.get(user.id);
       return {
@@ -113,15 +136,10 @@ export class UserRepository implements IUserRepository {
       };
     });
 
-    const filteredUsers =
-      filters.excludeBlocked === true
-        ? usersWithContactInfo.filter((u) => u.isBlocked === false)
-        : usersWithContactInfo;
-
     const finalUsers =
       filters.onlyContacts === true
-        ? filteredUsers.filter((u) => u.isContact === true)
-        : filteredUsers;
+        ? usersWithContactInfo.filter((u) => u.isContact === true)
+        : usersWithContactInfo;
 
     return {
       users: finalUsers,

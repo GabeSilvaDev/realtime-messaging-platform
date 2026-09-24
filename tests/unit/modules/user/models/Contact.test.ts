@@ -13,6 +13,7 @@ describe('Contact Model', () => {
           isBlocked: false,
           isFavorite: true,
           blockedAt: null,
+          createdByBlock: false,
         },
         { isNewRecord: false }
       );
@@ -31,9 +32,35 @@ describe('Contact Model', () => {
         isBlocked: false,
         isFavorite: true,
         blockedAt: null,
+        createdByBlock: false,
         createdAt: mockDate,
         updatedAt: mockDate,
       });
+    });
+
+    it('deve marcar createdByBlock como true quando informado', () => {
+      const mockDate = new Date('2026-01-01T00:00:00.000Z');
+
+      const contact = Contact.build(
+        {
+          userId: 'user-123',
+          contactId: 'user-999',
+          nickname: null,
+          isBlocked: true,
+          isFavorite: false,
+          blockedAt: mockDate,
+          createdByBlock: true,
+        },
+        { isNewRecord: false }
+      );
+
+      contact.setDataValue('id', 'contact-789');
+      contact.setDataValue('createdAt', mockDate);
+      contact.setDataValue('updatedAt', mockDate);
+
+      const json = contact.toJSON();
+
+      expect(json.createdByBlock).toBe(true);
     });
 
     it('deve retornar ContactAttributes com isBlocked true e blockedAt preenchido', () => {

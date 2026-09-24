@@ -20,9 +20,10 @@ export const RATE_LIMIT_DEFAULT_MAX_REQUESTS = 100;
 export const RATE_LIMIT_DEFAULT_KEY_PREFIX = 'rl:';
 export const RATE_LIMIT_STRICT_MAX_REQUESTS = 20;
 export const RATE_LIMIT_STRICT_KEY_PREFIX = 'rl:strict:';
-export const RATE_LIMIT_AUTH_WINDOW_MS = 60 * 1000;
+export const RATE_LIMIT_AUTH_WINDOW_MS = 15 * 60 * 1000;
 export const RATE_LIMIT_AUTH_MAX_REQUESTS = 5;
 export const RATE_LIMIT_AUTH_KEY_PREFIX = 'rl:auth:';
+export const RATE_LIMIT_LOGIN_KEY_PREFIX = 'rl:login:';
 
 export const REQUEST_ID_DEFAULT_HEADER_NAME = 'x-request-id';
 

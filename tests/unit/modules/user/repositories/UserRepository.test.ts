@@ -279,7 +279,7 @@ describe('UserRepository', () => {
       expect(result.hasMore).toBe(false);
     });
 
-    it('deve buscar com query de texto', async () => {
+    it('deve buscar com query de texto (username/displayName por substring, email por igualdade exata)', async () => {
       MockUser.findAndCountAll.mockResolvedValue({
         count: 1,
         rows: [mockSearchUsers[0]],
@@ -291,7 +291,68 @@ describe('UserRepository', () => {
       expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            [Op.or]: expect.any(Array),
+            [Op.or]: [
+              { username: { [Op.iLike]: '%test%' } },
+              { displayName: { [Op.iLike]: '%test%' } },
+              { email: { [Op.iLike]: 'test' } },
+            ],
+          }),
+        })
+      );
+    });
+
+    it('deve escapar "%" antes de montar o padrão de LIKE', async () => {
+      MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+      MockContact.findAll.mockResolvedValue([]);
+
+      await repository.search({ filters: { query: '50%off' } });
+
+      expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            [Op.or]: [
+              { username: { [Op.iLike]: '%50\\%off%' } },
+              { displayName: { [Op.iLike]: '%50\\%off%' } },
+              { email: { [Op.iLike]: '50\\%off' } },
+            ],
+          }),
+        })
+      );
+    });
+
+    it('deve escapar "_" antes de montar o padrão de LIKE', async () => {
+      MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+      MockContact.findAll.mockResolvedValue([]);
+
+      await repository.search({ filters: { query: 'a_b' } });
+
+      expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            [Op.or]: [
+              { username: { [Op.iLike]: '%a\\_b%' } },
+              { displayName: { [Op.iLike]: '%a\\_b%' } },
+              { email: { [Op.iLike]: 'a\\_b' } },
+            ],
+          }),
+        })
+      );
+    });
+
+    it('deve escapar barra invertida antes de montar o padrão de LIKE', async () => {
+      MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+      MockContact.findAll.mockResolvedValue([]);
+
+      await repository.search({ filters: { query: 'a\\b' } });
+
+      expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            [Op.or]: [
+              { username: { [Op.iLike]: '%a\\\\b%' } },
+              { displayName: { [Op.iLike]: '%a\\\\b%' } },
+              { email: { [Op.iLike]: 'a\\\\b' } },
+            ],
           }),
         })
       );
@@ -356,30 +417,83 @@ describe('UserRepository', () => {
       expect(result.users).toHaveLength(20);
     });
 
-    it('deve filtrar usuários bloqueados quando excludeBlocked=true', async () => {
-      const usersWithBlocked = [
-        {
-          ...mockSearchUsers[0],
-          get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-1' }),
-        },
-        {
-          ...mockSearchUsers[1],
-          get: jest.fn().mockReturnValue({ ...mockUserInstance, id: 'user-2' }),
-        },
-      ];
-      MockUser.findAndCountAll.mockResolvedValue({
-        count: 2,
-        rows: usersWithBlocked,
-      } as any);
-      MockContact.findAll.mockResolvedValue([
-        { contactId: 'user-1', isBlocked: true, isFavorite: false, nickname: null },
-      ] as any);
+    it('deve excluir via SQL (id NOT IN) quem o próprio usuário bloqueou', async () => {
+      MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+      MockContact.findAll
+        .mockResolvedValueOnce([
+          { contactId: 'user-1', isBlocked: true, isFavorite: false, nickname: null },
+        ] as any)
+        .mockResolvedValueOnce([] as any);
+
+      await repository.search({ filters: { excludeUserId: 'me', excludeBlocked: true } });
+
+      expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: { [Op.ne]: 'me', [Op.notIn]: ['user-1'] },
+          }),
+        })
+      );
+    });
+
+    it('deve excluir via SQL (id NOT IN) quem bloqueou o usuário (direção reversa)', async () => {
+      MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+      MockContact.findAll
+        .mockResolvedValueOnce([] as any)
+        .mockResolvedValueOnce([{ userId: 'user-2' }] as any);
+
+      await repository.search({ filters: { excludeUserId: 'me', excludeBlocked: true } });
+
+      expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: { [Op.ne]: 'me', [Op.notIn]: ['user-2'] },
+          }),
+        })
+      );
+      expect(MockContact.findAll).toHaveBeenNthCalledWith(2, {
+        where: { contactId: 'me', isBlocked: true },
+        attributes: ['userId'],
+      });
+    });
+
+    it('não deve adicionar NOT IN quando ninguém está bloqueado em nenhuma direção', async () => {
+      MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+      MockContact.findAll.mockResolvedValueOnce([] as any).mockResolvedValueOnce([] as any);
+
+      await repository.search({ filters: { excludeUserId: 'me', excludeBlocked: true } });
+
+      expect(MockUser.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { [Op.ne]: 'me' } }),
+        })
+      );
+    });
+
+    it('não deve consultar bloqueios quando excludeBlocked não é true', async () => {
+      MockUser.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+      MockContact.findAll.mockResolvedValueOnce([] as any);
+
+      await repository.search({ filters: { excludeUserId: 'me' } });
+
+      expect(MockContact.findAll).toHaveBeenCalledTimes(1);
+    });
+
+    it('mantém o tamanho da página ao excluir bloqueados (filtro aplicado via SQL, não em memória)', async () => {
+      const fullPage = Array.from({ length: 20 }, (_, i) => ({
+        ...mockUserInstance,
+        id: `user-${i}`,
+        get: jest.fn().mockReturnValue({ ...mockUserInstance, id: `user-${i}` }),
+      }));
+      MockUser.findAndCountAll.mockResolvedValue({ count: 50, rows: fullPage } as any);
+      MockContact.findAll.mockResolvedValueOnce([] as any).mockResolvedValueOnce([] as any);
 
       const result = await repository.search({
         filters: { excludeUserId: 'me', excludeBlocked: true },
+        limit: 20,
       });
 
-      expect(result.users.find((u) => u.id === 'user-1')).toBeUndefined();
+      expect(result.users).toHaveLength(20);
     });
 
     it('deve filtrar apenas contatos quando onlyContacts=true', async () => {

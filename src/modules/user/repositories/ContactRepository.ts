@@ -34,9 +34,7 @@ export class ContactRepository implements IContactRepository {
 
     const where: Record<string, unknown> = { userId };
 
-    if (filters.isBlocked !== undefined) {
-      where.isBlocked = filters.isBlocked;
-    }
+    where.isBlocked = filters.isBlocked ?? false;
 
     if (filters.isFavorite !== undefined) {
       where.isFavorite = filters.isFavorite;
@@ -182,8 +180,8 @@ export class ContactRepository implements IContactRepository {
 
   async getStats(userId: string): Promise<ContactStats> {
     const [total, favorites, blocked] = await Promise.all([
-      Contact.count({ where: { userId } }),
-      Contact.count({ where: { userId, isFavorite: true } }),
+      Contact.count({ where: { userId, isBlocked: false } }),
+      Contact.count({ where: { userId, isFavorite: true, isBlocked: false } }),
       Contact.count({ where: { userId, isBlocked: true } }),
     ]);
 
@@ -198,6 +196,7 @@ export class ContactRepository implements IContactRepository {
         contactId,
         isBlocked: true,
         blockedAt: new Date(),
+        createdByBlock: true,
       },
     });
 
@@ -218,6 +217,11 @@ export class ContactRepository implements IContactRepository {
 
     if (!contact) {
       return false;
+    }
+
+    if (contact.createdByBlock) {
+      await contact.destroy();
+      return true;
     }
 
     await contact.update({

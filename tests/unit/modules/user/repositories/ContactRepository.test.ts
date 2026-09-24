@@ -74,6 +74,7 @@ describe('ContactRepository', () => {
       isBlocked: mockContactInstance.isBlocked,
       isFavorite: mockContactInstance.isFavorite,
       blockedAt: mockContactInstance.blockedAt,
+      createdByBlock: false,
       createdAt: mockContactInstance.createdAt,
       updatedAt: mockContactInstance.updatedAt,
     });
@@ -164,7 +165,7 @@ describe('ContactRepository', () => {
 
       expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId: 'user-123' },
+          where: { userId: 'user-123', isBlocked: false },
           limit: 51,
           offset: 0,
           order: [['createdAt', 'DESC']],
@@ -206,7 +207,7 @@ describe('ContactRepository', () => {
 
       expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId: 'user-123', isFavorite: true },
+          where: { userId: 'user-123', isFavorite: true, isBlocked: false },
         })
       );
     });
@@ -490,9 +491,11 @@ describe('ContactRepository', () => {
       const result = await repository.getStats('user-123');
 
       expect(MockContact.count).toHaveBeenCalledTimes(3);
-      expect(MockContact.count).toHaveBeenNthCalledWith(1, { where: { userId: 'user-123' } });
+      expect(MockContact.count).toHaveBeenNthCalledWith(1, {
+        where: { userId: 'user-123', isBlocked: false },
+      });
       expect(MockContact.count).toHaveBeenNthCalledWith(2, {
-        where: { userId: 'user-123', isFavorite: true },
+        where: { userId: 'user-123', isFavorite: true, isBlocked: false },
       });
       expect(MockContact.count).toHaveBeenNthCalledWith(3, {
         where: { userId: 'user-123', isBlocked: true },
@@ -525,6 +528,7 @@ describe('ContactRepository', () => {
           contactId: 'contact-456',
           isBlocked: true,
           blockedAt: expect.any(Date),
+          createdByBlock: true,
         },
       });
       expect(result.isBlocked).toBe(true);
@@ -563,11 +567,13 @@ describe('ContactRepository', () => {
   });
 
   describe('unblock', () => {
-    it('deve desbloquear contato quando está bloqueado', async () => {
+    it('deve desbloquear (limpar isBlocked/blockedAt) quando o contato não foi criado pelo bloqueio', async () => {
       const blockedContact = {
         ...mockContactInstance,
         isBlocked: true,
+        createdByBlock: false,
         update: jest.fn(),
+        destroy: jest.fn(),
       };
       MockContact.findOne.mockResolvedValue(blockedContact as any);
 
@@ -580,6 +586,24 @@ describe('ContactRepository', () => {
         isBlocked: false,
         blockedAt: null,
       });
+      expect(blockedContact.destroy).not.toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
+    it('deve remover o registro quando ele só existe por causa do bloqueio (createdByBlock=true)', async () => {
+      const blockedContact = {
+        ...mockContactInstance,
+        isBlocked: true,
+        createdByBlock: true,
+        update: jest.fn(),
+        destroy: jest.fn(),
+      };
+      MockContact.findOne.mockResolvedValue(blockedContact as any);
+
+      const result = await repository.unblock('user-123', 'contact-456');
+
+      expect(blockedContact.destroy).toHaveBeenCalledTimes(1);
+      expect(blockedContact.update).not.toHaveBeenCalled();
       expect(result).toBe(true);
     });
 

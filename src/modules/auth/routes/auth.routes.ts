@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authController } from '../controllers';
 import { authenticate, asyncHandler } from '../middlewares';
+import { getAuthRateLimiter, getLoginRateLimiter } from '@/shared/middlewares/rateLimiter';
 
 const router = Router();
 
@@ -11,6 +12,7 @@ const router = Router();
  */
 router.post(
   '/register',
+  getAuthRateLimiter(),
   asyncHandler((req, res) => authController.register(req, res))
 );
 
@@ -21,6 +23,7 @@ router.post(
  */
 router.post(
   '/login',
+  getLoginRateLimiter(),
   asyncHandler((req, res) => authController.login(req, res))
 );
 
@@ -51,6 +54,7 @@ router.post(
  */
 router.post(
   '/forgot-password',
+  getAuthRateLimiter(),
   asyncHandler((req, res) => authController.forgotPassword(req, res))
 );
 
@@ -61,6 +65,7 @@ router.post(
  */
 router.post(
   '/reset-password',
+  getAuthRateLimiter(),
   asyncHandler((req, res) => authController.resetPassword(req, res))
 );
 

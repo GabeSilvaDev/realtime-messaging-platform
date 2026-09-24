@@ -6,6 +6,7 @@ export interface ContactAttributes {
   isBlocked: boolean;
   isFavorite: boolean;
   blockedAt: Date | null;
+  createdByBlock: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,6 +18,7 @@ export interface ContactCreationAttributes {
   isBlocked?: boolean;
   isFavorite?: boolean;
   blockedAt?: Date | null;
+  createdByBlock?: boolean;
 }
 
 export interface ContactWithUser extends ContactAttributes {

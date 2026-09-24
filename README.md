@@ -13,7 +13,7 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com)
 [![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.17-005571?logo=elasticsearch&logoColor=white)](https://www.elastic.co)
-[![Tests](https://img.shields.io/badge/tests-1959%20Jest-C21325?logo=jest&logoColor=white)](#development)
+[![Tests](https://img.shields.io/badge/tests-2094%20Jest-C21325?logo=jest&logoColor=white)](#development)
 [![License](https://img.shields.io/badge/license-MIT-555)](LICENSE)
 
 **English** · [Português (Brasil)](README.pt-BR.md)
@@ -76,14 +76,50 @@ Access tokens expire in 15 min, refresh tokens in 7 days and are persisted per s
 | `GET` | `/stats` · `/settings` | ✓ | |
 | `GET` | `/:userId` | – | Public profile |
 
-A contacts service and repository (`contacts` table) are implemented and tested; their routes are not mounted yet.
+### Contacts — `/api/contacts`
+
+| Method | Endpoint | Auth | Notes |
+|---|---|:---:|---|
+| `GET` | `/` | ✓ | List own contacts, paginated, with filters |
+| `POST` | `/` | ✓ | Add a contact |
+| `GET` | `/favorites` | ✓ | List favorite contacts |
+| `GET` | `/stats` | ✓ | Contact counters |
+| `GET` | `/:contactId` | ✓ | Get one contact |
+| `PATCH` | `/:contactId` | ✓ | Update nickname and/or favorite flag |
+| `DELETE` | `/:contactId` | ✓ | Remove a contact |
+
+### Blocks — `/api/blocks`
+
+| Method | Endpoint | Auth | Notes |
+|---|---|:---:|---|
+| `GET` | `/` | ✓ | List blocked users |
+| `POST` | `/` | ✓ | Block a user; publishes `user:blocked` on the EventBus |
+| `DELETE` | `/:userId` | ✓ | Unblock a user; publishes `user:unblocked` |
+
+### User search — `/api/users`
+
+| Method | Endpoint | Auth | Notes |
+|---|---|:---:|---|
+| `GET` | `/search?query=` | ✓ | Search by username, displayName (substring, case-insensitive) or email (exact address only, case-insensitive — never substring); excludes the requester and, by default, any user blocked by either side (`excludeBlocked=false` opts out) |
+
+### Rate limiting
+
+Built on `express-rate-limit` with a Redis-backed store (`rate-limit-redis`) by default; a `MemoryStore` is selected automatically when `NODE_ENV=test` (no Redis needed to run the suite), and the `store` option on `createRateLimiter` allows injecting any other store. All limits are keyed by the client's IP address (the default `express-rate-limit` key), not by account — the login limiter counts failed attempts per IP, so it can also throttle several accounts sharing the same source IP. `/auth/register`, `/forgot-password` and `/reset-password` share a single limiter instance (same key prefix), so together they share one 5-request bucket per IP within the window, not 5 requests each.
+
+| Scope | Window | Limit | Notes |
+|---|---|---|---|
+| `/api` (global) | 15 min | 100 req | Fails open (`passOnStoreError`) if the store errors, so a Redis outage doesn't take the whole API down |
+| `/auth/register` · `/forgot-password` · `/reset-password` | 15 min | 5 req | One shared bucket per IP across the three routes; fails closed on store errors |
+| `/auth/login` | 15 min | 5 failed attempts | Successful logins aren't counted (`skipSuccessfulRequests`); fails closed on store errors |
+
+`TRUST_PROXY` (unset by default) controls `app.set('trust proxy', …)`, which in turn controls how the client IP (and therefore the rate-limit key) is derived behind a reverse proxy. Leave it unset to keep Express's default (`false`, direct connections only); set it to `true`/`false`, a number of hops (e.g. `1`), or an Express preset/IP such as `loopback` when running behind a trusted proxy — see [Configuration](#configuration).
 
 ### Shared infrastructure — `src/shared`
 
 - **Databases** — connection helpers for PostgreSQL (Sequelize, with migrations and seeders), Redis (ioredis), MongoDB (Mongoose) and Elasticsearch, all started and stopped from `bootstrap.ts`.
-- **EventBus** — in-process publish/subscribe with priorities, once-handlers, wildcard subscriptions and counters; modules emit domain events (e.g. auth events) through it.
+- **EventBus** — in-process publish/subscribe with priorities, once-handlers, wildcard subscriptions and counters; modules emit domain events (e.g. auth events, `user:blocked` / `user:unblocked`) through it.
 - **Logger** — structured, leveled, categorised; console output in development and an optional MongoDB sink.
-- **Middleware** — Helmet, CORS, request id, request logger, Redis-backed rate limiter, multer upload, 404 and error handlers.
+- **Middleware** — Helmet, CORS, request id, request logger, Redis-backed rate limiter (injectable store), multer upload, 404 and error handlers.
 - **Validation** — Zod schemas per module plus a `validate` middleware and shared pagination schemas.
 - **Errors** — `AppError` hierarchy with HTTP status and error codes, serialised consistently.
 - **Storage** — `StorageService` with local-disk and S3-compatible providers, `ImageProcessorService` on top of sharp.
@@ -157,7 +193,7 @@ npm run db:migrate:undo    # sequelize-cli db:migrate:undo
 npm run db:seed             # sequelize-cli db:seed:all
 ```
 
-**Tests** — 1,959 Jest tests in 111 suites (unit under `tests/unit`, HTTP feature tests with supertest under `tests/feature`). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below the `coverageThreshold` in `jest.config.ts` — statements, branches, functions and lines all set to 90%. Coverage is collected over every file under `src/`, not only the ones a test happens to import; measured with `node node_modules/.bin/jest --coverage --all`, current coverage is 100% statements, 100% branches, 100% functions, 100% lines.
+**Tests** — 2,094 Jest tests in 122 suites (unit under `tests/unit`, HTTP feature tests with supertest under `tests/feature`). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below the `coverageThreshold` in `jest.config.ts` — statements, branches, functions and lines all set to 90%. Coverage is collected over every file under `src/`, not only the ones a test happens to import; measured with `node node_modules/.bin/jest --coverage --all`, current coverage is 100% statements, 100% branches, 100% functions, 100% lines.
 
 ## Project structure
 
@@ -195,6 +231,7 @@ tests/
 | Variable | Purpose |
 |---|---|
 | `PORT`, `NODE_ENV` | HTTP port (3000) and environment |
+| `TRUST_PROXY` | `app.set('trust proxy', …)`; unset keeps Express's default (`false`) — see [Rate limiting](#rate-limiting) |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | PostgreSQL (host `postgres` inside Compose) |
 | `REDIS_PASSWORD` | Redis auth |
 | `MONGO_USER` / `MONGO_PASSWORD` / `MONGO_DB` | MongoDB |
@@ -209,7 +246,8 @@ tests/
 - [x] Shared infrastructure — connections, EventBus, logger, middleware, validation, errors, storage
 - [x] Auth — register, login, refresh-token rotation, sessions, password reset and change
 - [x] User profiles — profile CRUD, avatar upload, status, settings, presence flag
-- [~] Contacts — service and repository done, routes pending
+- [x] Contacts, blocks and user search — REST endpoints, EventBus events, rate limiting on auth routes
+- [ ] Working `rtm-app` container — Dockerfile that runs `npm ci` and builds inside the image, with a base compatible with `sharp`'s native bindings (see [known limitation](#known-limitation-app-container))
 - [ ] Chat — conversations and messages over Socket.IO, history in MongoDB
 - [ ] Presence — online status and typing indicators through Redis pub/sub
 - [ ] Notifications — in-app and push delivery

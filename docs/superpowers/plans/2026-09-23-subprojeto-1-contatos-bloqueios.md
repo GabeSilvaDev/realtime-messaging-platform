@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- Branch: `feature/user-contacts-blocks` criada a partir da `main` **depois** do merge do subprojeto 0.
+- Branch: `feature/user-contacts-blocks` criada a partir da `main` **depois** do merge do subprojeto 0 (já criada pelo controlador).
+- Cobertura: `jest.config.ts` agora usa `roots: [src, tests]` — arquivos de `src` sem teste aparecem com 0% e derrubam o threshold; todo arquivo novo precisa de teste.
 - Commits: gitmoji + Conventional Commits em PT-BR (ex.: `✨ feat: adiciona ContactController`). NUNCA mencionar Claude/Anthropic/IA nem adicionar `Co-Authored-By`.
 - Cobertura: 100% (linhas/branches/functions/statements) em todo arquivo novo ou alterado; threshold global de 90% (configurado no subprojeto 0) deve continuar passando.
 - Prettier é verificado no CI (`npm run format:check` cobre `src/**/*.ts` e `tests/**/*.ts`): rodar `node node_modules/.bin/prettier --write <arquivos>` antes de cada commit.
@@ -2168,6 +2169,8 @@ Em `src/shared/middlewares/index.ts`, acrescentar `getLoginRateLimiter` ao bloco
 Rodar: `node node_modules/.bin/jest tests/unit/shared/middlewares/rateLimiter --coverage=false`.
 Se testes em `tests/unit/shared/middlewares/rateLimiter.test.ts` esperam que o `RedisStore` seja construído por padrão, eles falham agora porque `NODE_ENV=test` seleciona `MemoryStore`. Correção: nesses testes, em `beforeEach` fazer `process.env.NODE_ENV = 'development';` e em `afterEach` restaurar o valor original (mesmo padrão do `rateLimiter.store.test.ts`). Se esperam a mensagem antiga do auth limiter (`'...in a minute'`), atualizar para `'Too many authentication attempts, please try again later'`.
 
+Nesse arquivo, adicionar também `mockCreatedStores.length = 0;` no `beforeEach` para que `lastStore()` não dependa da ordem dos testes.
+
 Expected após ajuste: PASS em ambos os arquivos.
 
 - [ ] **Step 7: Rodar e medir cobertura do arquivo**
@@ -2483,7 +2486,7 @@ Se o caminho do access token no JSON de login for diferente de `data.tokens.acce
 
 - [ ] **Step 4: Atualizar SRS (local, não commitar) e READMEs**
 
-Atualizar `README.md` e `README.pt-BR.md` (seção "What exists today"/equivalente e roadmap) com os endpoints novos (`/api/contacts`, `/api/blocks`, `/api/users/search`) e o rate limit, no mesmo estilo das tabelas existentes.
+Atualizar `README.md` e `README.pt-BR.md` (seção "What exists today"/equivalente e roadmap) com os endpoints novos (`/api/contacts`, `/api/blocks`, `/api/users/search`) e o rate limit, no mesmo estilo das tabelas existentes. Na seção `## Roadmap` dos dois READMEs, garantir que exista um item para "container `rtm-app` funcional (Dockerfile com `npm ci` e build dentro da imagem)", já que a nota de limitação conhecida aponta para o roadmap.
 
 Em `.github/SRS.md` (arquivo local, fora do git), na Sprint 4, marcar todas as tarefas como `[x]`, alterar o título para `### 📅 Sprint 4 (Semana 4): Módulo de Usuários ✅` e trocar `- [ ] Implementar testes completos` por `- [x] Implementar testes completos (controllers, rotas, feature tests; 100% nos arquivos novos)`.
 

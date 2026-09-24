@@ -21,6 +21,15 @@ jest.mock('@/modules/auth/middlewares', () => ({
   asyncHandler: jest.fn((fn) => fn),
 }));
 
+jest.mock('@/shared/middlewares/rateLimiter', () => {
+  const authLimiter = function authLimiter(): void {};
+  const loginLimiter = function loginLimiter(): void {};
+  return {
+    getAuthRateLimiter: () => authLimiter,
+    getLoginRateLimiter: () => loginLimiter,
+  };
+});
+
 describe('auth.routes', () => {
   it('should export a Router instance', () => {
     expect(authRoutes).toBeDefined();
@@ -93,6 +102,23 @@ describe('auth.routes', () => {
     it('should have DELETE /sessions route', () => {
       const routes = getRoutePaths();
       expect(routes).toContainEqual({ path: '/sessions', method: 'DELETE' });
+    });
+
+    it('deve aplicar rate limiters nas rotas públicas sensíveis', () => {
+      const limiters = jest.requireMock('@/shared/middlewares/rateLimiter') as {
+        getAuthRateLimiter: () => unknown;
+        getLoginRateLimiter: () => unknown;
+      };
+      const stack = (authRoutes as Router).stack as Array<{
+        route?: { path: string; stack: Array<{ handle: unknown }> };
+      }>;
+      const firstHandler = (path: string): unknown =>
+        stack.find((layer) => layer.route?.path === path)?.route?.stack[0]?.handle;
+
+      expect(firstHandler('/login')).toBe(limiters.getLoginRateLimiter());
+      expect(firstHandler('/register')).toBe(limiters.getAuthRateLimiter());
+      expect(firstHandler('/forgot-password')).toBe(limiters.getAuthRateLimiter());
+      expect(firstHandler('/reset-password')).toBe(limiters.getAuthRateLimiter());
     });
   });
 });

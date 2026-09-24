@@ -13,7 +13,7 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com)
 [![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.17-005571?logo=elasticsearch&logoColor=white)](https://www.elastic.co)
-[![Testes](https://img.shields.io/badge/testes-1959%20Jest-C21325?logo=jest&logoColor=white)](#desenvolvimento)
+[![Testes](https://img.shields.io/badge/testes-2094%20Jest-C21325?logo=jest&logoColor=white)](#desenvolvimento)
 [![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-555)](LICENSE)
 
 [English](README.md) · **Português (Brasil)**
@@ -76,14 +76,50 @@ Access tokens expiram em 15 min, refresh tokens em 7 dias e são persistidos por
 | `GET` | `/stats` · `/settings` | ✓ | |
 | `GET` | `/:userId` | – | Perfil público |
 
-Um service e um repository de contatos (tabela `contacts`) estão implementados e testados; as rotas ainda não foram montadas.
+### Contatos — `/api/contacts`
+
+| Método | Endpoint | Auth | Observações |
+|---|---|:---:|---|
+| `GET` | `/` | ✓ | Lista os próprios contatos, paginado, com filtros |
+| `POST` | `/` | ✓ | Adiciona um contato |
+| `GET` | `/favorites` | ✓ | Lista contatos favoritos |
+| `GET` | `/stats` | ✓ | Contadores de contatos |
+| `GET` | `/:contactId` | ✓ | Obtém um contato |
+| `PATCH` | `/:contactId` | ✓ | Atualiza apelido e/ou flag de favorito |
+| `DELETE` | `/:contactId` | ✓ | Remove um contato |
+
+### Bloqueios — `/api/blocks`
+
+| Método | Endpoint | Auth | Observações |
+|---|---|:---:|---|
+| `GET` | `/` | ✓ | Lista usuários bloqueados |
+| `POST` | `/` | ✓ | Bloqueia um usuário; publica `user:blocked` no EventBus |
+| `DELETE` | `/:userId` | ✓ | Desbloqueia um usuário; publica `user:unblocked` |
+
+### Busca de usuários — `/api/users`
+
+| Método | Endpoint | Auth | Observações |
+|---|---|:---:|---|
+| `GET` | `/search?query=` | ✓ | Busca por username, nome de exibição (substring, case-insensitive) ou email (apenas endereço exato, case-insensitive — nunca substring); exclui quem faz a requisição e, por padrão, qualquer usuário bloqueado por um lado ou pelo outro (`excludeBlocked=false` desativa) |
+
+### Rate limit
+
+Construído sobre `express-rate-limit` com store no Redis (`rate-limit-redis`) por padrão; um `MemoryStore` é selecionado automaticamente quando `NODE_ENV=test` (a suíte roda sem precisar de Redis), e a opção `store` do `createRateLimiter` permite injetar qualquer outro store. Todos os limites são identificados pelo IP do cliente (chave padrão do `express-rate-limit`), não por conta — o limiter de login conta tentativas com falha por IP, então também pode limitar várias contas que compartilhem o mesmo IP de origem. `/auth/register`, `/forgot-password` e `/reset-password` compartilham a mesma instância de limiter (mesmo prefixo de chave), então juntas dividem um único bucket de 5 requisições por IP na janela, não 5 cada uma.
+
+| Escopo | Janela | Limite | Observações |
+|---|---|---|---|
+| `/api` (global) | 15 min | 100 req | Falha aberto (`passOnStoreError`) se o store der erro, para uma falha do Redis não derrubar a API inteira |
+| `/auth/register` · `/forgot-password` · `/reset-password` | 15 min | 5 req | Um único bucket por IP entre as três rotas; falha fechado se o store der erro |
+| `/auth/login` | 15 min | 5 tentativas com falha | Logins bem-sucedidos não contam (`skipSuccessfulRequests`); falha fechado se o store der erro |
+
+`TRUST_PROXY` (não definida por padrão) controla o `app.set('trust proxy', …)`, que por sua vez controla como o IP do cliente (e portanto a chave do rate limit) é obtido atrás de um proxy reverso. Deixe sem definir para manter o padrão do Express (`false`, só conexões diretas); defina como `true`/`false`, um número de hops (ex.: `1`) ou um preset/IP do Express como `loopback` ao rodar atrás de um proxy confiável — veja a seção Configuração, abaixo.
 
 ### Infraestrutura compartilhada — `src/shared`
 
 - **Bancos** — helpers de conexão para PostgreSQL (Sequelize, com migrations e seeders), Redis (ioredis), MongoDB (Mongoose) e Elasticsearch, todos iniciados e encerrados pelo `bootstrap.ts`.
-- **EventBus** — publish/subscribe em processo com prioridades, handlers de execução única, assinaturas wildcard e contadores; os módulos emitem eventos de domínio (ex.: eventos de auth) por ele.
+- **EventBus** — publish/subscribe em processo com prioridades, handlers de execução única, assinaturas wildcard e contadores; os módulos emitem eventos de domínio (ex.: eventos de auth, `user:blocked` / `user:unblocked`) por ele.
 - **Logger** — estruturado, com níveis e categorias; saída no console em desenvolvimento e sink opcional no MongoDB.
-- **Middlewares** — Helmet, CORS, request id, request logger, rate limiter com Redis, upload via multer, handlers de 404 e de erro.
+- **Middlewares** — Helmet, CORS, request id, request logger, rate limiter com Redis (store injetável), upload via multer, handlers de 404 e de erro.
 - **Validação** — schemas Zod por módulo, middleware `validate` e schemas comuns de paginação.
 - **Erros** — hierarquia `AppError` com status HTTP e códigos de erro, serializada de forma consistente.
 - **Storage** — `StorageService` com providers de disco local e S3-compatível, `ImageProcessorService` sobre o sharp.
@@ -157,7 +193,7 @@ npm run db:migrate:undo    # sequelize-cli db:migrate:undo
 npm run db:seed             # sequelize-cli db:seed:all
 ```
 
-**Testes** — 1.959 testes Jest em 111 suítes (unitários em `tests/unit`, testes de feature HTTP com supertest em `tests/feature`). O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e, a cada push e pull request, roda ESLint, uma checagem do Prettier, `tsc --noEmit` e a suíte. O build falha se a cobertura cair abaixo do `coverageThreshold` em `jest.config.ts` — statements, branches, funções e linhas todos em 90%. A cobertura é medida sobre todo arquivo em `src/`, não só os que algum teste importa; medida com `node node_modules/.bin/jest --coverage --all`, a cobertura atual é 100% statements, 100% branches, 100% funções, 100% linhas.
+**Testes** — 2.094 testes Jest em 122 suítes (unitários em `tests/unit`, testes de feature HTTP com supertest em `tests/feature`). O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e, a cada push e pull request, roda ESLint, uma checagem do Prettier, `tsc --noEmit` e a suíte. O build falha se a cobertura cair abaixo do `coverageThreshold` em `jest.config.ts` — statements, branches, funções e linhas todos em 90%. A cobertura é medida sobre todo arquivo em `src/`, não só os que algum teste importa; medida com `node node_modules/.bin/jest --coverage --all`, a cobertura atual é 100% statements, 100% branches, 100% funções, 100% linhas.
 
 ## Estrutura do projeto
 
@@ -195,6 +231,7 @@ O `.env.example` lista todas as variáveis. As que importam:
 | Variável | Uso |
 |---|---|
 | `PORT`, `NODE_ENV` | Porta HTTP (3000) e ambiente |
+| `TRUST_PROXY` | `app.set('trust proxy', …)`; sem definir mantém o padrão do Express (`false`) — veja Rate limit, acima |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | PostgreSQL (host `postgres` dentro do Compose) |
 | `REDIS_PASSWORD` | Auth do Redis |
 | `MONGO_USER` / `MONGO_PASSWORD` / `MONGO_DB` | MongoDB |
@@ -209,7 +246,8 @@ O `.env.example` lista todas as variáveis. As que importam:
 - [x] Infraestrutura compartilhada — conexões, EventBus, logger, middlewares, validação, erros, storage
 - [x] Auth — registro, login, rotação de refresh token, sessões, reset e troca de senha
 - [x] Perfis — CRUD de perfil, upload de avatar, status, configurações, flag de presença
-- [~] Contatos — service e repository prontos, rotas pendentes
+- [x] Contatos, bloqueios e busca de usuários — rotas REST, eventos no EventBus, rate limit nas rotas de auth
+- [ ] Container `rtm-app` funcional — Dockerfile que roda `npm ci` e faz o build dentro da imagem, com uma base compatível com os binários nativos do `sharp` (veja a [limitação conhecida](#limitacao-conhecida-container-da-app))
 - [ ] Chat — conversas e mensagens via Socket.IO, histórico no MongoDB
 - [ ] Presença — status online e indicador de digitação via Redis pub/sub
 - [ ] Notificações — entrega in-app e push

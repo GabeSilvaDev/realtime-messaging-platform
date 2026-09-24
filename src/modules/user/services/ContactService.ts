@@ -1,4 +1,6 @@
 import type { UserAttributes } from '@/shared/types';
+import { eventBus, type EventBus } from '@/shared/event-bus';
+import { UserEvents } from '@/shared/types';
 import { contactRepository, userRepository } from '../repositories';
 import type { IContactRepository, IContactService, IUserRepository } from '../interfaces';
 import {
@@ -33,7 +35,8 @@ export {
 export class ContactService implements IContactService {
   constructor(
     private readonly contacts: IContactRepository = contactRepository,
-    private readonly users: IUserRepository = userRepository
+    private readonly users: IUserRepository = userRepository,
+    private readonly events: Pick<EventBus, 'publish'> = eventBus
   ) {}
 
   async addContact(userId: string, data: AddContactDTO): Promise<ContactResponseDTO> {
@@ -46,14 +49,14 @@ export class ContactService implements IContactService {
       throw new UserNotFoundException();
     }
 
+    const isBlocked = await this.isBlockedByEither(userId, data.contactId);
+    if (isBlocked) {
+      throw new UserBlockedException();
+    }
+
     const existingContact = await this.contacts.findByUserAndContact(userId, data.contactId);
     if (existingContact) {
       throw new ContactAlreadyExistsException();
-    }
-
-    const isBlocked = await this.contacts.isBlocked(userId, data.contactId);
-    if (isBlocked) {
-      throw new UserBlockedException();
     }
 
     const contact = await this.contacts.create({
@@ -158,14 +161,22 @@ export class ContactService implements IContactService {
       throw new UserNotFoundException();
     }
 
+    const alreadyBlocked = await this.contacts.isBlocked(userId, targetId);
+    if (alreadyBlocked) {
+      return;
+    }
+
     await this.contacts.block(userId, targetId);
+    await this.events.publish(UserEvents.BLOCKED, { userId, blockedUserId: targetId });
   }
 
   async unblockUser(userId: string, targetId: string): Promise<void> {
     const unblocked = await this.contacts.unblock(userId, targetId);
     if (!unblocked) {
-      throw new ContactNotFoundException();
+      throw new ContactNotFoundException('Usuário não está bloqueado');
     }
+
+    await this.events.publish(UserEvents.UNBLOCKED, { userId, unblockedUserId: targetId });
   }
 
   async listBlocked(userId: string): Promise<ContactWithUser[]> {

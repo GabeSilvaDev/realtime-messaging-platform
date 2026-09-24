@@ -69,6 +69,19 @@ jest.mock('@/modules/auth/middlewares/authenticate', () => ({
   },
 }));
 
+jest.mock('@/shared/middlewares/rateLimiter', () => {
+  const passThrough = (_req: unknown, _res: unknown, next: () => void): void => {
+    next();
+  };
+  return {
+    getAuthRateLimiter: () => passThrough,
+    getLoginRateLimiter: () => passThrough,
+    getRateLimiter: () => passThrough,
+    getStrictRateLimiter: () => passThrough,
+    createRateLimiter: () => passThrough,
+  };
+});
+
 import { authRoutes } from '@/modules/auth/routes';
 
 const createEmailExistsError = () =>

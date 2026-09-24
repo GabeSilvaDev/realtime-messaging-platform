@@ -15,6 +15,7 @@ jest.mock('sequelize', () => {
       static create = jest.fn();
       static update = jest.fn();
       static destroy = jest.fn();
+      static belongsTo = jest.fn();
     },
   };
 });
@@ -58,6 +59,31 @@ jest.mock('@/modules/auth/controllers', () => ({
     revokeSessions: jest.fn(),
   },
 }));
+
+jest.mock('@/shared/middlewares/rateLimiter', () => {
+  const passThrough = (_req: unknown, _res: unknown, next: () => void): void => {
+    next();
+  };
+  // Função nomeada (não jest.fn) porque resetMocks:true apagaria a implementação de um
+  // jest.fn() antes de cada teste. Marca a resposta com um header identificável para que
+  // os testes consigam comprovar, via supertest, que é ESTE middleware (e não outro
+  // pass-through) quem roda no pipeline montado em app.use('/api', getRateLimiter()).
+  function globalLimiterMock(
+    _req: unknown,
+    res: { setHeader: (name: string, value: string) => void },
+    next: () => void
+  ): void {
+    res.setHeader('x-test-global-limiter', '1');
+    next();
+  }
+  return {
+    getAuthRateLimiter: () => passThrough,
+    getLoginRateLimiter: () => passThrough,
+    getRateLimiter: () => globalLimiterMock,
+    getStrictRateLimiter: () => passThrough,
+    createRateLimiter: () => passThrough,
+  };
+});
 
 jest.mock('@/modules/user/controllers', () => ({
   profileController: {
@@ -107,6 +133,21 @@ describe('app', () => {
       expect(response.status).toBe(201);
       expect(response.body).toEqual({ success: true, data: 'registered' });
     });
+
+    it('monta o rate limiter global (getRateLimiter) em /api, antes das rotas', async () => {
+      const limiters = jest.requireMock('@/shared/middlewares/rateLimiter') as {
+        getRateLimiter: () => unknown;
+      };
+      expect(typeof limiters.getRateLimiter()).toBe('function');
+
+      const apiResponse = await request(app).get('/api/rota-inexistente-sob-api');
+      expect(apiResponse.headers['x-test-global-limiter']).toBe('1');
+    });
+
+    it('não aplica o rate limiter global fora do prefixo /api', async () => {
+      const response = await request(app).get('/rota-inexistente');
+      expect(response.headers['x-test-global-limiter']).toBeUndefined();
+    });
   });
 
   describe('roteamento', () => {
@@ -125,6 +166,27 @@ describe('app', () => {
 
     it('monta o router de profile em /api/profile (todas as rotas exigem autenticação real)', async () => {
       const response = await request(app).get('/api/profile');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    it('monta o router de contacts em /api/contacts (todas as rotas exigem autenticação real)', async () => {
+      const response = await request(app).get('/api/contacts');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    it('monta o router de blocks em /api/blocks (todas as rotas exigem autenticação real)', async () => {
+      const response = await request(app).get('/api/blocks');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    it('monta o router de users em /api/users (todas as rotas exigem autenticação real)', async () => {
+      const response = await request(app).get('/api/users/search?query=ana');
 
       expect(response.status).toBe(401);
       expect(response.body.success).toBe(false);
@@ -180,6 +242,73 @@ describe('app', () => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const freshApp = require('@/app').default;
       expect(typeof freshApp).toBe('function');
+    });
+  });
+
+  describe('TRUST_PROXY', () => {
+    const originalTrustProxy = process.env.TRUST_PROXY;
+
+    afterEach(() => {
+      if (originalTrustProxy === undefined) {
+        delete process.env.TRUST_PROXY;
+      } else {
+        process.env.TRUST_PROXY = originalTrustProxy;
+      }
+      jest.resetModules();
+    });
+
+    it('não define trust proxy quando TRUST_PROXY não está definido (mantém o padrão do Express)', () => {
+      jest.resetModules();
+      delete process.env.TRUST_PROXY;
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(false);
+    });
+
+    it('trata TRUST_PROXY vazio como não definido', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = '';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(false);
+    });
+
+    it('define trust proxy como boolean quando TRUST_PROXY=true', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = 'true';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(true);
+    });
+
+    it('define trust proxy como boolean quando TRUST_PROXY=false', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = 'false';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(false);
+    });
+
+    it('define trust proxy como número de hops quando TRUST_PROXY=2', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = '2';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe(2);
+    });
+
+    it('define trust proxy como string (preset) quando TRUST_PROXY=loopback', () => {
+      jest.resetModules();
+      process.env.TRUST_PROXY = 'loopback';
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const freshApp = require('@/app').default;
+      expect(freshApp.get('trust proxy')).toBe('loopback');
     });
   });
 });

@@ -9,7 +9,7 @@ jest.mock('@/modules/user/services/ProfileService', () => ({
 
 import type { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
-import { HttpStatus } from '@/shared/errors';
+import { HttpStatus, UnauthorizedError } from '@/shared/errors';
 import { UserStatus } from '@/shared/types';
 import { FileSizeLimitError, FileUploadError } from '@/shared/middlewares';
 import { ProfileController, profileController } from '@/modules/user/controllers/ProfileController';
@@ -120,17 +120,28 @@ describe('ProfileController', () => {
   });
 
   describe('getUserId (via getProfile)', () => {
-    it('deve lançar erro quando req.user não existe', async () => {
+    it('deve lançar UnauthorizedError (401) quando req.user não existe', async () => {
       delete mockReq.user;
 
-      await expect(controller.getProfile(req(), res())).rejects.toThrow('Usuário não autenticado');
+      await expect(controller.getProfile(req(), res())).rejects.toThrow(UnauthorizedError);
+      await expect(controller.getProfile(req(), res())).rejects.toThrow(
+        'Authentication token is required'
+      );
       expect(mockService.getProfile).not.toHaveBeenCalled();
     });
 
-    it('deve lançar erro quando req.user.id é vazio', async () => {
+    it('deve lançar UnauthorizedError (401) quando req.user.id é vazio', async () => {
       mockReq.user = { id: '', email: 'test@example.com', username: 'testuser' };
 
-      await expect(controller.getProfile(req(), res())).rejects.toThrow('Usuário não autenticado');
+      await expect(controller.getProfile(req(), res())).rejects.toThrow(UnauthorizedError);
+    });
+
+    it('deve usar status 401 na exceção lançada', async () => {
+      delete mockReq.user;
+
+      await expect(controller.getProfile(req(), res())).rejects.toMatchObject({
+        statusCode: HttpStatus.UNAUTHORIZED,
+      });
     });
   });
 
@@ -414,13 +425,16 @@ describe('ProfileController', () => {
       expect(next).toHaveBeenCalledWith('string-error');
     });
 
-    it('deve repassar erro de autenticação ao next', async () => {
+    it('deve repassar erro de autenticação (401) ao next', async () => {
       delete mockReq.user;
 
       await controller.uploadAvatar(req(), res(), next);
 
       expect(next).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Usuário não autenticado' })
+        expect.objectContaining({
+          message: 'Authentication token is required',
+          statusCode: HttpStatus.UNAUTHORIZED,
+        })
       );
     });
   });

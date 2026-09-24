@@ -4,7 +4,10 @@ import sequelize from '@/shared/database/sequelize';
 import { DataTypes, Model, Optional } from 'sequelize';
 
 class Contact
-  extends Model<ContactAttributes, Optional<ContactCreationAttributes, 'nickname' | 'isFavorite'>>
+  extends Model<
+    ContactAttributes,
+    Optional<ContactCreationAttributes, 'nickname' | 'isFavorite' | 'createdByBlock'>
+  >
   implements ContactAttributes
 {
   declare id: string;
@@ -14,6 +17,7 @@ class Contact
   declare isBlocked: boolean;
   declare isFavorite: boolean;
   declare blockedAt: Date | null;
+  declare createdByBlock: boolean;
   declare createdAt: Date;
   declare updatedAt: Date;
 
@@ -29,6 +33,7 @@ class Contact
       isBlocked: this.isBlocked,
       isFavorite: this.isFavorite,
       blockedAt: this.blockedAt,
+      createdByBlock: this.createdByBlock,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };
@@ -80,6 +85,12 @@ Contact.init(
       type: DataTypes.DATE,
       allowNull: true,
       field: 'blocked_at',
+    },
+    createdByBlock: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: false,
+      field: 'created_by_block',
     },
     createdAt: {
       type: DataTypes.DATE,
