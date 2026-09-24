@@ -23,4 +23,9 @@ describe('presence module index', () => {
     expect(presenceModule.registerPresenceHandlers).toBeInstanceOf(Function);
     expect(presenceModule.registerPresenceBridge).toBeInstanceOf(Function);
   });
+
+  it('deve exportar controller e rotas', () => {
+    expect(presenceModule.presenceController).toBeInstanceOf(presenceModule.PresenceController);
+    expect(presenceModule.presenceRoutes).toBeDefined();
+  });
 });

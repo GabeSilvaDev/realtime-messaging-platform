@@ -22,3 +22,7 @@ export type {
   PresenceRealtimeOptions,
   PresenceRealtimeHandle,
 } from './realtime';
+
+export { PresenceController, presenceController } from './controllers';
+
+export { presenceRoutes } from './routes';

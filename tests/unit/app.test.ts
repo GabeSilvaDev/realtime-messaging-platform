@@ -199,6 +199,13 @@ describe('app', () => {
       expect(response.body.success).toBe(false);
     });
 
+    it('monta o router de presença em /api/presence (todas as rotas exigem autenticação real)', async () => {
+      const response = await request(app).get('/api/presence?userIds=x');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
     it('serve o cliente demo estático em /demo, fora do rate limit de /api', async () => {
       const page = await request(app).get('/demo/');
       const script = await request(app).get('/demo/app.js');
