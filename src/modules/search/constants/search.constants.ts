@@ -32,6 +32,13 @@ export const SEARCH_CONSTANTS = {
   RATE_LIMIT_WINDOW_MS: 60_000,
   RATE_LIMIT_MAX_REQUESTS: 30,
   RATE_LIMIT_KEY_PREFIX: 'rl:search:',
+  /**
+   * Opções por requisição da consulta (`search`): 3 s por tentativa (o cliente usa 10 s) e no
+   * máximo 1 nova tentativa — só para erro de conexão ou 502/503/504; timeout não é repetido
+   * (`retryOnTimeout: false`, padrão do cliente). Esgotado, a busca responde 503.
+   */
+  SEARCH_REQUEST_TIMEOUT_MS: 3_000,
+  SEARCH_MAX_RETRIES: 1,
 } as const;
 
 /**

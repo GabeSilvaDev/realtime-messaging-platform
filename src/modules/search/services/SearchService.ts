@@ -32,6 +32,12 @@ export interface SearchServiceOptions {
 
 type SearchResponse = estypes.SearchResponse<unknown, MessageSearchAggregations>;
 
+/** A busca é interativa: timeout curto e uma nova tentativa, no máximo (ver SEARCH_CONSTANTS). */
+const SEARCH_REQUEST_OPTIONS = {
+  requestTimeout: SEARCH_CONSTANTS.SEARCH_REQUEST_TIMEOUT_MS,
+  maxRetries: SEARCH_CONSTANTS.SEARCH_MAX_RETRIES,
+};
+
 const HIGHLIGHT_FIELD = {
   fragment_size: SEARCH_CONSTANTS.FRAGMENT_SIZE,
   number_of_fragments: SEARCH_CONSTANTS.MAX_FRAGMENTS,
@@ -129,40 +135,43 @@ export class SearchService implements ISearchService {
 
   private async query(scope: string[], params: SearchMessagesParams): Promise<SearchResponse> {
     try {
-      return await this.client.search({
-        index: this.index,
-        size: params.limit,
-        // O texto vem do MongoDB (hidratação); do índice só precisamos de ids, score e highlight.
-        _source: false,
-        query: {
-          bool: {
-            must: [
-              {
-                multi_match: {
-                  query: params.q,
-                  type: 'most_fields',
-                  // A forma exata da palavra (sem stemmer) pesa o dobro.
-                  fields: ['content', 'content.exact^2'],
+      return await this.client.search(
+        {
+          index: this.index,
+          size: params.limit,
+          // O texto vem do MongoDB (hidratação); do índice só precisamos de ids, score e highlight.
+          _source: false,
+          query: {
+            bool: {
+              must: [
+                {
+                  multi_match: {
+                    query: params.q,
+                    type: 'most_fields',
+                    // A forma exata da palavra (sem stemmer) pesa o dobro.
+                    fields: ['content', 'content.exact^2'],
+                  },
                 },
-              },
-            ],
-            filter: this.filters(scope, params),
+              ],
+              filter: this.filters(scope, params),
+            },
+          },
+          sort: [{ _score: { order: 'desc' } }, { createdAt: { order: 'desc' } }],
+          highlight: {
+            // O texto do usuário volta escapado para HTML; só as tags <mark> ficam cruas.
+            encoder: 'html',
+            pre_tags: [SEARCH_CONSTANTS.HIGHLIGHT_PRE_TAG],
+            post_tags: [SEARCH_CONSTANTS.HIGHLIGHT_POST_TAG],
+            fields: { content: HIGHLIGHT_FIELD, 'content.exact': HIGHLIGHT_FIELD },
+          },
+          aggs: {
+            conversations: {
+              terms: { field: 'conversationId', size: SEARCH_CONSTANTS.FACET_SIZE },
+            },
           },
         },
-        sort: [{ _score: { order: 'desc' } }, { createdAt: { order: 'desc' } }],
-        highlight: {
-          // O texto do usuário volta escapado para HTML; só as tags <mark> ficam cruas.
-          encoder: 'html',
-          pre_tags: [SEARCH_CONSTANTS.HIGHLIGHT_PRE_TAG],
-          post_tags: [SEARCH_CONSTANTS.HIGHLIGHT_POST_TAG],
-          fields: { content: HIGHLIGHT_FIELD, 'content.exact': HIGHLIGHT_FIELD },
-        },
-        aggs: {
-          conversations: {
-            terms: { field: 'conversationId', size: SEARCH_CONSTANTS.FACET_SIZE },
-          },
-        },
-      });
+        SEARCH_REQUEST_OPTIONS
+      );
     } catch (error) {
       logger.error('Falha na consulta ao Elasticsearch', toError(error), { index: this.index });
       throw new SearchUnavailableException();

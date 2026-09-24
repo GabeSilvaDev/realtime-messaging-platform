@@ -239,9 +239,10 @@ export class FakeSearchClient implements SearchClient {
   }
 
   async search(
-    params: estypes.SearchRequest
+    params: estypes.SearchRequest,
+    options?: TransportRequestOptions
   ): Promise<estypes.SearchResponse<unknown, MessageSearchAggregations>> {
-    this.record('search', params);
+    this.record('search', params, options);
     if (this.searchResponse !== null) {
       return this.searchResponse;
     }

@@ -1,13 +1,18 @@
 const mockHealth = jest.fn().mockResolvedValue({ status: 'green' });
 const mockClose = jest.fn().mockResolvedValue(undefined);
 
+/** Opções de cada `new Client(...)` (o cliente é criado na carga do módulo, antes dos testes). */
+const mockClientOptions: unknown[] = [];
+
 jest.mock('@elastic/elasticsearch', () => ({
-  Client: jest.fn().mockImplementation(() => ({
-    cluster: {
-      health: mockHealth,
-    },
-    close: mockClose,
-  })),
+  Client: class {
+    readonly cluster = { health: mockHealth };
+    readonly close = mockClose;
+
+    constructor(options: unknown) {
+      mockClientOptions.push(options);
+    }
+  },
 }));
 
 jest.mock('@/shared/config/database', () => ({
@@ -40,6 +45,17 @@ describe('Elasticsearch', () => {
   describe('elasticsearch client', () => {
     it('should export the elasticsearch client', () => {
       expect(elasticsearch).toBeDefined();
+    });
+
+    it('should be created from the config with a 10 s request timeout (not the 10 min default)', () => {
+      expect(mockClientOptions).toEqual([
+        {
+          node: 'http://localhost:9200',
+          auth: { username: 'elastic', password: 'password' },
+          tls: { rejectUnauthorized: false },
+          requestTimeout: 10_000,
+        },
+      ]);
     });
   });
 

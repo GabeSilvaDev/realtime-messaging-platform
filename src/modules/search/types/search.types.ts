@@ -35,7 +35,8 @@ export interface SearchClient {
   ): Promise<estypes.DeleteResponse>;
   bulk(params: estypes.BulkRequest<MessageDocument>): Promise<estypes.BulkResponse>;
   search(
-    params: estypes.SearchRequest
+    params: estypes.SearchRequest,
+    options?: TransportRequestOptions
   ): Promise<estypes.SearchResponse<unknown, MessageSearchAggregations>>;
 }
 

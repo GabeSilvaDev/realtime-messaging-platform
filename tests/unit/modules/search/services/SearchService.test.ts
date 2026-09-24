@@ -154,6 +154,8 @@ describe('SearchService', () => {
           },
           aggs: { conversations: { terms: { field: 'conversationId', size: 10 } } },
         },
+        // Busca é interativa: 3 s por tentativa e no máximo 1 nova tentativa (conexão/502-504).
+        options: { requestTimeout: 3_000, maxRetries: 1 },
       },
     ]);
     expect(conversations.getUserConversationIds).toHaveBeenCalledWith(ANA);

@@ -291,6 +291,17 @@ describe('FakeSearchClient', () => {
       });
     });
 
+    it('registra as opções da requisição (timeout/retries), sem elas não há options', async () => {
+      await fake.search(query('coração'), { requestTimeout: 3_000, maxRetries: 1 });
+      await fake.search(query('coração'));
+
+      expect(fake.callsOf('search').map((call) => call.options)).toEqual([
+        { requestTimeout: 3_000, maxRetries: 1 },
+        undefined,
+      ]);
+      expect(fake.callsOf('search')[1]).not.toHaveProperty('options');
+    });
+
     it('searchResponse sobrepõe a avaliação', async () => {
       const configured = {
         took: 7,
