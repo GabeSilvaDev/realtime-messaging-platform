@@ -149,4 +149,58 @@ describe('registerTypingHandlers', () => {
     ]);
     expect(typing.activeCount).toBe(0);
   });
+
+  describe('corrida com a checagem assíncrona (participação/tipo)', () => {
+    let release: (type: string) => void;
+
+    beforeEach(() => {
+      conversations.getTypeForParticipant.mockImplementation(
+        () =>
+          new Promise<string>((resolve) => {
+            release = resolve;
+          })
+      );
+    });
+
+    it('disconnecting durante a checagem: não ativa nem emite', async () => {
+      const pending = emit(socket, 'typing:start', { conversationId: CONVERSATION_ID });
+      socket.handlers.get('disconnecting')!();
+      socket.connected = false;
+      release('direct');
+
+      await expect(pending).resolves.toEqual({ ok: true, data: null });
+      expect(socket.broadcasts).toEqual([]);
+      expect(typing.activeCount).toBe(0);
+    });
+
+    it('socket já não conectado ao fim da checagem: não ativa nem emite', async () => {
+      const pending = emit(socket, 'typing:start', { conversationId: CONVERSATION_ID });
+      socket.connected = false;
+      release('direct');
+
+      await expect(pending).resolves.toEqual({ ok: true, data: null });
+      expect(socket.broadcasts).toEqual([]);
+      expect(typing.activeCount).toBe(0);
+    });
+
+    it('typing:stop chegou durante a checagem: o start atrasado não reativa o indicador', async () => {
+      const pending = emit(socket, 'typing:start', { conversationId: CONVERSATION_ID });
+      const stopped = await emit(socket, 'typing:stop', { conversationId: CONVERSATION_ID });
+      release('direct');
+
+      expect(stopped).toEqual({ ok: true, data: null });
+      await expect(pending).resolves.toEqual({ ok: true, data: null });
+      expect(socket.broadcasts).toEqual([]);
+      expect(typing.activeCount).toBe(0);
+    });
+
+    it('um start posterior (sem stop no meio) funciona normalmente', async () => {
+      const first = emit(socket, 'typing:start', { conversationId: CONVERSATION_ID });
+      release('direct');
+      await first;
+
+      expect(socket.broadcasts).toEqual([indicator(CONVERSATION_ID, true)]);
+      expect(typing.isActive(socket.id, CONVERSATION_ID)).toBe(true);
+    });
+  });
 });
