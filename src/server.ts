@@ -1,6 +1,7 @@
 import { createServer } from 'http';
 import app from './app';
 import { bootstrap, shutdown } from './bootstrap';
+import { createPresenceRealtime, registerPresenceBridge } from './modules/presence';
 import { createRealtimeServer, type TrustProxyFn } from './modules/realtime';
 import {
   createServerErrorHandler,
@@ -17,13 +18,24 @@ async function startServer(): Promise<void> {
 
     // Socket.IO compartilha o servidor HTTP (e a porta) da API Express.
     const httpServer = createServer(app);
+    // Presença: hooks de conexão/desconexão (o realtime não conhece o presence).
+    const presence = createPresenceRealtime();
     // Mesmo `trust proxy` do Express: o IP do socket segue a regra do `req.ip`.
     const realtime = createRealtimeServer(httpServer, {
       trustProxy: app.get('trust proxy fn') as TrustProxyFn,
+      onConnection: [presence.onConnection],
+      onDisconnect: [presence.onDisconnect],
     });
+    const unregisterPresenceBridge = registerPresenceBridge(realtime.io);
+    presence.start();
 
     const stop = createStopHandler({
       realtime,
+      // Heartbeat/varredura param antes do `io.close()`: as entradas deste nó expiram em 30 s.
+      beforeClose: () => {
+        presence.stop();
+        unregisterPresenceBridge();
+      },
       shutdown,
       exit: (code: number): void => {
         process.exit(code);
