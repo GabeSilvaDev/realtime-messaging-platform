@@ -177,6 +177,36 @@ describe('Chat — Feature', () => {
       expect(list.body.data.items[0].lastMessageAt).not.toBeNull();
     });
 
+    it('envio idempotente: repetir o clientMessageId devolve a mesma mensagem, sem duplicar', async () => {
+      const created = await createDirect(ANA, BOB);
+      const conversationId = created.body.data.id as string;
+      const clientMessageId = '66666666-6666-4666-8666-666666666666';
+
+      const first = await request(app)
+        .post(`/api/conversations/${conversationId}/messages`)
+        .set(as(ANA))
+        .send({ text: 'uma vez só', clientMessageId });
+      const retry = await request(app)
+        .post(`/api/conversations/${conversationId}/messages`)
+        .set(as(ANA))
+        .send({ text: 'uma vez só', clientMessageId });
+
+      expect(first.status).toBe(HttpStatus.CREATED);
+      expect(retry.status).toBe(HttpStatus.CREATED);
+      expect(retry.body.data.id).toBe(first.body.data.id);
+      expect(retry.body.data.clientMessageId).toBe(clientMessageId);
+      expect(first.body.data.status).toEqual({
+        sentAt: first.body.data.createdAt,
+        deliveredTo: [],
+        readBy: [],
+      });
+
+      const page = await request(app)
+        .get(`/api/conversations/${conversationId}/messages`)
+        .set(as(BOB));
+      expect(page.body.data.messages).toHaveLength(1);
+    });
+
     it('bloqueio em qualquer sentido → 403 ao criar e ao enviar', async () => {
       const created = await createDirect(ANA, BOB);
       const conversationId = created.body.data.id as string;

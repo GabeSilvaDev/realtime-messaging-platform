@@ -7,6 +7,7 @@ import type {
 export type {
   MessageContent,
   MessageDTO,
+  MessageStatusDTO,
   MessageStatusEntry,
 } from '@/shared/types/chat-message.types';
 
@@ -62,6 +63,8 @@ export interface SendMessageDTO {
   text: string;
   replyTo?: string;
   mentions?: string[];
+  /** UUID gerado pelo cliente: reenviar o mesmo id devolve a mensagem já gravada. */
+  clientMessageId?: string;
 }
 
 export interface ListMessagesOptions {

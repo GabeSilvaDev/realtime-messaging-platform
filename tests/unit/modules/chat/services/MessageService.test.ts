@@ -14,6 +14,7 @@ jest.mock('@/shared/logger', () => ({
 }));
 
 import {
+  ClientMessageIdConflictException,
   ConversationBlockedException,
   ConversationNotFoundException,
   InvalidMentionsException,
@@ -46,6 +47,8 @@ const MESSAGE_ID = '65f000000000000000000002';
 const REPLY_ID = '65f000000000000000000001';
 const CREATED_AT = new Date('2026-09-24T10:00:00.000Z');
 const META = { ip: '127.0.0.1', device: 'jest' };
+const CLIENT_MESSAGE_ID = '44444444-4444-4444-8444-444444444444';
+const STATUS_AT = new Date('2026-09-24T10:05:00.000Z');
 
 function conversation(overrides: Partial<ConversationAttributes> = {}): ConversationAttributes {
   return {
@@ -176,6 +179,8 @@ describe('MessageService', () => {
         content: { type: 'text', text: 'olá' },
         replyTo: null,
         mentions: [],
+        clientMessageId: null,
+        status: { sentAt: CREATED_AT, deliveredTo: [], readBy: [] },
         deletedAt: null,
         createdAt: CREATED_AT,
         updatedAt: CREATED_AT,
@@ -303,6 +308,99 @@ describe('MessageService', () => {
         service.send(USER_A, CONVERSATION_ID, { text: 'oi', mentions: [USER_C] }, META)
       ).rejects.toThrow(InvalidMentionsException);
     });
+
+    describe('idempotência por clientMessageId', () => {
+      it('primeiro envio grava o clientMessageId e publica normalmente', async () => {
+        messages.findByClientMessageId.mockResolvedValue(null);
+        messages.create.mockResolvedValue(created(record({ clientMessageId: CLIENT_MESSAGE_ID })));
+
+        const result = await service.send(
+          USER_A,
+          CONVERSATION_ID,
+          { text: 'oi', clientMessageId: CLIENT_MESSAGE_ID },
+          META
+        );
+
+        expect(messages.findByClientMessageId).toHaveBeenCalledWith(USER_A, CLIENT_MESSAGE_ID);
+        expect(messages.create).toHaveBeenCalledWith(
+          expect.objectContaining({ clientMessageId: CLIENT_MESSAGE_ID })
+        );
+        expect(events.publish).toHaveBeenCalledTimes(1);
+        expect(result.clientMessageId).toBe(CLIENT_MESSAGE_ID);
+      });
+
+      it('reenvio devolve a mensagem existente sem gravar, sem evento e sem last_message_at', async () => {
+        messages.findByClientMessageId.mockResolvedValue(
+          record({ clientMessageId: CLIENT_MESSAGE_ID })
+        );
+
+        const result = await service.send(
+          USER_A,
+          CONVERSATION_ID,
+          { text: 'oi', clientMessageId: CLIENT_MESSAGE_ID },
+          META
+        );
+
+        expect(result.id).toBe(MESSAGE_ID);
+        expect(messages.create).not.toHaveBeenCalled();
+        expect(conversations.touchLastMessageAt).not.toHaveBeenCalled();
+        expect(events.publish).not.toHaveBeenCalled();
+      });
+
+      it('reenvio concorrente (create devolve created=false) também não publica', async () => {
+        messages.findByClientMessageId.mockResolvedValue(null);
+        messages.create.mockResolvedValue({
+          record: record({ clientMessageId: CLIENT_MESSAGE_ID }),
+          created: false,
+        });
+
+        const result = await service.send(
+          USER_A,
+          CONVERSATION_ID,
+          { text: 'oi', clientMessageId: CLIENT_MESSAGE_ID },
+          META
+        );
+
+        expect(result.id).toBe(MESSAGE_ID);
+        expect(conversations.touchLastMessageAt).not.toHaveBeenCalled();
+        expect(events.publish).not.toHaveBeenCalled();
+      });
+
+      it('clientMessageId já usado em outra conversa → 409', async () => {
+        messages.findByClientMessageId.mockResolvedValueOnce(
+          record({ conversationId: OTHER_CONVERSATION_ID })
+        );
+        messages.findByClientMessageId.mockResolvedValueOnce(null);
+        messages.create.mockResolvedValue({
+          record: record({ conversationId: OTHER_CONVERSATION_ID }),
+          created: false,
+        });
+
+        const send = (): Promise<unknown> =>
+          service.send(
+            USER_A,
+            CONVERSATION_ID,
+            { text: 'oi', clientMessageId: CLIENT_MESSAGE_ID },
+            META
+          );
+
+        await expect(send()).rejects.toThrow(ClientMessageIdConflictException);
+        await expect(send()).rejects.toThrow(ClientMessageIdConflictException);
+        expect(events.publish).not.toHaveBeenCalled();
+      });
+
+      it('não consulta clientMessageId de quem não participa (404 antes)', async () => {
+        await expect(
+          service.send(
+            USER_C,
+            CONVERSATION_ID,
+            { text: 'oi', clientMessageId: CLIENT_MESSAGE_ID },
+            META
+          )
+        ).rejects.toThrow(ConversationNotFoundException);
+        expect(messages.findByClientMessageId).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('list', () => {
@@ -388,10 +486,15 @@ describe('MessageService', () => {
       );
     });
 
-    it('mensagens apagadas voltam como tombstone', async () => {
+    it('mensagens apagadas voltam como tombstone (mantendo o status)', async () => {
       const deletedAt = new Date('2026-09-24T11:00:00.000Z');
       messages.findByConversation.mockResolvedValue([
-        record({ deletedAt, mentions: [USER_B], replyTo: REPLY_ID }),
+        record({
+          deletedAt,
+          mentions: [USER_B],
+          replyTo: REPLY_ID,
+          readBy: [{ userId: USER_B, at: STATUS_AT }],
+        }),
       ]);
 
       const result = await service.list(USER_A, CONVERSATION_ID);
@@ -403,8 +506,32 @@ describe('MessageService', () => {
           mentions: [],
           replyTo: REPLY_ID,
           deletedAt,
+          status: {
+            sentAt: CREATED_AT,
+            deliveredTo: [],
+            readBy: [{ userId: USER_B, at: STATUS_AT }],
+          },
         })
       );
+    });
+
+    it('expõe status (sentAt = createdAt, entregue a, lida por) e clientMessageId', async () => {
+      messages.findByConversation.mockResolvedValue([
+        record({
+          clientMessageId: CLIENT_MESSAGE_ID,
+          deliveredTo: [{ userId: USER_B, at: STATUS_AT }],
+        }),
+      ]);
+
+      const { messages: page } = await service.list(USER_A, CONVERSATION_ID);
+
+      expect(page[0]?.clientMessageId).toBe(CLIENT_MESSAGE_ID);
+      expect(page[0]?.status).toEqual({
+        sentAt: CREATED_AT,
+        deliveredTo: [{ userId: USER_B, at: STATUS_AT }],
+        readBy: [],
+      });
+      expect(page[0]).not.toHaveProperty('metadata');
     });
   });
 

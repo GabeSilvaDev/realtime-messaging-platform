@@ -9,5 +9,6 @@ export {
   GroupOnlyOperationException,
   GroupParticipantLimitException,
   InvalidMentionsException,
+  ClientMessageIdConflictException,
   NotMessageAuthorException,
 } from './chat.errors';

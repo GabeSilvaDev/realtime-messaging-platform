@@ -40,6 +40,8 @@ describe('EventBus — eventos de chat tipados', () => {
         content: { type: 'text', text: 'olá' },
         replyTo: null,
         mentions: [],
+        clientMessageId: null,
+        status: { sentAt: createdAt, deliveredTo: [], readBy: [] },
         deletedAt: null,
         createdAt,
         updatedAt: createdAt,

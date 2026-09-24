@@ -77,7 +77,12 @@ describe('chat types', () => {
       createdAt: now,
       updatedAt: now,
     };
-    const tombstone: MessageDTO = { ...record, content: null, deletedAt: now };
+    const tombstone: MessageDTO = {
+      ...record,
+      content: null,
+      deletedAt: now,
+      status: { sentAt: record.createdAt, deliveredTo: [], readBy: [] },
+    };
     const page: PaginatedMessages = { messages: [tombstone], nextCursor: null };
 
     expect(page.messages[0]!.content).toBeNull();

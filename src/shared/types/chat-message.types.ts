@@ -17,7 +17,18 @@ export interface MessageStatusEntry {
   at: Date;
 }
 
-/** Mensagem como exposta pela API: apagada vira tombstone (`content: null`). */
+/** Status da mensagem (RF003.4): enviada = `sentAt` (= `createdAt`), entregue a, lida por. */
+export interface MessageStatusDTO {
+  sentAt: Date;
+  deliveredTo: MessageStatusEntry[];
+  readBy: MessageStatusEntry[];
+}
+
+/**
+ * Mensagem como exposta pela API: apagada vira tombstone (`content: null`, `mentions: []`),
+ * mantendo ids, datas e `status`. `clientMessageId` permite ao cliente conciliar mensagens
+ * otimistas.
+ */
 export interface MessageDTO {
   id: string;
   conversationId: string;
@@ -25,6 +36,8 @@ export interface MessageDTO {
   content: MessageContent | null;
   replyTo: string | null;
   mentions: string[];
+  clientMessageId: string | null;
+  status: MessageStatusDTO;
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

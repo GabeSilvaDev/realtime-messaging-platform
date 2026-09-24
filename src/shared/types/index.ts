@@ -13,6 +13,7 @@ export type {
   MessageContentType,
   MessageContent,
   MessageDTO,
+  MessageStatusDTO,
   MessageStatusEntry,
 } from './chat-message.types';
 export type {

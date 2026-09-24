@@ -49,6 +49,8 @@ function messageSent(
       content: { type: 'text', text: 'oi' },
       replyTo: null,
       mentions: [],
+      clientMessageId: null,
+      status: { sentAt: createdAt, deliveredTo: [], readBy: [] },
       deletedAt: null,
       createdAt,
       updatedAt: createdAt,

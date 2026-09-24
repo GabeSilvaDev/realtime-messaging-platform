@@ -5,6 +5,7 @@ import { logger } from '@/shared/logger';
 import { ChatEvents } from '@/shared/types';
 import { CHAT_CONSTANTS } from '../constants';
 import {
+  ClientMessageIdConflictException,
   ConversationBlockedException,
   ConversationNotFoundException,
   InvalidMentionsException,
@@ -28,7 +29,10 @@ import type {
   SendMessageDTO,
 } from '../types';
 
-/** Mensagem apagada vira tombstone: mantém id/datas (preserva threads), esconde o conteúdo. */
+/**
+ * Mensagem apagada vira tombstone: mantém id/datas/status (preserva threads e confirmações),
+ * esconde o conteúdo.
+ */
 function toMessageDTO(record: MessageRecord): MessageDTO {
   const deleted = record.deletedAt !== null;
   return {
@@ -38,10 +42,27 @@ function toMessageDTO(record: MessageRecord): MessageDTO {
     content: deleted ? null : record.content,
     replyTo: record.replyTo,
     mentions: deleted ? [] : record.mentions,
+    clientMessageId: record.clientMessageId,
+    status: {
+      sentAt: record.createdAt,
+      deliveredTo: record.deliveredTo,
+      readBy: record.readBy,
+    },
     deletedAt: record.deletedAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
+}
+
+/**
+ * Reenvio com `clientMessageId` já usado pelo remetente: devolve a mensagem original (sem novo
+ * evento nem `last_message_at`). O mesmo id reaproveitado em outra conversa é conflito (409).
+ */
+function toReplay(existing: MessageRecord, conversationId: string): MessageDTO {
+  if (existing.conversationId !== conversationId) {
+    throw new ClientMessageIdConflictException();
+  }
+  return toMessageDTO(existing);
 }
 
 export class MessageService implements IMessageService {
@@ -70,6 +91,14 @@ export class MessageService implements IMessageService {
       throw new ConversationNotFoundException();
     }
 
+    const clientMessageId = data.clientMessageId ?? null;
+    if (clientMessageId !== null) {
+      const existing = await this.messages.findByClientMessageId(userId, clientMessageId);
+      if (existing !== null) {
+        return toReplay(existing, conversationId);
+      }
+    }
+
     if (conversation.type === 'direct') {
       const otherId = participantIds.find((id) => id !== userId);
       if (otherId !== undefined && (await this.contacts.isBlockedByEither(userId, otherId))) {
@@ -90,15 +119,18 @@ export class MessageService implements IMessageService {
       throw new InvalidMentionsException();
     }
 
-    const { record } = await this.messages.create({
+    const { record, created } = await this.messages.create({
       conversationId,
       senderId: userId,
       content: { type: 'text', text: data.text.trim() },
       replyTo,
       mentions,
       metadata,
-      clientMessageId: null,
+      clientMessageId,
     });
+    if (!created) {
+      return toReplay(record, conversationId);
+    }
 
     // Best-effort: falha em atualizar last_message_at não deve impedir o envio da mensagem.
     try {
