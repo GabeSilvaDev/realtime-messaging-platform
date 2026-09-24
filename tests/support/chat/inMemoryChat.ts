@@ -25,6 +25,7 @@ export class InMemoryChatStore {
   participants: ParticipantAttributes[] = [];
   messages: MessageRecord[] = [];
   private clock = Date.parse('2026-09-24T10:00:00.000Z');
+  private participantIdCounter = 0;
 
   /** Relógio monotônico: cada chamada avança 1s (ordenações determinísticas). */
   now(): Date {
@@ -37,15 +38,26 @@ export class InMemoryChatStore {
     this.participants = [];
     this.messages = [];
     this.clock = Date.parse('2026-09-24T10:00:00.000Z');
+    this.participantIdCounter = 0;
   }
 
-  addParticipant(conversationId: string, userId: string, role: ParticipantRole): void {
+  addParticipant(
+    conversationId: string,
+    userId: string,
+    role: ParticipantRole,
+    joinedAt?: Date
+  ): void {
+    // Gera ID determinístico para testes: formato "00000000-0000-4000-8000-000000XXXXXX"
+    // onde XXXXXX é o contador zero-padded de 12 dígitos hex.
+    const counter = this.participantIdCounter++;
+    const counterHex = counter.toString(16).padStart(12, '0');
+    const deterministic = `00000000-0000-4000-8000-${counterHex}`;
     this.participants.push({
-      id: randomUUID(),
+      id: deterministic,
       conversationId,
       userId,
       role,
-      joinedAt: this.now(),
+      joinedAt: joinedAt ?? this.now(),
       lastReadAt: null,
       isMuted: false,
       archivedAt: null,
@@ -73,7 +85,8 @@ export class InMemoryChatStore {
 }
 
 function oldestFirst(a: ParticipantAttributes, b: ParticipantAttributes): number {
-  return a.joinedAt.getTime() - b.joinedAt.getTime();
+  const joinedDiff = a.joinedAt.getTime() - b.joinedAt.getTime();
+  return joinedDiff !== 0 ? joinedDiff : a.id.localeCompare(b.id);
 }
 
 export class InMemoryConversationRepository implements IConversationRepository {
@@ -97,8 +110,9 @@ export class InMemoryConversationRepository implements IConversationRepository {
       return { conversation: existing, created: false };
     }
     const conversation = this.store.createConversation({ type: 'direct', directKey, createdBy });
+    const bulkJoinedAt = this.store.now();
     userIds.forEach((userId) => {
-      this.store.addParticipant(conversation.id, userId, 'member');
+      this.store.addParticipant(conversation.id, userId, 'member', bulkJoinedAt);
     });
     return { conversation, created: true };
   }
@@ -109,9 +123,10 @@ export class InMemoryConversationRepository implements IConversationRepository {
     memberIds,
   }: CreateGroupData): Promise<ConversationAttributes> {
     const conversation = this.store.createConversation({ type: 'group', name, createdBy });
-    this.store.addParticipant(conversation.id, createdBy, 'admin');
+    const bulkJoinedAt = this.store.now();
+    this.store.addParticipant(conversation.id, createdBy, 'admin', bulkJoinedAt);
     memberIds.forEach((userId) => {
-      this.store.addParticipant(conversation.id, userId, 'member');
+      this.store.addParticipant(conversation.id, userId, 'member', bulkJoinedAt);
     });
     return conversation;
   }
@@ -187,9 +202,10 @@ export class InMemoryParticipantRepository implements IParticipantRepository {
   }
 
   async addMembers(conversationId: string, userIds: string[]): Promise<void> {
+    const bulkJoinedAt = this.store.now();
     for (const userId of userIds) {
       if ((await this.find(conversationId, userId)) === null) {
-        this.store.addParticipant(conversationId, userId, 'member');
+        this.store.addParticipant(conversationId, userId, 'member', bulkJoinedAt);
       }
     }
   }

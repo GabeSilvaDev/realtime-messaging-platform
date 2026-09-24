@@ -332,5 +332,31 @@ describe('Chat — Feature', () => {
 
       expect(store.conversations.has(groupId)).toBe(false);
     });
+
+    it('promoção de admin usa id como tie-break em membros com mesmo joined_at', async () => {
+      // ANA cria grupo, BOB e CAROL adicionados juntos (mesmo joinedAt).
+      // BOB é adicionado primeiro, então sua participant ID é menor;
+      // quando ANA sai, BOB (menor ID) é promovido a admin.
+      const created = await request(app)
+        .post('/api/conversations/group')
+        .set(as(ANA))
+        .send({ name: 'TieBreak', participantIds: [BOB, CAROL] });
+      expect(created.status).toBe(HttpStatus.CREATED);
+      const groupId = created.body.data.id as string;
+
+      // ANA deixa o grupo
+      const left = await request(app).post(`/api/conversations/${groupId}/leave`).set(as(ANA));
+      expect(left.status).toBe(HttpStatus.NO_CONTENT);
+
+      // Verificar que BOB foi promovido a admin (menor participant ID: adicionado primeiro)
+      const bobView = await request(app).get(`/api/conversations/${groupId}`).set(as(BOB));
+      expect(bobView.status).toBe(HttpStatus.OK);
+      expect(bobView.body.data.membership.role).toBe('admin');
+
+      // Verificar que CAROL continua como membro
+      const carolView = await request(app).get(`/api/conversations/${groupId}`).set(as(CAROL));
+      expect(carolView.status).toBe(HttpStatus.OK);
+      expect(carolView.body.data.membership.role).toBe('member');
+    });
   });
 });
