@@ -1,4 +1,5 @@
 import type { PresenceStateDTO } from '@/shared/types';
+import type { UserSummaryDTO } from './user.dto';
 
 export interface ContactAttributes {
   id: string;
@@ -31,15 +32,9 @@ export interface ContactCreationAttributes {
   createdByBlock?: boolean;
 }
 
+/** Contato + usuário do contato (sem status/lastSeenAt: o estado vem só da presença). */
 export interface ContactWithUser extends ContactAttributes {
-  contact: {
-    id: string;
-    username: string;
-    displayName: string | null;
-    avatarUrl: string | null;
-    status: string;
-    lastSeenAt: Date | null;
-  };
+  contact: UserSummaryDTO;
 }
 
 export interface ContactListFilters {

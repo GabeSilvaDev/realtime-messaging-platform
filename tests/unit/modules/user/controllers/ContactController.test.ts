@@ -33,8 +33,6 @@ function contactRow(
       username: names.username,
       displayName: names.displayName ?? null,
       avatarUrl: null,
-      status: 'offline',
-      lastSeenAt: null,
     },
   };
 }

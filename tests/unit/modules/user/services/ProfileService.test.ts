@@ -489,10 +489,11 @@ describe('ProfileService', () => {
         displayName: mockUser.displayName,
         avatarUrl: mockUser.avatarUrl,
         bio: null,
-        status: mockUser.status,
-        lastSeenAt: mockUser.lastSeenAt,
       });
       expect(result).not.toHaveProperty('email');
+      // O estado e o visto por último de outro usuário saem só pela presença.
+      expect(result).not.toHaveProperty('status');
+      expect(result).not.toHaveProperty('lastSeenAt');
     });
 
     it('deve retornar bio quando presente', async () => {

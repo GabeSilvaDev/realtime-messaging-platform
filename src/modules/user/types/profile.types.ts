@@ -18,14 +18,13 @@ export interface UserProfile {
   createdAt: Date;
 }
 
+/** Perfil de outro usuário: sem status/lastSeenAt (o estado vem só da presença). */
 export interface PublicProfile {
   id: string;
   username: string;
   displayName: string | null;
   avatarUrl: string | null;
   bio: string | null;
-  status: UserStatus;
-  lastSeenAt: Date | null;
 }
 
 export interface AvatarUrls {

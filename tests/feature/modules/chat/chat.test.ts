@@ -22,8 +22,10 @@ const mockUserService = {
         username: `user_${id.slice(0, 4)}`,
         displayName: null,
         avatarUrl: null,
-        status: 'offline',
-        lastSeenAt: null,
+        // O DTO interno do módulo user traz status e visto por último (a presença lê daqui);
+        // nenhum dos dois pode sair nos participantes.
+        status: 'online',
+        lastSeenAt: new Date('2026-09-26T09:00:00.000Z'),
       })),
 };
 const mockContactService = {
@@ -294,6 +296,35 @@ describe('Chat — Feature', () => {
 
       const newDirect = await createDirect(BOB, ANA);
       expect(newDirect.status).toBe(HttpStatus.FORBIDDEN);
+    });
+
+    it.each([
+      ['Bob bloqueou a Ana', BOB, ANA],
+      ['Ana bloqueou o Bob', ANA, BOB],
+    ])('participantes nunca expõem status/lastSeenAt (%s)', async (_case, blocker, blocked) => {
+      const created = await createDirect(ANA, BOB);
+      const conversationId = created.body.data.id as string;
+      mockBlocks.add(`${blocker}:${blocked}`);
+
+      for (const viewer of [ANA, BOB]) {
+        const one = await request(app).get(`/api/conversations/${conversationId}`).set(as(viewer));
+        const list = await request(app).get('/api/conversations').set(as(viewer));
+        const participants = [
+          ...(one.body.data.participants as Record<string, unknown>[]),
+          ...(list.body.data.items[0].participants as Record<string, unknown>[]),
+        ];
+
+        expect(participants).toHaveLength(4);
+        participants.forEach((participant) => {
+          expect(Object.keys(participant).sort()).toEqual([
+            'avatarUrl',
+            'displayName',
+            'id',
+            'role',
+            'username',
+          ]);
+        });
+      }
     });
 
     it('não participante recebe 404 em conversa e mensagens', async () => {

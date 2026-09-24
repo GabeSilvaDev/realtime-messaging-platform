@@ -72,6 +72,10 @@ export class ProfileService implements IProfileService {
     return this.mapToUserProfile(user as unknown as Record<string, unknown>);
   }
 
+  /**
+   * Perfil de outro usuário, sem `status`/`lastSeenAt`: o estado e o visto por último saem só pela
+   * presença (`GET /api/presence`), que esconde pares bloqueados.
+   */
   async getPublicProfile(userId: string): Promise<PublicProfile> {
     const user = await this.users.findById(userId);
     if (!user) {
@@ -85,8 +89,6 @@ export class ProfileService implements IProfileService {
       displayName: user.displayName,
       avatarUrl: user.avatarUrl,
       bio: (userData.bio as string | null) ?? null,
-      status: user.status,
-      lastSeenAt: user.lastSeenAt,
     };
   }
 

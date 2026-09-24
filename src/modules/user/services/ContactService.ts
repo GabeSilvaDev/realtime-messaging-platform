@@ -21,8 +21,8 @@ import type {
   ContactStats,
   ContactWithUser,
   PaginatedContacts,
-  PublicUserDTO,
   UpdateContactDTO,
+  UserSummaryDTO,
   UserWithContactInfo,
 } from '../types';
 
@@ -34,6 +34,19 @@ export {
   CannotBlockSelfException,
   UserNotFoundException,
 } from '../errors';
+
+/**
+ * Outro usuário como sai nas respostas: sem `status`/`lastSeenAt` — o estado e o visto por último
+ * vêm só da presença, que esconde pares bloqueados.
+ */
+function toUserSummary(user: UserAttributes | UserWithContactInfo): UserSummaryDTO {
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName ?? null,
+    avatarUrl: user.avatarUrl ?? null,
+  };
+}
 
 export class ContactService implements IContactService {
   constructor(
@@ -72,7 +85,7 @@ export class ContactService implements IContactService {
 
     return {
       ...contact,
-      contact: this.toPublicUser(contactUser),
+      contact: toUserSummary(contactUser),
     };
   }
 
@@ -99,7 +112,7 @@ export class ContactService implements IContactService {
 
     return {
       ...updated,
-      contact: this.toPublicUser(contactUser),
+      contact: toUserSummary(contactUser),
     };
   }
 
@@ -120,7 +133,7 @@ export class ContactService implements IContactService {
 
     return {
       ...contact,
-      contact: this.toPublicUser(contactUser),
+      contact: toUserSummary(contactUser),
     };
   }
 
@@ -220,7 +233,7 @@ export class ContactService implements IContactService {
     userId: string,
     query: string,
     options: { limit?: number; excludeBlocked?: boolean } = {}
-  ): Promise<PublicUserDTO[]> {
+  ): Promise<UserSummaryDTO[]> {
     const { limit = 20, excludeBlocked = true } = options;
 
     const result = await this.users.search({
@@ -232,7 +245,7 @@ export class ContactService implements IContactService {
       limit,
     });
 
-    return result.users.map((u: UserWithContactInfo): PublicUserDTO => this.toPublicUser(u));
+    return result.users.map(toUserSummary);
   }
 
   /**
@@ -245,17 +258,6 @@ export class ContactService implements IContactService {
       throw new ContactNotFoundException();
     }
     return contact;
-  }
-
-  private toPublicUser(user: UserAttributes | UserWithContactInfo): PublicUserDTO {
-    return {
-      id: user.id,
-      username: user.username,
-      displayName: user.displayName ?? null,
-      avatarUrl: user.avatarUrl ?? null,
-      status: user.status,
-      lastSeenAt: user.lastSeenAt ?? null,
-    };
   }
 }
 

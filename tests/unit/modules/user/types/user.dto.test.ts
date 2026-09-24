@@ -360,8 +360,6 @@ describe('user.dto', () => {
           username: 'contactuser',
           displayName: 'Contact User',
           avatarUrl: 'https://example.com/avatar.jpg',
-          status: 'online',
-          lastSeenAt: new Date(),
         },
       };
 
@@ -384,8 +382,6 @@ describe('user.dto', () => {
           username: 'contactuser',
           displayName: null,
           avatarUrl: null,
-          status: 'offline',
-          lastSeenAt: null,
         },
       };
 

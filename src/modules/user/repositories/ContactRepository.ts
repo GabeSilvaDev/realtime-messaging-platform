@@ -32,28 +32,26 @@ function buildContactOrder(
   return [[orderBy, order]];
 }
 
-/** Atributos do usuário do contato incluídos nas listagens. */
-const CONTACT_USER_ATTRIBUTES = [
-  'id',
-  'username',
-  'displayName',
-  'avatarUrl',
-  'status',
-  'lastSeenAt',
-];
+/**
+ * Atributos do usuário do contato incluídos nas listagens. Sem `status`/`lastSeenAt`: o estado e
+ * o visto por último de outro usuário saem só pela presença (que esconde pares bloqueados).
+ */
+const CONTACT_USER_ATTRIBUTES = ['id', 'username', 'displayName', 'avatarUrl'];
 
-/** Linha de contato + usuário público (placeholder se o usuário não veio no include). */
+/** Linha de contato + resumo do usuário (placeholder se o usuário não veio no include). */
 function toContactWithUser(row: Contact): ContactWithUser {
+  const user = row.contact;
   return {
     ...row.toJSON(),
-    contact: row.contact?.toPublicJSON() ?? {
-      id: row.contactId,
-      username: '',
-      displayName: null,
-      avatarUrl: null,
-      status: 'offline',
-      lastSeenAt: null,
-    },
+    contact:
+      user === undefined
+        ? { id: row.contactId, username: '', displayName: null, avatarUrl: null }
+        : {
+            id: user.id,
+            username: user.username,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
+          },
   };
 }
 

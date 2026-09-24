@@ -51,8 +51,16 @@ describe('ContactRepository', () => {
     updatedAt: new Date('2026-01-01'),
     toJSON: jest.fn(),
     update: jest.fn(),
+    // Linha do usuário como o Sequelize a devolveria com todas as colunas (inclusive status e
+    // last_seen_at): o repositório só pode repassar o resumo público.
     contact: {
-      toPublicJSON: jest.fn(),
+      id: 'contact-456',
+      username: 'contactuser',
+      email: 'contact@example.com',
+      displayName: 'Contact User',
+      avatarUrl: 'https://example.com/avatar.jpg',
+      status: UserStatus.ONLINE,
+      lastSeenAt: new Date('2026-01-01'),
     },
   };
 
@@ -61,8 +69,6 @@ describe('ContactRepository', () => {
     username: 'contactuser',
     displayName: 'Contact User',
     avatarUrl: 'https://example.com/avatar.jpg',
-    status: UserStatus.ONLINE,
-    lastSeenAt: new Date('2026-01-01'),
   };
 
   beforeEach(() => {
@@ -80,7 +86,6 @@ describe('ContactRepository', () => {
       createdAt: mockContactInstance.createdAt,
       updatedAt: mockContactInstance.updatedAt,
     });
-    mockContactInstance.contact.toPublicJSON.mockReturnValue(mockContactUser);
   });
 
   describe('IContactRepository interface', () => {
@@ -175,6 +180,7 @@ describe('ContactRepository', () => {
         })
       );
       expect(result.contacts).toHaveLength(1);
+      expect(result.contacts[0]!.contact).toEqual(mockContactUser);
       expect(result.total).toBe(1);
       expect(result.limit).toBe(50);
       expect(result.offset).toBe(0);
@@ -311,7 +317,33 @@ describe('ContactRepository', () => {
       expect(result.contacts).toHaveLength(50);
     });
 
-    it('deve usar valores padrão quando contact.toPublicJSON não está disponível', async () => {
+    it('não seleciona nem devolve status/lastSeenAt do usuário do contato', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({
+        count: 1,
+        rows: [mockContactInstance],
+      } as any);
+
+      const result = await repository.findAllByUser('user-123');
+
+      expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: [
+            expect.objectContaining({
+              as: 'contact',
+              attributes: ['id', 'username', 'displayName', 'avatarUrl'],
+            }),
+          ],
+        })
+      );
+      expect(Object.keys(result.contacts[0]!.contact).sort()).toEqual([
+        'avatarUrl',
+        'displayName',
+        'id',
+        'username',
+      ]);
+    });
+
+    it('deve usar valores padrão quando o usuário do contato não veio no include', async () => {
       const contactWithoutUser = {
         ...mockContactInstance,
         contact: undefined,
@@ -332,8 +364,6 @@ describe('ContactRepository', () => {
         username: '',
         displayName: null,
         avatarUrl: null,
-        status: 'offline',
-        lastSeenAt: null,
       });
     });
   });
@@ -373,7 +403,12 @@ describe('ContactRepository', () => {
       const result = await repository.findBlockedByUser('user-123');
 
       expect(result[0]!.contact.id).toBe('contact-456');
-      expect(result[0]!.contact.status).toBe('offline');
+      expect(result[0]!.contact).toEqual({
+        id: 'contact-456',
+        username: '',
+        displayName: null,
+        avatarUrl: null,
+      });
     });
   });
 
@@ -737,7 +772,7 @@ describe('ContactRepository', () => {
       const row = {
         contactId: 'c1',
         toJSON: () => ({ id: 'row-1', contactId: 'c1' }),
-        contact: { toPublicJSON: () => publicUser },
+        contact: { ...publicUser, status: 'online', lastSeenAt: new Date() },
       };
       MockContact.findAll.mockResolvedValue([row] as any);
 
@@ -749,7 +784,7 @@ describe('ContactRepository', () => {
           {
             model: expect.anything(),
             as: 'contact',
-            attributes: ['id', 'username', 'displayName', 'avatarUrl', 'status', 'lastSeenAt'],
+            attributes: ['id', 'username', 'displayName', 'avatarUrl'],
           },
         ],
       });

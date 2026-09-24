@@ -372,6 +372,33 @@ describe('Presença — integração com socket.io-client', () => {
     await revealed;
   });
 
+  it('GET /api/presence é a fonte do lastSeenAt: entregue a quem não tem bloqueio, escondido nos dois sentidos', async () => {
+    await addContact(BOB, ANA);
+    await disconnect(await connected(ANA), ANA);
+    const lastSeen = mockLastSeen.get(ANA)!.toISOString();
+    const query = (viewer: string, target: string): Promise<request.Response> =>
+      request(app).get(`/api/presence?userIds=${target}`).set('Authorization', `Bearer ${viewer}`);
+
+    expect((await query(BOB, ANA)).body.data.items).toEqual([
+      { userId: ANA, state: 'offline', lastSeenAt: lastSeen },
+    ]);
+
+    await block(BOB, ANA);
+    expect((await query(BOB, ANA)).body.data.items).toEqual([
+      { userId: ANA, state: 'offline', lastSeenAt: null },
+    ]);
+    await unblock(BOB, ANA);
+
+    await block(ANA, BOB);
+    expect((await query(BOB, ANA)).body.data.items).toEqual([
+      { userId: ANA, state: 'offline', lastSeenAt: null },
+    ]);
+    // Quem não tem bloqueio com a Ana continua vendo o visto por último.
+    expect((await query(CAROL, ANA)).body.data.items).toEqual([
+      { userId: ANA, state: 'offline', lastSeenAt: lastSeen },
+    ]);
+  });
+
   it('conversa 1:1 nova passa a propagar a presença entre os dois', async () => {
     const ana = await connected(ANA);
     const carol = await connected(CAROL);

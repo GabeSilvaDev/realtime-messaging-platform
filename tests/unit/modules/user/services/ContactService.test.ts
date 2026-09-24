@@ -339,6 +339,13 @@ describe('ContactService', () => {
 
       expect(result.id).toBe(mockContact.id);
       expect(result.contact.username).toBe('contactuser');
+      // status/lastSeenAt do outro usuário saem só pela presença.
+      expect(Object.keys(result.contact).sort()).toEqual([
+        'avatarUrl',
+        'displayName',
+        'id',
+        'username',
+      ]);
     });
 
     it('deve lançar ContactNotFoundException quando contato não existe', async () => {
@@ -731,7 +738,7 @@ describe('ContactService', () => {
       });
     });
 
-    it('deve converter campos undefined para null no toPublicUser', async () => {
+    it('devolve o resumo do usuário (campos undefined viram null; sem status/lastSeenAt)', async () => {
       const userWithUndefinedFields = {
         id: 'user-789',
         username: 'undefineduser',
@@ -759,8 +766,6 @@ describe('ContactService', () => {
         username: 'undefineduser',
         displayName: null,
         avatarUrl: null,
-        status: UserStatus.OFFLINE,
-        lastSeenAt: null,
       });
     });
   });
