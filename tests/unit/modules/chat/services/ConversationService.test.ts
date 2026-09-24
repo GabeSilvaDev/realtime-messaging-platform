@@ -121,6 +121,7 @@ describe('ConversationService', () => {
       remove: jest.fn(),
       setRole: jest.fn(),
       setArchivedAt: jest.fn(),
+      advanceLastReadAt: jest.fn(),
     };
     users = { exists: jest.fn(), getMultiple: jest.fn() };
     contacts = { isBlockedByEither: jest.fn() };

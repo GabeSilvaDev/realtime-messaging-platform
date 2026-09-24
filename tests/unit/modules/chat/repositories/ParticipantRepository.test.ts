@@ -179,6 +179,26 @@ describe('ParticipantRepository', () => {
     });
   });
 
+  describe('advanceLastReadAt', () => {
+    it('avança last_read_at só quando nulo ou anterior (nunca retrocede)', async () => {
+      const at = new Date('2026-09-25T10:00:00.000Z');
+      MockParticipant.update.mockResolvedValue([1] as never);
+
+      await repository.advanceLastReadAt(CONVERSATION_ID, USER_A, at);
+
+      expect(MockParticipant.update).toHaveBeenCalledWith(
+        { lastReadAt: at },
+        {
+          where: {
+            conversationId: CONVERSATION_ID,
+            userId: USER_A,
+            [Op.or]: [{ lastReadAt: null }, { lastReadAt: { [Op.lt]: at } }],
+          },
+        }
+      );
+    });
+  });
+
   describe('dentro de transação (lock da conversa)', () => {
     it('find e listByConversation repassam a transação', async () => {
       MockParticipant.findOne.mockResolvedValue(null);

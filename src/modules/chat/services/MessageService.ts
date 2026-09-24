@@ -198,11 +198,7 @@ export class MessageService implements IMessageService {
 
   async delete(userId: string, conversationId: string, messageId: string): Promise<void> {
     await this.requireParticipant(conversationId, userId);
-
-    const message = await this.messages.findById(messageId);
-    if (message?.conversationId !== conversationId) {
-      throw new MessageNotFoundException();
-    }
+    const message = await this.requireMessage(conversationId, messageId);
 
     if (message.senderId !== userId) {
       throw new NotMessageAuthorException();
@@ -216,6 +212,54 @@ export class MessageService implements IMessageService {
         deletedBy: userId,
       });
     }
+  }
+
+  async markDelivered(userId: string, conversationId: string, messageId: string): Promise<void> {
+    await this.requireParticipant(conversationId, userId);
+    const message = await this.requireMessage(conversationId, messageId);
+
+    if (message.senderId === userId) {
+      return;
+    }
+
+    const at = new Date();
+    const changed = await this.messages.markDelivered(messageId, userId, at);
+    if (changed) {
+      await this.events.publish(ChatEvents.MESSAGE_DELIVERED, {
+        messageId,
+        conversationId,
+        userId,
+        senderId: message.senderId,
+        at,
+      });
+    }
+  }
+
+  async markRead(userId: string, conversationId: string, messageId: string): Promise<void> {
+    await this.requireParticipant(conversationId, userId);
+    const message = await this.requireMessage(conversationId, messageId);
+
+    const at = new Date();
+    const marked = await this.messages.markReadUpTo(conversationId, userId, message.createdAt, at);
+    await this.participants.advanceLastReadAt(conversationId, userId, message.createdAt);
+
+    if (marked > 0) {
+      await this.events.publish(ChatEvents.MESSAGE_READ, {
+        conversationId,
+        userId,
+        upToMessageId: messageId,
+        at,
+      });
+    }
+  }
+
+  /** Mensagem inexistente ou de outra conversa → 404 (não revela mensagens alheias). */
+  private async requireMessage(conversationId: string, messageId: string): Promise<MessageRecord> {
+    const message = await this.messages.findById(messageId);
+    if (message?.conversationId !== conversationId) {
+      throw new MessageNotFoundException();
+    }
+    return message;
   }
 
   private async requireParticipant(conversationId: string, userId: string): Promise<void> {

@@ -256,6 +256,13 @@ export class InMemoryParticipantRepository implements IParticipantRepository {
       participant.archivedAt = archivedAt;
     }
   }
+
+  async advanceLastReadAt(conversationId: string, userId: string, at: Date): Promise<void> {
+    const participant = await this.find(conversationId, userId);
+    if (participant !== null && (participant.lastReadAt === null || participant.lastReadAt < at)) {
+      participant.lastReadAt = at;
+    }
+  }
 }
 
 export class InMemoryMessageRepository implements IMessageRepository {

@@ -87,6 +87,19 @@ export class ParticipantRepository implements IParticipantRepository {
   ): Promise<void> {
     await Participant.update({ archivedAt }, { where: { conversationId, userId } });
   }
+
+  async advanceLastReadAt(conversationId: string, userId: string, at: Date): Promise<void> {
+    await Participant.update(
+      { lastReadAt: at },
+      {
+        where: {
+          conversationId,
+          userId,
+          [Op.or]: [{ lastReadAt: null }, { lastReadAt: { [Op.lt]: at } }],
+        },
+      }
+    );
+  }
 }
 
 export const participantRepository = new ParticipantRepository();

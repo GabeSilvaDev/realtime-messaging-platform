@@ -140,6 +140,7 @@ describe('MessageService', () => {
       remove: jest.fn(),
       setRole: jest.fn(),
       setArchivedAt: jest.fn(),
+      advanceLastReadAt: jest.fn(),
     };
     contacts = { isBlockedByEither: jest.fn().mockResolvedValue(false) };
     events = { publish: jest.fn().mockResolvedValue('event-id') };
@@ -532,6 +533,120 @@ describe('MessageService', () => {
         readBy: [],
       });
       expect(page[0]).not.toHaveProperty('metadata');
+    });
+  });
+
+  describe('markDelivered', () => {
+    beforeEach(() => {
+      participants.find.mockResolvedValue(participant(USER_B));
+      messages.findById.mockResolvedValue(record());
+    });
+
+    it('registra a entrega e publica MESSAGE_DELIVERED para o remetente', async () => {
+      messages.markDelivered.mockResolvedValue(true);
+
+      await service.markDelivered(USER_B, CONVERSATION_ID, MESSAGE_ID);
+
+      expect(participants.find).toHaveBeenCalledWith(CONVERSATION_ID, USER_B);
+      expect(messages.markDelivered).toHaveBeenCalledWith(MESSAGE_ID, USER_B, expect.any(Date));
+      const at = messages.markDelivered.mock.calls[0]![2];
+      expect(events.publish).toHaveBeenCalledWith(ChatEvents.MESSAGE_DELIVERED, {
+        messageId: MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        userId: USER_B,
+        senderId: USER_A,
+        at,
+      });
+    });
+
+    it('é idempotente: já entregue não publica de novo', async () => {
+      messages.markDelivered.mockResolvedValue(false);
+
+      await service.markDelivered(USER_B, CONVERSATION_ID, MESSAGE_ID);
+
+      expect(events.publish).not.toHaveBeenCalled();
+    });
+
+    it('o autor não marca a própria mensagem (no-op, sem evento)', async () => {
+      participants.find.mockResolvedValue(participant(USER_A));
+
+      await service.markDelivered(USER_A, CONVERSATION_ID, MESSAGE_ID);
+
+      expect(messages.markDelivered).not.toHaveBeenCalled();
+      expect(events.publish).not.toHaveBeenCalled();
+    });
+
+    it('404 para não participante e para mensagem inexistente ou de outra conversa', async () => {
+      participants.find.mockResolvedValueOnce(null);
+      await expect(service.markDelivered(USER_C, CONVERSATION_ID, MESSAGE_ID)).rejects.toThrow(
+        ConversationNotFoundException
+      );
+
+      messages.findById.mockResolvedValueOnce(null);
+      await expect(service.markDelivered(USER_B, CONVERSATION_ID, MESSAGE_ID)).rejects.toThrow(
+        MessageNotFoundException
+      );
+
+      messages.findById.mockResolvedValueOnce(record({ conversationId: OTHER_CONVERSATION_ID }));
+      await expect(service.markDelivered(USER_B, CONVERSATION_ID, MESSAGE_ID)).rejects.toThrow(
+        MessageNotFoundException
+      );
+      expect(messages.markDelivered).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('markRead', () => {
+    beforeEach(() => {
+      participants.find.mockResolvedValue(participant(USER_B));
+      messages.findById.mockResolvedValue(record());
+    });
+
+    it('marca tudo até a mensagem como lido, avança last_read_at e publica MESSAGE_READ', async () => {
+      messages.markReadUpTo.mockResolvedValue(3);
+
+      await service.markRead(USER_B, CONVERSATION_ID, MESSAGE_ID);
+
+      expect(messages.markReadUpTo).toHaveBeenCalledWith(
+        CONVERSATION_ID,
+        USER_B,
+        CREATED_AT,
+        expect.any(Date)
+      );
+      expect(participants.advanceLastReadAt).toHaveBeenCalledWith(
+        CONVERSATION_ID,
+        USER_B,
+        CREATED_AT
+      );
+      const at = messages.markReadUpTo.mock.calls[0]![3];
+      expect(events.publish).toHaveBeenCalledWith(ChatEvents.MESSAGE_READ, {
+        conversationId: CONVERSATION_ID,
+        userId: USER_B,
+        upToMessageId: MESSAGE_ID,
+        at,
+      });
+    });
+
+    it('sem nada novo para marcar: avança last_read_at mas não publica', async () => {
+      messages.markReadUpTo.mockResolvedValue(0);
+
+      await service.markRead(USER_B, CONVERSATION_ID, MESSAGE_ID);
+
+      expect(participants.advanceLastReadAt).toHaveBeenCalled();
+      expect(events.publish).not.toHaveBeenCalled();
+    });
+
+    it('404 para não participante e para mensagem de outra conversa', async () => {
+      participants.find.mockResolvedValueOnce(null);
+      await expect(service.markRead(USER_C, CONVERSATION_ID, MESSAGE_ID)).rejects.toThrow(
+        ConversationNotFoundException
+      );
+
+      messages.findById.mockResolvedValueOnce(record({ conversationId: OTHER_CONVERSATION_ID }));
+      await expect(service.markRead(USER_B, CONVERSATION_ID, MESSAGE_ID)).rejects.toThrow(
+        MessageNotFoundException
+      );
+      expect(messages.markReadUpTo).not.toHaveBeenCalled();
+      expect(participants.advanceLastReadAt).not.toHaveBeenCalled();
     });
   });
 

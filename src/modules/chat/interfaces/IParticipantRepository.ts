@@ -28,4 +28,6 @@ export interface IParticipantRepository {
     transaction?: ChatTransaction
   ): Promise<void>;
   setArchivedAt(conversationId: string, userId: string, archivedAt: Date | null): Promise<void>;
+  /** `last_read_at = max(atual, at)` — nunca retrocede. */
+  advanceLastReadAt(conversationId: string, userId: string, at: Date): Promise<void>;
 }

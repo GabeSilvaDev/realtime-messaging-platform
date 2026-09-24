@@ -13,7 +13,13 @@ const CONVERSATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const MESSAGE_ID = '65f000000000000000000001';
 
 function createService(): jest.Mocked<IMessageService> {
-  return { send: jest.fn(), list: jest.fn(), delete: jest.fn() };
+  return {
+    send: jest.fn(),
+    list: jest.fn(),
+    delete: jest.fn(),
+    markDelivered: jest.fn(),
+    markRead: jest.fn(),
+  };
 }
 
 function createReq(overrides: Record<string, unknown> = {}): Request {

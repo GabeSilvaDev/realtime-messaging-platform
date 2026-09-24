@@ -60,15 +60,20 @@ export interface EventMap {
     conversationId: string;
     deletedBy: string;
   };
+  /** `userId` confirmou a entrega de `messageId` (uma vez por destinatário; `senderId` é o autor). */
   [ChatEvents.MESSAGE_DELIVERED]: {
     messageId: string;
     conversationId: string;
     userId: string;
+    senderId: string;
+    at: Date;
   };
+  /** Leitura em lote: tudo de outros autores até `upToMessageId` (inclusive) foi lido por `userId`. */
   [ChatEvents.MESSAGE_READ]: {
-    messageId: string;
     conversationId: string;
     userId: string;
+    upToMessageId: string;
+    at: Date;
   };
   [ChatEvents.TYPING_STARTED]: { conversationId: string; userId: string };
   [ChatEvents.TYPING_STOPPED]: { conversationId: string; userId: string };
