@@ -282,6 +282,12 @@ export class InMemoryMessageRepository implements IMessageRepository {
     record.deletedAt = deletedAt;
     return true;
   }
+
+  async deleteByConversation(conversationId: string): Promise<number> {
+    const before = this.store.messages.length;
+    this.store.messages = this.store.messages.filter((m) => m.conversationId !== conversationId);
+    return before - this.store.messages.length;
+  }
 }
 
 export function createInMemoryChatRepositories(): {

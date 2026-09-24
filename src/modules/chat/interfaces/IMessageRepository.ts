@@ -10,4 +10,6 @@ export interface IMessageRepository {
   ): Promise<MessageRecord[]>;
   /** Marca `deletedAt`; retorna `true` só se esta chamada apagou (idempotente sob concorrência). */
   softDelete(id: string, deletedAt: Date): Promise<boolean>;
+  /** Apaga todas as mensagens da conversa (usado quando a conversa é removida). */
+  deleteByConversation(conversationId: string): Promise<number>;
 }

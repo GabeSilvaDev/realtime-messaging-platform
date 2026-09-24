@@ -61,6 +61,11 @@ export class MessageRepository implements IMessageRepository {
     ).exec();
     return result.modifiedCount > 0;
   }
+
+  async deleteByConversation(conversationId: string): Promise<number> {
+    const result = await MessageModel.deleteMany({ conversationId }).exec();
+    return result.deletedCount;
+  }
 }
 
 export const messageRepository = new MessageRepository();

@@ -4,6 +4,7 @@ jest.mock('@/modules/chat/models/Message', () => ({
     findById: jest.fn(),
     find: jest.fn(),
     updateOne: jest.fn(),
+    deleteMany: jest.fn(),
   },
 }));
 
@@ -19,6 +20,7 @@ const MockMessageModel = MessageModel as unknown as {
   findById: jest.Mock;
   find: jest.Mock;
   updateOne: jest.Mock;
+  deleteMany: jest.Mock;
 };
 
 const CONVERSATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -182,6 +184,27 @@ describe('MessageRepository', () => {
       });
 
       await expect(repository.softDelete(MESSAGE_ID, new Date())).resolves.toBe(false);
+    });
+  });
+
+  describe('deleteByConversation', () => {
+    it('deve apagar todas as mensagens da conversa e retornar a quantidade removida', async () => {
+      MockMessageModel.deleteMany.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({ deletedCount: 3 }),
+      });
+
+      const result = await repository.deleteByConversation(CONVERSATION_ID);
+
+      expect(MockMessageModel.deleteMany).toHaveBeenCalledWith({ conversationId: CONVERSATION_ID });
+      expect(result).toBe(3);
+    });
+
+    it('deve retornar 0 quando não havia mensagens', async () => {
+      MockMessageModel.deleteMany.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({ deletedCount: 0 }),
+      });
+
+      await expect(repository.deleteByConversation(CONVERSATION_ID)).resolves.toBe(0);
     });
   });
 });

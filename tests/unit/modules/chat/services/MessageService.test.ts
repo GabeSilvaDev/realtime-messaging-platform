@@ -104,6 +104,7 @@ describe('MessageService', () => {
       findById: jest.fn(),
       findByConversation: jest.fn(),
       softDelete: jest.fn(),
+      deleteByConversation: jest.fn(),
     };
     conversations = {
       findById: jest.fn(),
