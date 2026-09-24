@@ -159,13 +159,18 @@
     });
   });
 
-  // Restaura o seletor de status com o valor do servidor após conectar.
+  // Mapeia estado da presença para valor do seletor (away/busy persistem, outros → available).
+  function selectorValueFromState(presenceState) {
+    return presenceState === 'away' || presenceState === 'busy' ? presenceState : 'available';
+  }
+
+  // Restaura o seletor de status com o valor do servidor após o snapshot (reconexão ou recarga).
   async function restoreStatusSelector() {
     try {
       const { items } = await api('GET', `/presence?userIds=${state.user.id}`);
       if (items.length > 0) {
         const { state: serverState } = items[0];
-        const selectorValue = serverState === 'online' ? 'available' : serverState;
+        const selectorValue = selectorValueFromState(serverState);
         $('status').value = selectorValue;
         state.confirmedStatus = selectorValue;
       }
@@ -183,7 +188,6 @@
     socket.on('connect', () => {
       $('connection').textContent = 'conectado';
       $('connection').classList.add('online');
-      void restoreStatusSelector();
       // Reconexão: o servidor restaura as rooms; o que chegou no intervalo vem pelo REST.
       if (state.current) {
         void openConversation(state.current.id);
@@ -229,11 +233,12 @@
     socket.on('presence:snapshot', ({ states }) => {
       states.forEach((entry) => state.presence.set(entry.userId, entry));
       renderPresence();
+      void restoreStatusSelector();
     });
     socket.on('presence:update', (entry) => {
       if (entry.userId === state.user.id) {
         // Status mudado em outra aba deste usuário.
-        const selectorValue = entry.state === 'online' ? 'available' : entry.state;
+        const selectorValue = selectorValueFromState(entry.state);
         $('status').value = selectorValue;
         state.confirmedStatus = selectorValue;
         return;
