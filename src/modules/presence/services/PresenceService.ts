@@ -1,11 +1,20 @@
-import type { IUserService } from '@/modules/user/interfaces';
+import type { IConversationService } from '@/modules/chat/interfaces';
+import { conversationService } from '@/modules/chat/services/ConversationService';
+import type { IContactService, IUserService } from '@/modules/user/interfaces';
+import { contactService } from '@/modules/user/services/ContactService';
 import { userService } from '@/modules/user/services/UserService';
-import type { RedisCommand } from '@/shared/cache';
+import { cacheService, type ICacheService, type RedisCommand } from '@/shared/cache';
 import { redis } from '@/shared/database/redis';
 import { eventBus, type EventBus } from '@/shared/event-bus';
 import { logger } from '@/shared/logger';
 import { PresenceEvents } from '@/shared/types';
-import { PRESENCE_CONSTANTS, PRESENCE_KEYS, effectiveState, toManualStatus } from '../constants';
+import {
+  PRESENCE_CACHE_KEYS,
+  PRESENCE_CONSTANTS,
+  PRESENCE_KEYS,
+  effectiveState,
+  toManualStatus,
+} from '../constants';
 import type { IPresenceService } from '../interfaces';
 import type {
   ConnectResult,
@@ -14,6 +23,7 @@ import type {
   PresenceConnection,
   PresenceRedisClient,
   PresenceState,
+  PresenceStateDTO,
   PresenceStateEntry,
   SetManualStatusResult,
 } from '../types';
@@ -21,7 +31,10 @@ import type {
 export interface PresenceServiceOptions {
   redis?: PresenceRedisClient;
   users?: Pick<IUserService, 'getMultiple' | 'updateLastSeen'>;
+  contacts?: Pick<IContactService, 'listWatchers' | 'listContactIds' | 'listBlockedEitherIds'>;
+  conversations?: Pick<IConversationService, 'getDirectPartnerIds'>;
   events?: Pick<EventBus, 'publish'>;
+  cache?: Pick<ICacheService, 'getOrLoad'>;
   /** Relógio (ms) injetável nos testes. */
   now?: () => number;
   /** @default PRESENCE_CONSTANTS.TTL_MS */
@@ -30,6 +43,12 @@ export interface PresenceServiceOptions {
   connectionsKeyTtlMs?: number;
   /** @default PRESENCE_CONSTANTS.SWEEP_SCAN_COUNT */
   sweepScanCount?: number;
+}
+
+/** Ids sem repetição, sem o próprio usuário e sem quem tem bloqueio com ele. */
+function withoutBlocked(userId: string, ids: string[], blocked: string[]): string[] {
+  const hidden = new Set([...blocked, userId]);
+  return [...new Set(ids)].filter((id) => !hidden.has(id));
 }
 
 /**
@@ -46,7 +65,13 @@ export interface PresenceServiceOptions {
 export class PresenceService implements IPresenceService {
   private readonly redis: PresenceRedisClient;
   private readonly users: Pick<IUserService, 'getMultiple' | 'updateLastSeen'>;
+  private readonly contacts: Pick<
+    IContactService,
+    'listWatchers' | 'listContactIds' | 'listBlockedEitherIds'
+  >;
+  private readonly conversations: Pick<IConversationService, 'getDirectPartnerIds'>;
   private readonly events: Pick<EventBus, 'publish'>;
+  private readonly cache: Pick<ICacheService, 'getOrLoad'>;
   private readonly now: () => number;
   private readonly ttlMs: number;
   private readonly connectionsKeyTtlMs: number;
@@ -55,7 +80,10 @@ export class PresenceService implements IPresenceService {
   constructor(options: PresenceServiceOptions = {}) {
     this.redis = options.redis ?? redis;
     this.users = options.users ?? userService;
+    this.contacts = options.contacts ?? contactService;
+    this.conversations = options.conversations ?? conversationService;
     this.events = options.events ?? eventBus;
+    this.cache = options.cache ?? cacheService;
     this.now = options.now ?? Date.now;
     this.ttlMs = options.ttlMs ?? PRESENCE_CONSTANTS.TTL_MS;
     this.connectionsKeyTtlMs =
@@ -210,6 +238,42 @@ export class PresenceService implements IPresenceService {
       }
     }
     return wentOffline;
+  }
+
+  async presenceAudience(userId: string): Promise<string[]> {
+    return this.cache.getOrLoad(
+      PRESENCE_CACHE_KEYS.audience(userId),
+      PRESENCE_CONSTANTS.AUDIENCE_CACHE_TTL_SECONDS,
+      async () => {
+        const [watchers, partners, blocked] = await Promise.all([
+          this.contacts.listWatchers(userId),
+          this.conversations.getDirectPartnerIds(userId),
+          this.contacts.listBlockedEitherIds(userId),
+        ]);
+        return withoutBlocked(userId, [...watchers, ...partners], blocked);
+      }
+    );
+  }
+
+  async watchedUserIds(userId: string): Promise<string[]> {
+    const [contactIds, partners, blocked] = await Promise.all([
+      this.contacts.listContactIds(userId),
+      this.conversations.getDirectPartnerIds(userId),
+      this.contacts.listBlockedEitherIds(userId),
+    ]);
+    return withoutBlocked(userId, [...contactIds, ...partners], blocked);
+  }
+
+  async getVisibleStates(viewerId: string, userIds: string[]): Promise<PresenceStateDTO[]> {
+    const unique = [...new Set(userIds)];
+    const blocked = new Set(await this.contacts.listBlockedEitherIds(viewerId));
+    const states = await this.getStates(unique.filter((id) => !blocked.has(id)));
+    return unique.map((userId) => {
+      const entry = states.get(userId);
+      return entry === undefined
+        ? { userId, state: 'offline', lastSeenAt: null }
+        : { userId, ...entry };
+    });
   }
 
   /**

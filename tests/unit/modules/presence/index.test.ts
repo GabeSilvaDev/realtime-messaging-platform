@@ -13,4 +13,8 @@ describe('presence module index', () => {
   it('deve exportar o service e a instância padrão', () => {
     expect(presenceModule.presenceService).toBeInstanceOf(presenceModule.PresenceService);
   });
+
+  it('deve exportar os listeners de invalidação da audiência', () => {
+    expect(presenceModule.registerPresenceCacheListeners).toBeInstanceOf(Function);
+  });
 });

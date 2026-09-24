@@ -3,6 +3,7 @@ import type {
   DisconnectResult,
   ManualPresenceStatus,
   PresenceConnection,
+  PresenceStateDTO,
   PresenceStateEntry,
   SetManualStatusResult,
 } from '../types';
@@ -21,4 +22,10 @@ export interface IPresenceService {
   getStates(userIds: string[]): Promise<Map<string, PresenceStateEntry>>;
   /** Remove conexões vencidas e publica `presence:offline` de quem ficou sem nenhuma. */
   sweep(): Promise<string[]>;
+  /** Quem deve ser notificado das mudanças de `userId` (cacheado). */
+  presenceAudience(userId: string): Promise<string[]>;
+  /** De quem `userId` recebe atualizações: contatos + parceiros 1:1, menos bloqueios. */
+  watchedUserIds(userId: string): Promise<string[]>;
+  /** Estados como `viewerId` os vê: pares bloqueados sempre `offline` sem `lastSeenAt`. */
+  getVisibleStates(viewerId: string, userIds: string[]): Promise<PresenceStateDTO[]>;
 }
