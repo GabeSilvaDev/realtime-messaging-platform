@@ -1,4 +1,5 @@
 import type {
+  BlockResult,
   ContactAttributes,
   ContactCreationAttributes,
   ContactListOptions,
@@ -20,6 +21,8 @@ export interface IContactRepository {
   isBlocked(userId: string, targetId: string): Promise<boolean>;
   isContact(userId: string, contactId: string): Promise<boolean>;
   getStats(userId: string): Promise<ContactStats>;
-  block(userId: string, contactId: string): Promise<ContactAttributes>;
+  block(userId: string, contactId: string): Promise<BlockResult>;
   unblock(userId: string, contactId: string): Promise<boolean>;
+  /** Grava `last_interaction_at` nas linhas de contato dos dois sentidos, se existirem. */
+  touchInteraction(userId: string, otherUserId: string, at: Date): Promise<void>;
 }

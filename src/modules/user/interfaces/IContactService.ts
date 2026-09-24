@@ -33,6 +33,7 @@ export interface IContactService {
   isBlockedByEither(userId: string, targetId: string): Promise<boolean>;
   isContact(userId: string, contactId: string): Promise<boolean>;
   getStats(userId: string): Promise<ContactStats>;
+  recordInteraction(userId: string, otherUserId: string): Promise<void>;
   searchUsers(
     userId: string,
     query: string,

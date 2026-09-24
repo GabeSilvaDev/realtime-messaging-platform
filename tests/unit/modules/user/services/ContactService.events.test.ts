@@ -33,10 +33,9 @@ describe('ContactService — eventos de bloqueio', () => {
     service = new ContactService(contacts, users, events);
   });
 
-  it('deve publicar user:blocked após bloquear', async () => {
+  it('deve publicar user:blocked quando o bloqueio alterou a linha (changed=true)', async () => {
     (users.findById as jest.Mock).mockResolvedValue({ id: 'target-1' });
-    (contacts.isBlocked as jest.Mock).mockResolvedValue(false);
-    (contacts.block as jest.Mock).mockResolvedValue(undefined);
+    (contacts.block as jest.Mock).mockResolvedValue({ contact: {}, changed: true });
 
     await service.blockUser('user-1', 'target-1');
 
@@ -47,13 +46,12 @@ describe('ContactService — eventos de bloqueio', () => {
     });
   });
 
-  it('não deve bloquear novamente nem publicar quando já está bloqueado', async () => {
+  it('não deve publicar quando o repositório informa changed=false (já bloqueado/concorrência)', async () => {
     (users.findById as jest.Mock).mockResolvedValue({ id: 'target-1' });
-    (contacts.isBlocked as jest.Mock).mockResolvedValue(true);
+    (contacts.block as jest.Mock).mockResolvedValue({ contact: {}, changed: false });
 
     await service.blockUser('user-1', 'target-1');
 
-    expect(contacts.block).not.toHaveBeenCalled();
     expect(events.publish).not.toHaveBeenCalled();
   });
 

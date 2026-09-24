@@ -27,6 +27,9 @@ export enum ChatEvents {
   TYPING_STARTED = 'chat:typing-started',
   TYPING_STOPPED = 'chat:typing-stopped',
   CONVERSATION_CREATED = 'chat:conversation-created',
+  CONVERSATION_UPDATED = 'chat:conversation-updated',
+  CONVERSATION_DELETED = 'chat:conversation-deleted',
+  MESSAGE_DELETED = 'chat:message-deleted',
 }
 
 export enum PresenceEvents {

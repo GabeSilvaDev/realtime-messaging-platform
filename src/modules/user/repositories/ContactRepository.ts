@@ -1,8 +1,10 @@
 import User from '@/shared/database/models/User';
-import { Op } from 'sequelize';
+import { escapeLikePattern } from '@/shared/utils/sql';
+import { Op, type Order } from 'sequelize';
 import Contact from '../models/Contact';
 import type { IContactRepository } from '../interfaces';
 import type {
+  BlockResult,
   ContactAttributes,
   ContactCreationAttributes,
   ContactListOptions,
@@ -12,6 +14,23 @@ import type {
 } from '../types';
 
 export type { IContactRepository } from '../interfaces';
+
+/**
+ * `lastInteraction` não é coluna: mapeia para `last_interaction_at` com NULLS LAST (quem nunca
+ * conversou vai para o fim) e desempata pelos contatos mais recentes.
+ */
+function buildContactOrder(
+  orderBy: NonNullable<ContactListOptions['orderBy']>,
+  order: NonNullable<ContactListOptions['order']>
+): Order {
+  if (orderBy === 'lastInteraction') {
+    return [
+      ['lastInteractionAt', `${order} NULLS LAST`],
+      ['createdAt', 'DESC'],
+    ];
+  }
+  return [[orderBy, order]];
+}
 
 export class ContactRepository implements IContactRepository {
   async findById(id: string): Promise<ContactAttributes | null> {
@@ -49,8 +68,8 @@ export class ContactRepository implements IContactRepository {
           filters.search !== undefined && filters.search !== ''
             ? {
                 [Op.or]: [
-                  { username: { [Op.iLike]: `%${filters.search}%` } },
-                  { displayName: { [Op.iLike]: `%${filters.search}%` } },
+                  { username: { [Op.iLike]: `%${escapeLikePattern(filters.search)}%` } },
+                  { displayName: { [Op.iLike]: `%${escapeLikePattern(filters.search)}%` } },
                 ],
               }
             : undefined,
@@ -62,7 +81,7 @@ export class ContactRepository implements IContactRepository {
       include,
       limit: limit + 1,
       offset,
-      order: [[orderBy, order]],
+      order: buildContactOrder(orderBy, order),
     });
 
     const hasMore = rows.length > limit;
@@ -173,7 +192,7 @@ export class ContactRepository implements IContactRepository {
 
   async isContact(userId: string, contactId: string): Promise<boolean> {
     const contact = await Contact.findOne({
-      where: { userId, contactId },
+      where: { userId, contactId, isBlocked: false },
     });
     return contact !== null;
   }
@@ -188,48 +207,75 @@ export class ContactRepository implements IContactRepository {
     return { total, favorites, blocked };
   }
 
-  async block(userId: string, contactId: string): Promise<ContactAttributes> {
+  /**
+   * Bloqueia `contactId` para `userId`. `changed` só é `true` para quem de fato criou a linha
+   * ou a virou de não bloqueada para bloqueada (UPDATE condicional em `is_blocked = false`),
+   * o que evita eventos duplicados quando duas requisições bloqueiam ao mesmo tempo.
+   */
+  async block(userId: string, contactId: string): Promise<BlockResult> {
+    const blockedAt = new Date();
     const [contact, created] = await Contact.findOrCreate({
       where: { userId, contactId },
       defaults: {
         userId,
         contactId,
         isBlocked: true,
-        blockedAt: new Date(),
+        blockedAt,
         createdByBlock: true,
       },
     });
 
-    if (!created && !contact.isBlocked) {
-      await contact.update({
-        isBlocked: true,
-        blockedAt: new Date(),
-      });
+    if (created) {
+      return { contact: contact.toJSON(), changed: true };
     }
 
-    return contact.toJSON();
+    const [affected] = await Contact.update(
+      { isBlocked: true, blockedAt },
+      { where: { id: contact.id, isBlocked: false } }
+    );
+
+    if (affected > 0) {
+      await contact.reload();
+    }
+
+    return { contact: contact.toJSON(), changed: affected > 0 };
   }
 
+  /**
+   * Remove o bloqueio. A linha criada só pelo bloqueio é apagada; um contato pré-existente
+   * volta a não bloqueado. Retorna `true` apenas se esta chamada alterou alguma linha
+   * (contagem de linhas afetadas), o que torna o desbloqueio seguro sob concorrência.
+   */
   async unblock(userId: string, contactId: string): Promise<boolean> {
-    const contact = await Contact.findOne({
-      where: { userId, contactId, isBlocked: true },
+    const destroyed = await Contact.destroy({
+      where: { userId, contactId, isBlocked: true, createdByBlock: true },
     });
 
-    if (!contact) {
-      return false;
-    }
-
-    if (contact.createdByBlock) {
-      await contact.destroy();
+    if (destroyed > 0) {
       return true;
     }
 
-    await contact.update({
-      isBlocked: false,
-      blockedAt: null,
-    });
+    const [affected] = await Contact.update(
+      { isBlocked: false, blockedAt: null },
+      { where: { userId, contactId, isBlocked: true } }
+    );
 
-    return true;
+    return affected > 0;
+  }
+
+  async touchInteraction(userId: string, otherUserId: string, at: Date): Promise<void> {
+    await Contact.update(
+      { lastInteractionAt: at },
+      {
+        where: {
+          [Op.or]: [
+            { userId, contactId: otherUserId },
+            { userId: otherUserId, contactId: userId },
+          ],
+        },
+        silent: true,
+      }
+    );
   }
 }
 

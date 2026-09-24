@@ -1,17 +1,18 @@
 import User from '@/shared/database/models/User';
 import type { UserAttributes, UserStatus } from '@/shared/types';
-import { Op } from 'sequelize';
+import { escapeLikePattern } from '@/shared/utils/sql';
+import { literal, Op } from 'sequelize';
 import type { IUserRepository } from '../interfaces';
 import Contact from '../models/Contact';
 import type { UserSearchOptions, UserSearchResult, UserWithContactInfo } from '../types';
 
 /**
- * Escapa os caracteres especiais do LIKE/ILIKE (`\`, `%`, `_`) para que um termo de busca
- * livre não seja interpretado como padrão de wildcard do SQL.
+ * Subconsulta com os ids bloqueados em qualquer sentido em relação a `:excludeUserId`.
+ * O valor entra por `replacements` (nunca por interpolação de string).
  */
-function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
+const BLOCKED_USER_IDS_SUBQUERY =
+  '(SELECT contact_id FROM contacts WHERE user_id = :excludeUserId AND is_blocked = true ' +
+  'UNION SELECT user_id FROM contacts WHERE contact_id = :excludeUserId AND is_blocked = true)';
 
 export class UserRepository implements IUserRepository {
   async findById(id: string): Promise<UserAttributes | null> {
@@ -89,6 +90,7 @@ export class UserRepository implements IUserRepository {
     }
 
     let contactsMap = new Map<string, Contact>();
+    let replacements: Record<string, string> | undefined;
     if (filters.excludeUserId !== undefined) {
       where.id = { [Op.ne]: filters.excludeUserId };
 
@@ -98,19 +100,11 @@ export class UserRepository implements IUserRepository {
       contactsMap = new Map(contacts.map((c) => [c.contactId, c]));
 
       if (filters.excludeBlocked === true) {
-        const blockedByOthers = await Contact.findAll({
-          where: { contactId: filters.excludeUserId, isBlocked: true },
-          attributes: ['userId'],
-        });
-
-        const blockedIds = [
-          ...contacts.filter((c) => c.isBlocked).map((c) => c.contactId),
-          ...blockedByOthers.map((c) => c.userId),
-        ];
-
-        if (blockedIds.length > 0) {
-          where.id = { ...(where.id as Record<symbol, unknown>), [Op.notIn]: blockedIds };
-        }
+        where.id = {
+          [Op.ne]: filters.excludeUserId,
+          [Op.notIn]: literal(BLOCKED_USER_IDS_SUBQUERY),
+        };
+        replacements = { excludeUserId: filters.excludeUserId };
       }
     }
 
@@ -120,6 +114,7 @@ export class UserRepository implements IUserRepository {
       offset,
       order: [[orderBy, order]],
       attributes: { exclude: ['password'] },
+      ...(replacements !== undefined ? { replacements } : {}),
     });
 
     const hasMore = rows.length > limit;
@@ -129,7 +124,7 @@ export class UserRepository implements IUserRepository {
       const contact = contactsMap.get(user.id);
       return {
         ...user.get(),
-        isContact: !!contact,
+        isContact: contact !== undefined && !contact.isBlocked,
         isBlocked: contact?.isBlocked ?? false,
         isFavorite: contact?.isFavorite ?? false,
         contactNickname: contact?.nickname ?? null,

@@ -32,13 +32,12 @@ describe('Contact Model', () => {
         isBlocked: false,
         isFavorite: true,
         blockedAt: null,
-        createdByBlock: false,
         createdAt: mockDate,
         updatedAt: mockDate,
       });
     });
 
-    it('deve marcar createdByBlock como true quando informado', () => {
+    it('não deve expor o campo interno createdByBlock no toJSON', () => {
       const mockDate = new Date('2026-01-01T00:00:00.000Z');
 
       const contact = Contact.build(
@@ -60,7 +59,8 @@ describe('Contact Model', () => {
 
       const json = contact.toJSON();
 
-      expect(json.createdByBlock).toBe(true);
+      expect(json).not.toHaveProperty('createdByBlock');
+      expect(contact.createdByBlock).toBe(true);
     });
 
     it('deve retornar ContactAttributes com isBlocked true e blockedAt preenchido', () => {
@@ -88,6 +88,28 @@ describe('Contact Model', () => {
       expect(json.isBlocked).toBe(true);
       expect(json.blockedAt).toEqual(blockedDate);
       expect(json.nickname).toBeNull();
+    });
+  });
+
+  describe('atributos', () => {
+    it('deve declarar created_by_block como NOT NULL com default false', () => {
+      const attribute = Contact.getAttributes().createdByBlock;
+
+      expect(attribute.allowNull).toBe(false);
+      expect(attribute.defaultValue).toBe(false);
+      expect(attribute.field).toBe('created_by_block');
+    });
+
+    it('deve declarar last_interaction_at como coluna interna anulável', () => {
+      const contact = Contact.build(
+        { userId: 'user-123', contactId: 'user-456' },
+        { isNewRecord: false }
+      );
+      contact.setDataValue('lastInteractionAt', new Date('2026-09-24T00:00:00.000Z'));
+
+      expect(Contact.getAttributes().lastInteractionAt.field).toBe('last_interaction_at');
+      expect(Contact.getAttributes().lastInteractionAt.allowNull).toBe(true);
+      expect(contact.toJSON()).not.toHaveProperty('lastInteractionAt');
     });
   });
 });

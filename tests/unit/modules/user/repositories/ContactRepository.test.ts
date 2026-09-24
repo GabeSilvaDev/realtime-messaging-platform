@@ -13,6 +13,7 @@ jest.mock('@/modules/user/models/Contact', () => {
       findAndCountAll: jest.fn(),
       findOrCreate: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
       destroy: jest.fn(),
       count: jest.fn(),
     },
@@ -31,6 +32,7 @@ import {
 } from '@/modules/user/repositories/ContactRepository';
 import Contact from '@/modules/user/models/Contact';
 import { UserStatus } from '@/shared/types';
+import { Op } from 'sequelize';
 
 const MockContact = Contact as jest.Mocked<typeof Contact>;
 
@@ -98,6 +100,7 @@ describe('ContactRepository', () => {
         'getStats',
         'block',
         'unblock',
+        'touchInteraction',
       ];
 
       methods.forEach((method) => {
@@ -178,6 +181,46 @@ describe('ContactRepository', () => {
       expect(result.hasMore).toBe(false);
     });
 
+    it('deve ordenar por última interação (NULLS LAST) desempatando por createdAt', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+
+      await repository.findAllByUser('user-123', { orderBy: 'lastInteraction', order: 'DESC' });
+
+      expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: [
+            ['lastInteractionAt', 'DESC NULLS LAST'],
+            ['createdAt', 'DESC'],
+          ],
+        })
+      );
+    });
+
+    it('deve respeitar ASC na ordenação por última interação', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+
+      await repository.findAllByUser('user-123', { orderBy: 'lastInteraction', order: 'ASC' });
+
+      expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: [
+            ['lastInteractionAt', 'ASC NULLS LAST'],
+            ['createdAt', 'DESC'],
+          ],
+        })
+      );
+    });
+
+    it('deve repassar orderBy nickname diretamente', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+
+      await repository.findAllByUser('user-123', { orderBy: 'nickname', order: 'ASC' });
+
+      expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({ order: [['nickname', 'ASC']] })
+      );
+    });
+
     it('deve filtrar por isBlocked', async () => {
       MockContact.findAndCountAll.mockResolvedValue({
         count: 0,
@@ -231,6 +274,21 @@ describe('ContactRepository', () => {
           ]),
         })
       );
+    });
+
+    it('deve escapar % _ e \\ no termo de pesquisa (como o UserRepository)', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+
+      await repository.findAllByUser('user-123', { filters: { search: '50%off_a\\b' } });
+
+      const call = MockContact.findAndCountAll.mock.calls[0]![0] as unknown as {
+        include: [{ where: Record<symbol, unknown> }];
+      };
+      const searchWhere = call.include[0].where[Op.or];
+      expect(searchWhere).toEqual([
+        { username: { [Op.iLike]: '%50\\%off\\_a\\\\b%' } },
+        { displayName: { [Op.iLike]: '%50\\%off\\_a\\\\b%' } },
+      ]);
     });
 
     it('deve retornar hasMore true quando há mais resultados', async () => {
@@ -470,7 +528,7 @@ describe('ContactRepository', () => {
       const result = await repository.isContact('user-123', 'contact-456');
 
       expect(MockContact.findOne).toHaveBeenCalledWith({
-        where: { userId: 'user-123', contactId: 'contact-456' },
+        where: { userId: 'user-123', contactId: 'contact-456', isBlocked: false },
       });
       expect(result).toBe(true);
     });
@@ -505,17 +563,11 @@ describe('ContactRepository', () => {
   });
 
   describe('block', () => {
-    it('deve criar novo contato bloqueado quando não existe', async () => {
+    it('deve criar a linha bloqueada e retornar changed=true quando não existia', async () => {
       const blockedContact = {
         ...mockContactInstance,
         isBlocked: true,
-        blockedAt: new Date(),
-        toJSON: jest.fn().mockReturnValue({
-          ...mockContactInstance,
-          isBlocked: true,
-          blockedAt: new Date(),
-        }),
-        update: jest.fn(),
+        toJSON: jest.fn().mockReturnValue({ ...mockContactInstance, isBlocked: true }),
       };
       MockContact.findOrCreate.mockResolvedValue([blockedContact as any, true]);
 
@@ -531,88 +583,108 @@ describe('ContactRepository', () => {
           createdByBlock: true,
         },
       });
-      expect(result.isBlocked).toBe(true);
+      expect(MockContact.update).not.toHaveBeenCalled();
+      expect(result.changed).toBe(true);
+      expect(result.contact.isBlocked).toBe(true);
     });
 
-    it('deve atualizar contato existente para bloqueado', async () => {
+    it('deve bloquear contato existente via UPDATE condicional e retornar changed=true', async () => {
       const existingContact = {
         ...mockContactInstance,
         isBlocked: false,
-        toJSON: jest.fn().mockReturnValue(mockContactInstance),
-        update: jest.fn(),
+        toJSON: jest.fn().mockReturnValue({ ...mockContactInstance, isBlocked: true }),
+        reload: jest.fn().mockResolvedValue(undefined),
       };
       MockContact.findOrCreate.mockResolvedValue([existingContact as any, false]);
+      MockContact.update.mockResolvedValue([1] as any);
 
-      await repository.block('user-123', 'contact-456');
+      const result = await repository.block('user-123', 'contact-456');
 
-      expect(existingContact.update).toHaveBeenCalledWith({
-        isBlocked: true,
-        blockedAt: expect.any(Date),
-      });
+      expect(MockContact.update).toHaveBeenCalledWith(
+        { isBlocked: true, blockedAt: expect.any(Date) },
+        { where: { id: 'contact-id-1', isBlocked: false } }
+      );
+      expect(existingContact.reload).toHaveBeenCalledTimes(1);
+      expect(result.changed).toBe(true);
     });
 
-    it('não deve atualizar se já está bloqueado', async () => {
-      const alreadyBlockedContact = {
+    it('deve retornar changed=false quando outra requisição já bloqueou (0 linhas afetadas)', async () => {
+      const alreadyBlocked = {
         ...mockContactInstance,
         isBlocked: true,
         toJSON: jest.fn().mockReturnValue({ ...mockContactInstance, isBlocked: true }),
-        update: jest.fn(),
+        reload: jest.fn(),
       };
-      MockContact.findOrCreate.mockResolvedValue([alreadyBlockedContact as any, false]);
+      MockContact.findOrCreate.mockResolvedValue([alreadyBlocked as any, false]);
+      MockContact.update.mockResolvedValue([0] as any);
 
-      await repository.block('user-123', 'contact-456');
+      const result = await repository.block('user-123', 'contact-456');
 
-      expect(alreadyBlockedContact.update).not.toHaveBeenCalled();
+      expect(alreadyBlocked.reload).not.toHaveBeenCalled();
+      expect(result.changed).toBe(false);
     });
   });
 
   describe('unblock', () => {
-    it('deve desbloquear (limpar isBlocked/blockedAt) quando o contato não foi criado pelo bloqueio', async () => {
-      const blockedContact = {
-        ...mockContactInstance,
-        isBlocked: true,
-        createdByBlock: false,
-        update: jest.fn(),
-        destroy: jest.fn(),
-      };
-      MockContact.findOne.mockResolvedValue(blockedContact as any);
+    it('deve apagar a linha criada só pelo bloqueio e retornar true', async () => {
+      MockContact.destroy.mockResolvedValue(1);
 
       const result = await repository.unblock('user-123', 'contact-456');
 
-      expect(MockContact.findOne).toHaveBeenCalledWith({
-        where: { userId: 'user-123', contactId: 'contact-456', isBlocked: true },
+      expect(MockContact.destroy).toHaveBeenCalledWith({
+        where: {
+          userId: 'user-123',
+          contactId: 'contact-456',
+          isBlocked: true,
+          createdByBlock: true,
+        },
       });
-      expect(blockedContact.update).toHaveBeenCalledWith({
-        isBlocked: false,
-        blockedAt: null,
-      });
-      expect(blockedContact.destroy).not.toHaveBeenCalled();
+      expect(MockContact.update).not.toHaveBeenCalled();
       expect(result).toBe(true);
     });
 
-    it('deve remover o registro quando ele só existe por causa do bloqueio (createdByBlock=true)', async () => {
-      const blockedContact = {
-        ...mockContactInstance,
-        isBlocked: true,
-        createdByBlock: true,
-        update: jest.fn(),
-        destroy: jest.fn(),
-      };
-      MockContact.findOne.mockResolvedValue(blockedContact as any);
+    it('deve limpar isBlocked/blockedAt de contato pré-existente via UPDATE condicional', async () => {
+      MockContact.destroy.mockResolvedValue(0);
+      MockContact.update.mockResolvedValue([1] as any);
 
       const result = await repository.unblock('user-123', 'contact-456');
 
-      expect(blockedContact.destroy).toHaveBeenCalledTimes(1);
-      expect(blockedContact.update).not.toHaveBeenCalled();
+      expect(MockContact.update).toHaveBeenCalledWith(
+        { isBlocked: false, blockedAt: null },
+        { where: { userId: 'user-123', contactId: 'contact-456', isBlocked: true } }
+      );
       expect(result).toBe(true);
     });
 
-    it('deve retornar false quando contato não está bloqueado', async () => {
-      MockContact.findOne.mockResolvedValue(null);
+    it('deve retornar false quando nenhuma linha foi alterada (não bloqueado ou concorrência)', async () => {
+      MockContact.destroy.mockResolvedValue(0);
+      MockContact.update.mockResolvedValue([0] as any);
 
       const result = await repository.unblock('user-123', 'contact-456');
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('touchInteraction', () => {
+    it('deve atualizar last_interaction_at nos dois sentidos sem alterar updated_at', async () => {
+      const at = new Date('2026-09-24T10:00:00.000Z');
+      MockContact.update.mockResolvedValue([2] as any);
+
+      await repository.touchInteraction('user-123', 'contact-456', at);
+
+      expect(MockContact.update).toHaveBeenCalledWith(
+        { lastInteractionAt: at },
+        {
+          where: {
+            [Op.or]: [
+              { userId: 'user-123', contactId: 'contact-456' },
+              { userId: 'contact-456', contactId: 'user-123' },
+            ],
+          },
+          silent: true,
+        }
+      );
     });
   });
 });

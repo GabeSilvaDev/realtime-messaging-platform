@@ -1,3 +1,4 @@
+import type { MessageDTO } from '@/modules/chat/types';
 import {
   SystemEvents,
   AuthEvents,
@@ -44,8 +45,20 @@ export interface EventMap {
   [ChatEvents.MESSAGE_SENT]: {
     messageId: string;
     conversationId: string;
+    conversationType: 'direct' | 'group';
     senderId: string;
-    content: string;
+    text: string;
+    mentions: string[];
+    replyTo: string | null;
+    createdAt: Date;
+    participantIds: string[];
+    /** Mesmo DTO devolvido ao cliente REST (ponte Socket.IO). */
+    message: MessageDTO;
+  };
+  [ChatEvents.MESSAGE_DELETED]: {
+    messageId: string;
+    conversationId: string;
+    deletedBy: string;
   };
   [ChatEvents.MESSAGE_DELIVERED]: {
     messageId: string;
@@ -61,7 +74,35 @@ export interface EventMap {
   [ChatEvents.TYPING_STOPPED]: { conversationId: string; userId: string };
   [ChatEvents.CONVERSATION_CREATED]: {
     conversationId: string;
+    type: 'direct' | 'group';
     creatorId: string;
+    participantIds: string[];
+  };
+  /**
+   * `participantIds` inclui todos os afetados: em `members_added`, os participantes após a
+   * mudança; em `member_removed`/`member_left`, os participantes antes da mudança (o removido
+   * ou quem saiu também é notificado).
+   *
+   * `affectedUserIds` traz só quem foi adicionado/removido/saiu (`[]` em `renamed`, útil para a
+   * ponte Socket.IO decidir a quem notificar uma entrada/saída específica). `name` só vem
+   * preenchido em `renamed` (o novo nome).
+   */
+  [ChatEvents.CONVERSATION_UPDATED]: {
+    conversationId: string;
+    change: 'renamed' | 'members_added' | 'member_removed' | 'member_left';
+    actorId: string;
+    participantIds: string[];
+    affectedUserIds: string[];
+    name?: string;
+  };
+  /**
+   * Publicado quando o último membro sai/é removido e a conversa é apagada (nesse caso
+   * `member_left`/`member_removed` NÃO é publicado). `participantIds` traz quem participava
+   * imediatamente antes da remoção (sempre `[actorId]`, já que só há esse caminho para zerar).
+   */
+  [ChatEvents.CONVERSATION_DELETED]: {
+    conversationId: string;
+    actorId: string;
     participantIds: string[];
   };
 

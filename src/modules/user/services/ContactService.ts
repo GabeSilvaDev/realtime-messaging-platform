@@ -13,6 +13,7 @@ import {
 } from '../errors';
 import type {
   AddContactDTO,
+  ContactAttributes,
   ContactListOptions,
   ContactResponseDTO,
   ContactStats,
@@ -76,10 +77,7 @@ export class ContactService implements IContactService {
     contactId: string,
     data: UpdateContactDTO
   ): Promise<ContactResponseDTO> {
-    const contact = await this.contacts.findByUserAndContact(userId, contactId);
-    if (!contact) {
-      throw new ContactNotFoundException();
-    }
+    const contact = await this.findVisibleContact(userId, contactId);
 
     const contactUser = await this.users.findById(contactId);
     if (!contactUser) {
@@ -102,19 +100,13 @@ export class ContactService implements IContactService {
   }
 
   async removeContact(userId: string, contactId: string): Promise<void> {
-    const contact = await this.contacts.findByUserAndContact(userId, contactId);
-    if (!contact) {
-      throw new ContactNotFoundException();
-    }
+    const contact = await this.findVisibleContact(userId, contactId);
 
     await this.contacts.delete(contact.id);
   }
 
   async getContact(userId: string, contactId: string): Promise<ContactResponseDTO> {
-    const contact = await this.contacts.findByUserAndContact(userId, contactId);
-    if (!contact) {
-      throw new ContactNotFoundException();
-    }
+    const contact = await this.findVisibleContact(userId, contactId);
 
     const contactUser = await this.users.findById(contactId);
     if (!contactUser) {
@@ -161,13 +153,10 @@ export class ContactService implements IContactService {
       throw new UserNotFoundException();
     }
 
-    const alreadyBlocked = await this.contacts.isBlocked(userId, targetId);
-    if (alreadyBlocked) {
-      return;
+    const { changed } = await this.contacts.block(userId, targetId);
+    if (changed) {
+      await this.events.publish(UserEvents.BLOCKED, { userId, blockedUserId: targetId });
     }
-
-    await this.contacts.block(userId, targetId);
-    await this.events.publish(UserEvents.BLOCKED, { userId, blockedUserId: targetId });
   }
 
   async unblockUser(userId: string, targetId: string): Promise<void> {
@@ -203,6 +192,10 @@ export class ContactService implements IContactService {
     return this.contacts.getStats(userId);
   }
 
+  async recordInteraction(userId: string, otherUserId: string): Promise<void> {
+    await this.contacts.touchInteraction(userId, otherUserId, new Date());
+  }
+
   async searchUsers(
     userId: string,
     query: string,
@@ -220,6 +213,18 @@ export class ContactService implements IContactService {
     });
 
     return result.users.map((u: UserWithContactInfo): PublicUserDTO => this.toPublicUser(u));
+  }
+
+  /**
+   * Para o usuário, uma linha bloqueada não é um contato: get/update/remove respondem 404.
+   * O desbloqueio acontece apenas por `DELETE /api/blocks/:userId`.
+   */
+  private async findVisibleContact(userId: string, contactId: string): Promise<ContactAttributes> {
+    const contact = await this.contacts.findByUserAndContact(userId, contactId);
+    if (!contact || contact.isBlocked) {
+      throw new ContactNotFoundException();
+    }
+    return contact;
   }
 
   private toPublicUser(user: UserAttributes | UserWithContactInfo): PublicUserDTO {

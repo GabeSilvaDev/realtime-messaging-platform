@@ -64,6 +64,9 @@ describe('Types Index Exports', () => {
       expect(ChatEvents.TYPING_STARTED).toBe('chat:typing-started');
       expect(ChatEvents.TYPING_STOPPED).toBe('chat:typing-stopped');
       expect(ChatEvents.CONVERSATION_CREATED).toBe('chat:conversation-created');
+      expect(ChatEvents.CONVERSATION_UPDATED).toBe('chat:conversation-updated');
+      expect(ChatEvents.CONVERSATION_DELETED).toBe('chat:conversation-deleted');
+      expect(ChatEvents.MESSAGE_DELETED).toBe('chat:message-deleted');
     });
 
     it('should export PresenceEvents enum', () => {

@@ -1,0 +1,196 @@
+import type { IContactService } from '@/modules/user/interfaces';
+import { contactService } from '@/modules/user/services/ContactService';
+import { eventBus, type EventBus } from '@/shared/event-bus';
+import { logger } from '@/shared/logger';
+import { ChatEvents } from '@/shared/types';
+import { CHAT_CONSTANTS } from '../constants';
+import {
+  ConversationBlockedException,
+  ConversationNotFoundException,
+  InvalidMentionsException,
+  MessageNotFoundException,
+  NotMessageAuthorException,
+} from '../errors';
+import type {
+  IConversationRepository,
+  IMessageRepository,
+  IMessageService,
+  IParticipantRepository,
+} from '../interfaces';
+import { conversationRepository, messageRepository, participantRepository } from '../repositories';
+import type {
+  ListMessagesOptions,
+  MessageCursor,
+  MessageDTO,
+  MessageMetadata,
+  MessageRecord,
+  PaginatedMessages,
+  SendMessageDTO,
+} from '../types';
+
+/** Mensagem apagada vira tombstone: mantém id/datas (preserva threads), esconde o conteúdo. */
+function toMessageDTO(record: MessageRecord): MessageDTO {
+  const deleted = record.deletedAt !== null;
+  return {
+    id: record.id,
+    conversationId: record.conversationId,
+    senderId: record.senderId,
+    content: deleted ? null : record.content,
+    replyTo: record.replyTo,
+    mentions: deleted ? [] : record.mentions,
+    deletedAt: record.deletedAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+export class MessageService implements IMessageService {
+  constructor(
+    private readonly messages: IMessageRepository = messageRepository,
+    private readonly conversations: IConversationRepository = conversationRepository,
+    private readonly participants: IParticipantRepository = participantRepository,
+    private readonly contacts: Pick<IContactService, 'isBlockedByEither'> = contactService,
+    private readonly events: Pick<EventBus, 'publish'> = eventBus
+  ) {}
+
+  async send(
+    userId: string,
+    conversationId: string,
+    data: SendMessageDTO,
+    metadata: MessageMetadata
+  ): Promise<MessageDTO> {
+    const members = await this.participants.listByConversation(conversationId);
+    const participantIds = members.map((member) => member.userId);
+    if (!participantIds.includes(userId)) {
+      throw new ConversationNotFoundException();
+    }
+
+    const conversation = await this.conversations.findById(conversationId);
+    if (conversation === null) {
+      throw new ConversationNotFoundException();
+    }
+
+    if (conversation.type === 'direct') {
+      const otherId = participantIds.find((id) => id !== userId);
+      if (otherId !== undefined && (await this.contacts.isBlockedByEither(userId, otherId))) {
+        throw new ConversationBlockedException();
+      }
+    }
+
+    const replyTo = data.replyTo ?? null;
+    if (replyTo !== null) {
+      const original = await this.messages.findById(replyTo);
+      if (original?.conversationId !== conversationId) {
+        throw new MessageNotFoundException('Mensagem respondida não encontrada');
+      }
+    }
+
+    const mentions = [...new Set(data.mentions ?? [])];
+    if (mentions.some((id) => !participantIds.includes(id))) {
+      throw new InvalidMentionsException();
+    }
+
+    const record = await this.messages.create({
+      conversationId,
+      senderId: userId,
+      content: { type: 'text', text: data.text.trim() },
+      replyTo,
+      mentions,
+      metadata,
+    });
+
+    // Best-effort: falha em atualizar last_message_at não deve impedir o envio da mensagem.
+    try {
+      await this.conversations.touchLastMessageAt(conversationId, record.createdAt);
+    } catch (error) {
+      logger.warn('Falha ao atualizar last_message_at da conversa', {
+        conversationId,
+        messageId: record.id,
+        error,
+      });
+    }
+
+    const dto = toMessageDTO(record);
+
+    await this.events.publish(ChatEvents.MESSAGE_SENT, {
+      messageId: record.id,
+      conversationId,
+      conversationType: conversation.type,
+      senderId: userId,
+      text: record.content.text,
+      mentions: record.mentions,
+      replyTo: record.replyTo,
+      createdAt: record.createdAt,
+      participantIds,
+      message: dto,
+    });
+
+    return dto;
+  }
+
+  async list(
+    userId: string,
+    conversationId: string,
+    options: ListMessagesOptions = {}
+  ): Promise<PaginatedMessages> {
+    await this.requireParticipant(conversationId, userId);
+
+    const pageSize = Math.max(
+      1,
+      Math.min(options.limit ?? CHAT_CONSTANTS.MESSAGE_PAGE_SIZE, CHAT_CONSTANTS.MESSAGE_PAGE_SIZE)
+    );
+
+    let before: MessageCursor | undefined;
+    if (options.before !== undefined) {
+      const cursor = await this.messages.findById(options.before);
+      if (cursor?.conversationId !== conversationId) {
+        throw new MessageNotFoundException();
+      }
+      before = { createdAt: cursor.createdAt, id: cursor.id };
+    }
+
+    const records = await this.messages.findByConversation(conversationId, {
+      limit: pageSize,
+      before,
+    });
+
+    // nextCursor = id da última mensagem da página, apenas quando a página veio cheia.
+    const nextCursor =
+      records.length === pageSize
+        ? records.reduce<string | null>((_last, record) => record.id, null)
+        : null;
+
+    return { messages: records.map(toMessageDTO), nextCursor };
+  }
+
+  async delete(userId: string, conversationId: string, messageId: string): Promise<void> {
+    await this.requireParticipant(conversationId, userId);
+
+    const message = await this.messages.findById(messageId);
+    if (message?.conversationId !== conversationId) {
+      throw new MessageNotFoundException();
+    }
+
+    if (message.senderId !== userId) {
+      throw new NotMessageAuthorException();
+    }
+
+    const deleted = await this.messages.softDelete(messageId, new Date());
+    if (deleted) {
+      await this.events.publish(ChatEvents.MESSAGE_DELETED, {
+        messageId,
+        conversationId,
+        deletedBy: userId,
+      });
+    }
+  }
+
+  private async requireParticipant(conversationId: string, userId: string): Promise<void> {
+    const membership = await this.participants.find(conversationId, userId);
+    if (membership === null) {
+      throw new ConversationNotFoundException();
+    }
+  }
+}
+
+export const messageService = new MessageService();

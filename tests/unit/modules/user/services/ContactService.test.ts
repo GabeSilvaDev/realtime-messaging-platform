@@ -19,6 +19,7 @@ jest.mock('@/modules/user/repositories', () => ({
     getStats: jest.fn(),
     block: jest.fn(),
     unblock: jest.fn(),
+    touchInteraction: jest.fn(),
   },
   userRepository: {
     findById: jest.fn(),
@@ -246,7 +247,6 @@ describe('ContactService', () => {
       mockContactRepository.findByUserAndContact.mockResolvedValue({
         ...mockContact,
         isBlocked: true,
-        createdByBlock: true,
       });
 
       await expect(
@@ -355,6 +355,48 @@ describe('ContactService', () => {
     });
   });
 
+  describe('linhas bloqueadas não são contatos', () => {
+    const blockedRow = { ...mockContact, isBlocked: true, blockedAt: new Date() };
+
+    it('getContact deve responder ContactNotFoundException para linha bloqueada', async () => {
+      mockContactRepository.findByUserAndContact.mockResolvedValue(blockedRow);
+
+      await expect(contactService.getContact('user-123', 'contact-456')).rejects.toThrow(
+        ContactNotFoundException
+      );
+      expect(mockUserRepository.findById).not.toHaveBeenCalled();
+    });
+
+    it('updateContact deve responder ContactNotFoundException para linha bloqueada', async () => {
+      mockContactRepository.findByUserAndContact.mockResolvedValue(blockedRow);
+
+      await expect(
+        contactService.updateContact('user-123', 'contact-456', { isFavorite: true })
+      ).rejects.toThrow(ContactNotFoundException);
+      expect(mockContactRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('setFavorite/setNickname herdam o 404 de updateContact', async () => {
+      mockContactRepository.findByUserAndContact.mockResolvedValue(blockedRow);
+
+      await expect(contactService.setFavorite('user-123', 'contact-456', true)).rejects.toThrow(
+        ContactNotFoundException
+      );
+      await expect(contactService.setNickname('user-123', 'contact-456', 'x')).rejects.toThrow(
+        ContactNotFoundException
+      );
+    });
+
+    it('removeContact deve responder ContactNotFoundException e não apagar o bloqueio', async () => {
+      mockContactRepository.findByUserAndContact.mockResolvedValue(blockedRow);
+
+      await expect(contactService.removeContact('user-123', 'contact-456')).rejects.toThrow(
+        ContactNotFoundException
+      );
+      expect(mockContactRepository.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('listContacts', () => {
     it('deve listar contatos com opções padrão', async () => {
       const paginatedContacts = {
@@ -454,12 +496,9 @@ describe('ContactService', () => {
   describe('blockUser', () => {
     it('deve bloquear usuário com sucesso', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
-      mockContactRepository.isBlocked.mockResolvedValue(false);
       mockContactRepository.block.mockResolvedValue({
-        ...mockContact,
-        isBlocked: true,
-        blockedAt: new Date(),
-        createdByBlock: true,
+        contact: { ...mockContact, isBlocked: true, blockedAt: new Date() },
+        changed: true,
       });
 
       await contactService.blockUser('user-123', 'contact-456');
@@ -467,13 +506,15 @@ describe('ContactService', () => {
       expect(mockContactRepository.block).toHaveBeenCalledWith('user-123', 'contact-456');
     });
 
-    it('não deve chamar block nem publicar evento quando já está bloqueado (idempotente)', async () => {
+    it('deve ser idempotente quando já está bloqueado (repositório retorna changed=false)', async () => {
       mockUserRepository.findById.mockResolvedValue(mockContactUser);
-      mockContactRepository.isBlocked.mockResolvedValue(true);
+      mockContactRepository.block.mockResolvedValue({
+        contact: { ...mockContact, isBlocked: true },
+        changed: false,
+      });
 
-      await contactService.blockUser('user-123', 'contact-456');
-
-      expect(mockContactRepository.block).not.toHaveBeenCalled();
+      await expect(contactService.blockUser('user-123', 'contact-456')).resolves.toBeUndefined();
+      expect(mockContactRepository.isBlocked).not.toHaveBeenCalled();
     });
 
     it('deve lançar CannotBlockSelfException ao bloquear a si mesmo', async () => {
@@ -603,6 +644,20 @@ describe('ContactService', () => {
 
       expect(mockContactRepository.getStats).toHaveBeenCalledWith('user-123');
       expect(result).toEqual(stats);
+    });
+  });
+
+  describe('recordInteraction', () => {
+    it('deve registrar a interação com a data atual', async () => {
+      mockContactRepository.touchInteraction.mockResolvedValue(undefined);
+
+      await contactService.recordInteraction('user-123', 'contact-456');
+
+      expect(mockContactRepository.touchInteraction).toHaveBeenCalledWith(
+        'user-123',
+        'contact-456',
+        expect.any(Date)
+      );
     });
   });
 

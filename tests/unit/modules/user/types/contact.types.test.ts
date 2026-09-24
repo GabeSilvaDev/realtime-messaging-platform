@@ -1,6 +1,8 @@
 import {
+  BlockResult,
   ContactAttributes,
   ContactCreationAttributes,
+  ContactModelAttributes,
   ContactWithUser,
   ContactListFilters,
   ContactListOptions,
@@ -20,7 +22,6 @@ describe('contact.types', () => {
         isBlocked: false,
         isFavorite: true,
         blockedAt: null,
-        createdByBlock: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -40,7 +41,6 @@ describe('contact.types', () => {
         isBlocked: false,
         isFavorite: false,
         blockedAt: null,
-        createdByBlock: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -58,14 +58,56 @@ describe('contact.types', () => {
         isBlocked: true,
         isFavorite: false,
         blockedAt,
-        createdByBlock: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
       expect(contact.isBlocked).toBe(true);
       expect(contact.blockedAt).toBe(blockedAt);
-      expect(contact.createdByBlock).toBe(true);
+    });
+  });
+
+  describe('ContactModelAttributes', () => {
+    it('deve estender ContactAttributes com o campo interno createdByBlock', () => {
+      const attrs: ContactModelAttributes = {
+        id: 'contact-123',
+        userId: 'user-123',
+        contactId: 'user-456',
+        nickname: null,
+        isBlocked: true,
+        isFavorite: false,
+        blockedAt: new Date(),
+        createdByBlock: true,
+        lastInteractionAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const publicAttrs: ContactAttributes = attrs;
+
+      expect(attrs.createdByBlock).toBe(true);
+      expect(publicAttrs.id).toBe('contact-123');
+    });
+  });
+
+  describe('BlockResult', () => {
+    it('deve carregar o contato e o indicador changed', () => {
+      const result: BlockResult = {
+        contact: {
+          id: 'contact-123',
+          userId: 'user-123',
+          contactId: 'user-456',
+          nickname: null,
+          isBlocked: true,
+          isFavorite: false,
+          blockedAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        changed: false,
+      };
+
+      expect(result.changed).toBe(false);
+      expect(result.contact.isBlocked).toBe(true);
     });
   });
 
@@ -117,7 +159,6 @@ describe('contact.types', () => {
         isBlocked: false,
         isFavorite: true,
         blockedAt: null,
-        createdByBlock: false,
         createdAt: new Date(),
         updatedAt: new Date(),
         contact: {
@@ -144,7 +185,6 @@ describe('contact.types', () => {
         isBlocked: false,
         isFavorite: false,
         blockedAt: null,
-        createdByBlock: false,
         createdAt: new Date(),
         updatedAt: new Date(),
         contact: {
@@ -244,7 +284,6 @@ describe('contact.types', () => {
             isBlocked: false,
             isFavorite: true,
             blockedAt: null,
-            createdByBlock: false,
             createdAt: new Date(),
             updatedAt: new Date(),
             contact: {
