@@ -37,6 +37,8 @@ import { userRepository } from '@/modules/user/repositories';
 import { PasswordService } from '@/modules/auth/services/PasswordService';
 import { UserStatus } from '@/shared/types';
 import { HttpStatus, ErrorCode } from '@/shared/errors';
+import { CacheService } from '@/shared/cache';
+import { FakeRedis } from '../../../../support/redis/fakeRedis';
 
 const mockUserRepository = userRepository as jest.Mocked<typeof userRepository>;
 const MockPasswordService = PasswordService as jest.MockedClass<typeof PasswordService>;
@@ -44,6 +46,7 @@ const MockPasswordService = PasswordService as jest.MockedClass<typeof PasswordS
 describe('UserService', () => {
   let userService: UserService;
   let mockPasswordService: jest.Mocked<PasswordService>;
+  let redis: FakeRedis;
 
   const mockUser = {
     id: 'user-123',
@@ -65,7 +68,8 @@ describe('UserService', () => {
       compare: jest.fn(),
     } as unknown as jest.Mocked<PasswordService>;
     MockPasswordService.mockImplementation(() => mockPasswordService);
-    userService = new UserService(mockUserRepository, mockPasswordService);
+    redis = new FakeRedis();
+    userService = new UserService(mockUserRepository, mockPasswordService, new CacheService(redis));
   });
 
   describe('UserNotFoundException', () => {
@@ -152,7 +156,7 @@ describe('UserService', () => {
 
   describe('findByIdPublic', () => {
     it('deve retornar dados públicos do usuário quando encontrado', async () => {
-      mockUserRepository.findById.mockResolvedValue(mockUser);
+      mockUserRepository.findByIds.mockResolvedValue([mockUser]);
 
       const result = await userService.findByIdPublic('user-123');
 
@@ -169,7 +173,7 @@ describe('UserService', () => {
     });
 
     it('deve lançar UserNotFoundException quando usuário não encontrado', async () => {
-      mockUserRepository.findById.mockResolvedValue(null);
+      mockUserRepository.findByIds.mockResolvedValue([]);
 
       await expect(userService.findByIdPublic('nonexistent')).rejects.toThrow(
         UserNotFoundException
@@ -478,12 +482,21 @@ describe('UserService', () => {
   });
 
   describe('updateLastSeen', () => {
-    it('deve atualizar lastSeenAt do usuário', async () => {
+    it('deve atualizar lastSeenAt do usuário (agora, por padrão)', async () => {
       mockUserRepository.updateLastSeen.mockResolvedValue();
 
       await userService.updateLastSeen('user-123');
 
-      expect(mockUserRepository.updateLastSeen).toHaveBeenCalledWith('user-123');
+      expect(mockUserRepository.updateLastSeen).toHaveBeenCalledWith('user-123', expect.any(Date));
+    });
+
+    it('deve gravar o instante informado', async () => {
+      const at = new Date('2026-09-26T12:00:00.000Z');
+      mockUserRepository.updateLastSeen.mockResolvedValue();
+
+      await userService.updateLastSeen('user-123', at);
+
+      expect(mockUserRepository.updateLastSeen).toHaveBeenCalledWith('user-123', at);
     });
   });
 
@@ -516,6 +529,62 @@ describe('UserService', () => {
       const result = await userService.getMultiple([]);
 
       expect(result).toEqual([]);
+      expect(mockUserRepository.findByIds).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cache do perfil público (cache:user:<id>)', () => {
+    const other = { ...mockUser, id: 'user-456', username: 'user2', lastSeenAt: null };
+
+    it('a segunda leitura não vai ao Postgres e devolve lastSeenAt como Date', async () => {
+      mockUserRepository.findByIds.mockResolvedValue([mockUser, other]);
+
+      const first = await userService.getMultiple(['user-123', 'user-456']);
+      const second = await userService.getMultiple(['user-456', 'user-123']);
+
+      expect(mockUserRepository.findByIds).toHaveBeenCalledTimes(1);
+      expect(second.map((u) => u.id)).toEqual(['user-456', 'user-123']);
+      expect(second[1]).toEqual(first[0]);
+      expect(second[1]?.lastSeenAt).toBeInstanceOf(Date);
+      expect(second[0]?.lastSeenAt).toBeNull();
+      expect(await redis.ttl('cache:user:user-123')).toBe(300);
+    });
+
+    it('busca só os ausentes, sem repetir ids, e omite quem não existe', async () => {
+      mockUserRepository.findByIds.mockResolvedValueOnce([mockUser]).mockResolvedValueOnce([other]);
+      await userService.getMultiple(['user-123']);
+
+      const result = await userService.getMultiple(['user-456', 'user-123', 'user-456', 'ghost']);
+
+      expect(mockUserRepository.findByIds).toHaveBeenLastCalledWith(['user-456', 'ghost']);
+      expect(result.map((u) => u.id)).toEqual(['user-456', 'user-123']);
+    });
+
+    it('findByIdPublic usa o mesmo cache', async () => {
+      mockUserRepository.findByIds.mockResolvedValue([mockUser]);
+
+      await userService.findByIdPublic('user-123');
+      await userService.findByIdPublic('user-123');
+
+      expect(mockUserRepository.findByIds).toHaveBeenCalledTimes(1);
+      expect(mockUserRepository.findById).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['updateLastSeen', (service: UserService) => service.updateLastSeen('user-123')],
+      ['updateStatus', (service: UserService) => service.updateStatus('user-123', UserStatus.AWAY)],
+      ['update', (service: UserService) => service.update('user-123', { displayName: 'Novo' })],
+      ['delete', (service: UserService) => service.delete('user-123')],
+    ])('%s invalida o perfil cacheado', async (_name, write) => {
+      mockUserRepository.findByIds.mockResolvedValue([mockUser]);
+      mockUserRepository.findById.mockResolvedValue(mockUser);
+      mockUserRepository.update.mockResolvedValue(mockUser);
+      mockUserRepository.delete.mockResolvedValue(true);
+      await userService.getMultiple(['user-123']);
+
+      await write(userService);
+
+      expect(await redis.get('cache:user:user-123')).toBeNull();
     });
   });
 });

@@ -565,6 +565,18 @@ describe('UserRepository', () => {
         { where: { id: 'user-123' } }
       );
     });
+
+    it('deve gravar o instante informado', async () => {
+      const at = new Date('2026-09-26T12:00:00.000Z');
+      MockUser.update.mockResolvedValue([1]);
+
+      await repository.updateLastSeen('user-123', at);
+
+      expect(MockUser.update).toHaveBeenCalledWith(
+        { lastSeenAt: at },
+        { where: { id: 'user-123' } }
+      );
+    });
   });
 
   describe('updateStatus', () => {

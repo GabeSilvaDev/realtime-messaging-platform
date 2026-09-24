@@ -16,6 +16,6 @@ export interface IUserRepository {
   updatePassword(userId: string, password: string): Promise<void>;
   delete(id: string): Promise<boolean>;
   search(options: UserSearchOptions): Promise<UserSearchResult>;
-  updateLastSeen(userId: string): Promise<void>;
+  updateLastSeen(userId: string, at?: Date): Promise<void>;
   updateStatus(userId: string, status: UserStatus): Promise<void>;
 }
