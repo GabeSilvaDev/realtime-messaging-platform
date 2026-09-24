@@ -78,6 +78,7 @@ describe('contact.types', () => {
         isFavorite: false,
         blockedAt: new Date(),
         createdByBlock: true,
+        lastInteractionAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

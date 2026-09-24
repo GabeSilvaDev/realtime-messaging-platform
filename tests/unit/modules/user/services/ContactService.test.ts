@@ -19,6 +19,7 @@ jest.mock('@/modules/user/repositories', () => ({
     getStats: jest.fn(),
     block: jest.fn(),
     unblock: jest.fn(),
+    touchInteraction: jest.fn(),
   },
   userRepository: {
     findById: jest.fn(),
@@ -643,6 +644,20 @@ describe('ContactService', () => {
 
       expect(mockContactRepository.getStats).toHaveBeenCalledWith('user-123');
       expect(result).toEqual(stats);
+    });
+  });
+
+  describe('recordInteraction', () => {
+    it('deve registrar a interação com a data atual', async () => {
+      mockContactRepository.touchInteraction.mockResolvedValue(undefined);
+
+      await contactService.recordInteraction('user-123', 'contact-456');
+
+      expect(mockContactRepository.touchInteraction).toHaveBeenCalledWith(
+        'user-123',
+        'contact-456',
+        expect.any(Date)
+      );
     });
   });
 

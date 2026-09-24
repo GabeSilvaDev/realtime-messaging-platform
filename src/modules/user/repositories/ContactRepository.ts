@@ -1,5 +1,5 @@
 import User from '@/shared/database/models/User';
-import { Op } from 'sequelize';
+import { Op, type Order } from 'sequelize';
 import Contact from '../models/Contact';
 import type { IContactRepository } from '../interfaces';
 import type {
@@ -13,6 +13,23 @@ import type {
 } from '../types';
 
 export type { IContactRepository } from '../interfaces';
+
+/**
+ * `lastInteraction` não é coluna: mapeia para `last_interaction_at` com NULLS LAST (quem nunca
+ * conversou vai para o fim) e desempata pelos contatos mais recentes.
+ */
+function buildContactOrder(
+  orderBy: NonNullable<ContactListOptions['orderBy']>,
+  order: NonNullable<ContactListOptions['order']>
+): Order {
+  if (orderBy === 'lastInteraction') {
+    return [
+      ['lastInteractionAt', `${order} NULLS LAST`],
+      ['createdAt', 'DESC'],
+    ];
+  }
+  return [[orderBy, order]];
+}
 
 export class ContactRepository implements IContactRepository {
   async findById(id: string): Promise<ContactAttributes | null> {
@@ -63,7 +80,7 @@ export class ContactRepository implements IContactRepository {
       include,
       limit: limit + 1,
       offset,
-      order: [[orderBy, order]],
+      order: buildContactOrder(orderBy, order),
     });
 
     const hasMore = rows.length > limit;
@@ -243,6 +260,21 @@ export class ContactRepository implements IContactRepository {
     );
 
     return affected > 0;
+  }
+
+  async touchInteraction(userId: string, otherUserId: string, at: Date): Promise<void> {
+    await Contact.update(
+      { lastInteractionAt: at },
+      {
+        where: {
+          [Op.or]: [
+            { userId, contactId: otherUserId },
+            { userId: otherUserId, contactId: userId },
+          ],
+        },
+        silent: true,
+      }
+    );
   }
 }
 

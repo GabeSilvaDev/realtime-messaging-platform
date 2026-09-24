@@ -192,6 +192,10 @@ export class ContactService implements IContactService {
     return this.contacts.getStats(userId);
   }
 
+  async recordInteraction(userId: string, otherUserId: string): Promise<void> {
+    await this.contacts.touchInteraction(userId, otherUserId, new Date());
+  }
+
   async searchUsers(
     userId: string,
     query: string,

@@ -99,5 +99,17 @@ describe('Contact Model', () => {
       expect(attribute.defaultValue).toBe(false);
       expect(attribute.field).toBe('created_by_block');
     });
+
+    it('deve declarar last_interaction_at como coluna interna anulável', () => {
+      const contact = Contact.build(
+        { userId: 'user-123', contactId: 'user-456' },
+        { isNewRecord: false }
+      );
+      contact.setDataValue('lastInteractionAt', new Date('2026-09-24T00:00:00.000Z'));
+
+      expect(Contact.getAttributes().lastInteractionAt.field).toBe('last_interaction_at');
+      expect(Contact.getAttributes().lastInteractionAt.allowNull).toBe(true);
+      expect(contact.toJSON()).not.toHaveProperty('lastInteractionAt');
+    });
   });
 });

@@ -22,6 +22,7 @@ class Contact
   declare isFavorite: boolean;
   declare blockedAt: Date | null;
   declare createdByBlock: boolean;
+  declare lastInteractionAt: Date | null;
   declare createdAt: Date;
   declare updatedAt: Date;
 
@@ -94,6 +95,11 @@ Contact.init(
       allowNull: false,
       defaultValue: false,
       field: 'created_by_block',
+    },
+    lastInteractionAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: 'last_interaction_at',
     },
     createdAt: {
       type: DataTypes.DATE,

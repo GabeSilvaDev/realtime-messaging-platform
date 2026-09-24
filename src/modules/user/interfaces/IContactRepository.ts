@@ -23,4 +23,6 @@ export interface IContactRepository {
   getStats(userId: string): Promise<ContactStats>;
   block(userId: string, contactId: string): Promise<BlockResult>;
   unblock(userId: string, contactId: string): Promise<boolean>;
+  /** Grava `last_interaction_at` nas linhas de contato dos dois sentidos, se existirem. */
+  touchInteraction(userId: string, otherUserId: string, at: Date): Promise<void>;
 }

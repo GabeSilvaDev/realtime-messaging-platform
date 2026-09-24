@@ -16,6 +16,7 @@ export interface ContactAttributes {
  */
 export interface ContactModelAttributes extends ContactAttributes {
   createdByBlock: boolean;
+  lastInteractionAt: Date | null;
 }
 
 export interface ContactCreationAttributes {

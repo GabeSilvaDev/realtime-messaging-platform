@@ -32,6 +32,7 @@ import {
 } from '@/modules/user/repositories/ContactRepository';
 import Contact from '@/modules/user/models/Contact';
 import { UserStatus } from '@/shared/types';
+import { Op } from 'sequelize';
 
 const MockContact = Contact as jest.Mocked<typeof Contact>;
 
@@ -99,6 +100,7 @@ describe('ContactRepository', () => {
         'getStats',
         'block',
         'unblock',
+        'touchInteraction',
       ];
 
       methods.forEach((method) => {
@@ -177,6 +179,46 @@ describe('ContactRepository', () => {
       expect(result.limit).toBe(50);
       expect(result.offset).toBe(0);
       expect(result.hasMore).toBe(false);
+    });
+
+    it('deve ordenar por última interação (NULLS LAST) desempatando por createdAt', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+
+      await repository.findAllByUser('user-123', { orderBy: 'lastInteraction', order: 'DESC' });
+
+      expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: [
+            ['lastInteractionAt', 'DESC NULLS LAST'],
+            ['createdAt', 'DESC'],
+          ],
+        })
+      );
+    });
+
+    it('deve respeitar ASC na ordenação por última interação', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+
+      await repository.findAllByUser('user-123', { orderBy: 'lastInteraction', order: 'ASC' });
+
+      expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: [
+            ['lastInteractionAt', 'ASC NULLS LAST'],
+            ['createdAt', 'DESC'],
+          ],
+        })
+      );
+    });
+
+    it('deve repassar orderBy nickname diretamente', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+
+      await repository.findAllByUser('user-123', { orderBy: 'nickname', order: 'ASC' });
+
+      expect(MockContact.findAndCountAll).toHaveBeenCalledWith(
+        expect.objectContaining({ order: [['nickname', 'ASC']] })
+      );
     });
 
     it('deve filtrar por isBlocked', async () => {
@@ -606,6 +648,28 @@ describe('ContactRepository', () => {
       const result = await repository.unblock('user-123', 'contact-456');
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('touchInteraction', () => {
+    it('deve atualizar last_interaction_at nos dois sentidos sem alterar updated_at', async () => {
+      const at = new Date('2026-09-24T10:00:00.000Z');
+      MockContact.update.mockResolvedValue([2] as any);
+
+      await repository.touchInteraction('user-123', 'contact-456', at);
+
+      expect(MockContact.update).toHaveBeenCalledWith(
+        { lastInteractionAt: at },
+        {
+          where: {
+            [Op.or]: [
+              { userId: 'user-123', contactId: 'contact-456' },
+              { userId: 'contact-456', contactId: 'user-123' },
+            ],
+          },
+          silent: true,
+        }
+      );
     });
   });
 });
