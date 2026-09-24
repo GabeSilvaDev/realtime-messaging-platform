@@ -3,6 +3,7 @@ jest.mock('@/modules/auth/services/AuthService', () => ({ authService: {} }));
 import {
   createSocketAuthMiddleware,
   extractHandshakeToken,
+  resolveHandshakeIp,
 } from '@/modules/realtime/middlewares/socketAuth';
 import { createFakeSocket, type FakeSocket } from '../../../../support/realtime/fakeSocket';
 
@@ -96,6 +97,10 @@ describe('socketAuth', () => {
         createSocketAuthMiddleware(auth, { trustProxy: () => true })(socket.asSocket(), next);
 
         expect(socket.data.ip).toBe('203.0.113.7');
+      });
+
+      it('resolveHandshakeIp sem fn de confiança: padrão do Express (não confia em proxy)', () => {
+        expect(resolveHandshakeIp(socket.asSocket().handshake)).toBe('127.0.0.1');
       });
 
       it('com número de hops (TRUST_PROXY=1): para no primeiro endereço não confiável', () => {

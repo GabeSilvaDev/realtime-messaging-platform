@@ -24,6 +24,7 @@ describe('realtime module index', () => {
     expect(typeof realtime.registerMessageHandlers).toBe('function');
     expect(typeof realtime.registerTypingHandlers).toBe('function');
     expect(typeof realtime.registerSessionExpiry).toBe('function');
+    expect(realtime.MAX_TIMER_DELAY_MS).toBe(2_147_483_647);
     expect(typeof realtime.registerRealtimeListeners).toBe('function');
     expect(typeof realtime.createRealtimeServer).toBe('function');
     expect(typeof realtime.shouldUseRedisAdapter).toBe('function');
