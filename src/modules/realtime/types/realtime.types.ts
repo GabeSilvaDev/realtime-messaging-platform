@@ -1,4 +1,4 @@
-import type { Server, Socket } from 'socket.io';
+import type { ExtendedError, Server, Socket } from 'socket.io';
 import type { ConversationChange, ConversationType, MessageDTO } from '@/modules/chat/types';
 
 /** Dados do socket preenchidos pelo middleware de autenticação do handshake. */
@@ -111,3 +111,9 @@ export type RealtimeSocket = Socket<
   InterServerEvents,
   SocketData
 >;
+
+/** Middleware do handshake (`io.use`): `next(error)` recusa a conexão com `connect_error`. */
+export type SocketMiddleware = (
+  socket: RealtimeSocket,
+  next: (error?: ExtendedError) => void
+) => void;

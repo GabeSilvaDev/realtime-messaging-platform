@@ -17,4 +17,5 @@ export type {
   ConversationDeletedPayload,
   RealtimeServer,
   RealtimeSocket,
+  SocketMiddleware,
 } from './realtime.types';
