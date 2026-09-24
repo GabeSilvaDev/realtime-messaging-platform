@@ -35,6 +35,11 @@ export interface EventMap {
   [AuthEvents.REGISTER]: { userId: string; email: string };
   [AuthEvents.PASSWORD_RESET_REQUESTED]: { userId: string; email: string };
   [AuthEvents.PASSWORD_RESET_COMPLETED]: { userId: string };
+  /**
+   * Sessões do usuário revogadas (troca/reset de senha, revogação de sessões): o realtime derruba
+   * todos os sockets dele; o cliente precisa se autenticar de novo.
+   */
+  [AuthEvents.SESSIONS_REVOKED]: { userId: string };
 
   [UserEvents.CREATED]: { userId: string; email: string };
   [UserEvents.UPDATED]: { userId: string; fields: string[] };

@@ -17,6 +17,7 @@ import {
 import { TypingService } from '@/modules/realtime/services/TypingService';
 import { EventBus } from '@/shared/event-bus/EventBus';
 import { getLogger, initLogger, LogCategory, LogLevel } from '@/shared/logger';
+import { AuthEvents } from '@/shared/types';
 
 const mockCreateAdapter = createAdapter as jest.Mock;
 const USER_A = '11111111-1111-4111-8111-111111111111';
@@ -312,6 +313,22 @@ describe('createRealtimeServer', () => {
       });
 
       expect(reason).toBe('io server disconnect');
+    });
+
+    it('sessões revogadas (SESSIONS_REVOKED) derrubam o socket conectado', async () => {
+      const socket = client('good');
+      await new Promise<void>((resolve) => {
+        socket.on('connect', () => {
+          resolve();
+        });
+      });
+      const disconnected = new Promise<string>((resolve) => {
+        socket.on('disconnect', resolve);
+      });
+
+      await bus.publish(AuthEvents.SESSIONS_REVOKED, { userId: USER_A });
+
+      await expect(disconnected).resolves.toBe('io server disconnect');
     });
 
     it('close cancela a ponte do EventBus', async () => {

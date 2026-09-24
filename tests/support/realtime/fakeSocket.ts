@@ -78,6 +78,8 @@ export interface FakeServer {
   /** Chamadas `io.in(room).socketsJoin(target)` e `socketsLeave`: `[room, target]`. */
   joins: [string, string][];
   leaves: [string, string][];
+  /** Rooms cujos sockets foram derrubados com `io.in(room).disconnectSockets(close)`. */
+  disconnects: [string, boolean][];
   to: jest.Mock;
   in: jest.Mock;
   asServer(): RealtimeServer;
@@ -87,10 +89,12 @@ export function createFakeServer(): FakeServer {
   const emits: [string[], string, unknown][] = [];
   const joins: [string, string][] = [];
   const leaves: [string, string][] = [];
+  const disconnects: [string, boolean][] = [];
   const server: FakeServer = {
     emits,
     joins,
     leaves,
+    disconnects,
     to: jest.fn((rooms: string | string[]) => ({
       emit: (event: string, payload: unknown) => {
         emits.push([Array.isArray(rooms) ? rooms : [rooms], event, payload]);
@@ -103,6 +107,9 @@ export function createFakeServer(): FakeServer {
       },
       socketsLeave: (target: string) => {
         leaves.push([room, target]);
+      },
+      disconnectSockets: (close = false) => {
+        disconnects.push([room, close]);
       },
     })),
     asServer: () => server as unknown as RealtimeServer,

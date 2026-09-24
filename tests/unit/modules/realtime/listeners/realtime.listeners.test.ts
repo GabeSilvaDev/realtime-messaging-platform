@@ -1,6 +1,6 @@
 import { registerRealtimeListeners } from '@/modules/realtime/listeners';
 import { EventBus } from '@/shared/event-bus/EventBus';
-import { ChatEvents, type MessageDTO } from '@/shared/types';
+import { AuthEvents, ChatEvents, type MessageDTO } from '@/shared/types';
 import { createFakeServer, type FakeServer } from '../../../../support/realtime/fakeSocket';
 
 const USER_A = '11111111-1111-4111-8111-111111111111';
@@ -253,5 +253,13 @@ describe('registerRealtimeListeners (ponte EventBus → Socket.IO)', () => {
 
     expect(typeof unregister).toBe('function');
     unregister();
+  });
+
+  it('SESSIONS_REVOKED → derruba (close) todos os sockets do usuário, em todas as instâncias', async () => {
+    await bus.publish(AuthEvents.SESSIONS_REVOKED, { userId: USER_A });
+
+    expect(io.in).toHaveBeenCalledWith(`user:${USER_A}`);
+    expect(io.disconnects).toEqual([[`user:${USER_A}`, true]]);
+    expect(io.emits).toEqual([]);
   });
 });

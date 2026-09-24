@@ -47,6 +47,7 @@ describe('Types Index Exports', () => {
       expect(AuthEvents.REGISTER).toBe('auth:register');
       expect(AuthEvents.PASSWORD_RESET_REQUESTED).toBe('auth:password-reset-requested');
       expect(AuthEvents.PASSWORD_RESET_COMPLETED).toBe('auth:password-reset-completed');
+      expect(AuthEvents.SESSIONS_REVOKED).toBe('auth:sessions-revoked');
     });
 
     it('should export UserEvents enum', () => {

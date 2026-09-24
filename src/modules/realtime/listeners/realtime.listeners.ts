@@ -1,5 +1,5 @@
 import { eventBus, type EventBus } from '@/shared/event-bus';
-import { ChatEvents } from '@/shared/types';
+import { AuthEvents, ChatEvents } from '@/shared/types';
 import { SERVER_EVENTS, conversationRoom, userRoom } from '../constants';
 import type { RealtimeServer } from '../types';
 
@@ -11,6 +11,9 @@ import type { RealtimeServer } from '../types';
  * (`socketsJoin`/`socketsLeave` via room `user:<id>`, válido entre instâncias com o Redis
  * adapter). Avisos que dependem dessa mudança vão também para as rooms `user:<id>` dos
  * afetados — o Socket.IO não duplica a entrega a quem está nas duas rooms.
+ *
+ * Sessões revogadas (`auth:sessions-revoked`) derrubam todos os sockets do usuário
+ * (`disconnectSockets(true)` na room `user:<id>`, também entre instâncias).
  */
 export function registerRealtimeListeners(
   io: Pick<RealtimeServer, 'to' | 'in'>,
@@ -95,6 +98,10 @@ export function registerRealtimeListeners(
         { conversationId: payload.conversationId }
       );
       io.in(room).socketsLeave(room);
+    }),
+
+    bus.subscribe(AuthEvents.SESSIONS_REVOKED, ({ payload }) => {
+      io.in(userRoom(payload.userId)).disconnectSockets(true);
     }),
   ];
 
