@@ -13,7 +13,11 @@ import {
 const env: Environment = (process.env.NODE_ENV as Environment | undefined) ?? 'development';
 const isProduction = env === 'production';
 
-export function createCorsMiddleware(config: CorsConfig = {}): RequestHandler {
+/**
+ * Opções do pacote `cors` com a política do projeto (`ALLOWED_ORIGINS` em produção, qualquer
+ * origem fora dela). Reusadas pelo Socket.IO para que HTTP e WebSocket sigam a mesma política.
+ */
+export function buildCorsOptions(config: CorsConfig = {}): CorsOptions {
   const logger = getLogger().child('CORS');
   logger.setCategory(LogCategory.HTTP);
 
@@ -59,7 +63,11 @@ export function createCorsMiddleware(config: CorsConfig = {}): RequestHandler {
     optionsSuccessStatus: 204,
   };
 
-  return cors(corsOptions);
+  return corsOptions;
+}
+
+export function createCorsMiddleware(config: CorsConfig = {}): RequestHandler {
+  return cors(buildCorsOptions(config));
 }
 
 let _corsMiddleware: RequestHandler | null = null;
