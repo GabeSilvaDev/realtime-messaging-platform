@@ -334,13 +334,14 @@ describe('Chat — Feature', () => {
     });
 
     it('promoção de admin usa id como tie-break em membros com mesmo joined_at', async () => {
-      // ANA cria grupo, BOB e CAROL adicionados juntos (mesmo joinedAt).
-      // BOB é adicionado primeiro, então sua participant ID é menor;
-      // quando ANA sai, BOB (menor ID) é promovido a admin.
+      // ANA cria grupo, CAROL e BOB adicionados juntos (mesmo joinedAt).
+      // IDs gerados com descending counter: ANA → 0xff, CAROL → 0xfe, BOB → 0xfd.
+      // BOB tem menor ID lexicograficamente apesar de inserido depois;
+      // quando ANA sai, BOB (menor participant ID) é promovido a admin.
       const created = await request(app)
         .post('/api/conversations/group')
         .set(as(ANA))
-        .send({ name: 'TieBreak', participantIds: [BOB, CAROL] });
+        .send({ name: 'TieBreak', participantIds: [CAROL, BOB] });
       expect(created.status).toBe(HttpStatus.CREATED);
       const groupId = created.body.data.id as string;
 
@@ -348,7 +349,7 @@ describe('Chat — Feature', () => {
       const left = await request(app).post(`/api/conversations/${groupId}/leave`).set(as(ANA));
       expect(left.status).toBe(HttpStatus.NO_CONTENT);
 
-      // Verificar que BOB foi promovido a admin (menor participant ID: adicionado primeiro)
+      // Verificar que BOB foi promovido a admin (menor participant ID, apesar de inserido por último)
       const bobView = await request(app).get(`/api/conversations/${groupId}`).set(as(BOB));
       expect(bobView.status).toBe(HttpStatus.OK);
       expect(bobView.body.data.membership.role).toBe('admin');

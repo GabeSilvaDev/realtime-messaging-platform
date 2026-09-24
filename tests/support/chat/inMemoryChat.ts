@@ -47,11 +47,12 @@ export class InMemoryChatStore {
     role: ParticipantRole,
     joinedAt?: Date
   ): void {
-    // Gera ID determinístico para testes: formato "00000000-0000-4000-8000-000000XXXXXX"
-    // onde XXXXXX é o contador zero-padded de 12 dígitos hex.
-    const counter = this.participantIdCounter++;
-    const counterHex = counter.toString(16).padStart(12, '0');
-    const deterministic = `00000000-0000-4000-8000-${counterHex}`;
+    // Gera ID determinístico mas independente de ordem de inserção.
+    // Usa descending counter: primeiro participante → 0xff, segundo → 0xfe, etc.
+    // Garante que participantes inseridos depois podem ter IDs menores lexicograficamente.
+    const counter = 0xff - this.participantIdCounter++;
+    const counterHex = counter.toString(16).padStart(2, '0');
+    const deterministic = `00000000-0000-4000-8000-0000000000${counterHex}`;
     this.participants.push({
       id: deterministic,
       conversationId,
