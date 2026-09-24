@@ -230,6 +230,16 @@ describe('app', () => {
       expect(styles.status).toBe(200);
     });
 
+    it('o cliente demo tem a busca de mensagens, com innerHTML só no highlight escapado', async () => {
+      const page = await request(app).get('/demo/');
+      const script = await request(app).get('/demo/app.js');
+
+      expect(page.text).toContain('id="message-search-form"');
+      expect(page.text).toContain('id="message-search-results"');
+      expect(script.text).toContain('/search/messages?q=');
+      expect(script.text.match(/\.innerHTML\s*=/g)).toHaveLength(1);
+    });
+
     it('retorna 404 em formato JSON (notFoundHandler + errorHandler) para rota desconhecida', async () => {
       const response = await request(app).get('/rota-que-nao-existe');
 

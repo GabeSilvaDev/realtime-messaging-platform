@@ -19,6 +19,17 @@
           <option value="busy">Ocupado</option>
         </select>
       </label>
+      <form id="message-search-form" role="search" hidden>
+        <input
+          name="q"
+          type="search"
+          placeholder="Buscar mensagens"
+          aria-label="Buscar mensagens"
+          maxlength="200"
+          required
+        />
+        <button type="submit">Buscar</button>
+      </form>
       <button id="logout" type="button" hidden>Sair</button>
     </header>
 
@@ -36,6 +47,14 @@
 
     <main id="chat-view" hidden>
       <aside>
+        <section id="message-search" hidden>
+          <h2>
+            Resultados da busca
+            <button id="message-search-close" type="button" class="link">fechar</button>
+          </h2>
+          <p id="message-search-summary" class="search-meta"></p>
+          <ol id="message-search-results"></ol>
+        </section>
         <form id="search-form">
           <input name="query" placeholder="Buscar usuário para conversa 1:1" minlength="2" required />
           <button type="submit">Buscar</button>
