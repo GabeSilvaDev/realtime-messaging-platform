@@ -31,4 +31,14 @@ export interface IMessageRepository {
   markReadUpTo(conversationId: string, userId: string, range: ReadRange, at: Date): Promise<number>;
   /** Apaga todas as mensagens da conversa (usado quando a conversa é removida). */
   deleteByConversation(conversationId: string): Promise<number>;
+  /**
+   * Mensagens NÃO apagadas com esses ids, em qualquer ordem (hidratação da busca). Ids que não
+   * são ObjectId são ignorados; sem nenhum id válido, não consulta o banco.
+   */
+  findActiveByIds(ids: string[]): Promise<MessageRecord[]>;
+  /**
+   * Até `limit` mensagens (apagadas inclusive) com `_id` maior que `afterId` (`null` = desde o
+   * início), em ordem crescente de `_id` — a varredura em lotes do reindex da busca.
+   */
+  findPageAfter(afterId: string | null, limit: number): Promise<MessageRecord[]>;
 }

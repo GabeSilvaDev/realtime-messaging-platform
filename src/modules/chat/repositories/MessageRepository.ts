@@ -13,6 +13,9 @@ import type {
 /** Código do MongoDB para violação de índice único. */
 const DUPLICATE_KEY_ERROR_CODE = 11000;
 
+/** ObjectId em hexadecimal (24 caracteres). */
+const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
+
 function isDuplicateKeyError(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -144,6 +147,21 @@ export class MessageRepository implements IMessageRepository {
   async deleteByConversation(conversationId: string): Promise<number> {
     const result = await MessageModel.deleteMany({ conversationId }).exec();
     return result.deletedCount;
+  }
+
+  async findActiveByIds(ids: string[]): Promise<MessageRecord[]> {
+    const validIds = ids.filter((id) => OBJECT_ID_PATTERN.test(id));
+    if (validIds.length === 0) {
+      return [];
+    }
+    const docs = await MessageModel.find({ _id: { $in: validIds }, deletedAt: null }).exec();
+    return docs.map(toRecord);
+  }
+
+  async findPageAfter(afterId: string | null, limit: number): Promise<MessageRecord[]> {
+    const filter = afterId === null ? {} : { _id: { $gt: new Types.ObjectId(afterId) } };
+    const docs = await MessageModel.find(filter).sort({ _id: 1 }).limit(limit).exec();
+    return docs.map(toRecord);
   }
 }
 

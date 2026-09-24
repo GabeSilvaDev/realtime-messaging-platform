@@ -122,6 +122,8 @@ describe('MessageService', () => {
       markDelivered: jest.fn(),
       markReadUpTo: jest.fn(),
       deleteByConversation: jest.fn(),
+      findActiveByIds: jest.fn(),
+      findPageAfter: jest.fn(),
     };
     conversations = {
       findById: jest.fn(),
@@ -749,6 +751,106 @@ describe('MessageService', () => {
       await expect(service.delete(USER_C, CONVERSATION_ID, MESSAGE_ID)).rejects.toThrow(
         ConversationNotFoundException
       );
+    });
+  });
+
+  describe('findByIdsForSearch', () => {
+    it('devolve os DTOs das não apagadas encontradas', async () => {
+      messages.findActiveByIds.mockResolvedValue([record()]);
+
+      const result = await service.findByIdsForSearch([MESSAGE_ID, REPLY_ID]);
+
+      expect(messages.findActiveByIds).toHaveBeenCalledWith([MESSAGE_ID, REPLY_ID]);
+      expect(result).toEqual([
+        expect.objectContaining({
+          id: MESSAGE_ID,
+          content: { type: 'text', text: 'olá' },
+          status: { sentAt: CREATED_AT, deliveredTo: [], readBy: [] },
+        }),
+      ]);
+    });
+
+    it('lista vazia não consulta o MongoDB', async () => {
+      await expect(service.findByIdsForSearch([])).resolves.toEqual([]);
+      expect(messages.findActiveByIds).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('forEachForIndexing', () => {
+    const DELETED_AT = new Date('2026-09-24T11:00:00.000Z');
+
+    it('percorre em lotes pelo cursor de _id até um lote incompleto', async () => {
+      messages.findPageAfter
+        .mockResolvedValueOnce([record({ id: 'a1' }), record({ id: 'a2' })])
+        .mockResolvedValueOnce([record({ id: 'a3', deletedAt: DELETED_AT })]);
+      const batches: unknown[] = [];
+
+      const total = await service.forEachForIndexing(2, async (batch) => {
+        batches.push(batch);
+      });
+
+      expect(total).toBe(3);
+      expect(messages.findPageAfter.mock.calls).toEqual([
+        [null, 2],
+        ['a2', 2],
+      ]);
+      expect(batches).toEqual([
+        [
+          {
+            id: 'a1',
+            conversationId: CONVERSATION_ID,
+            senderId: USER_A,
+            text: 'olá',
+            createdAt: CREATED_AT,
+          },
+          {
+            id: 'a2',
+            conversationId: CONVERSATION_ID,
+            senderId: USER_A,
+            text: 'olá',
+            createdAt: CREATED_AT,
+          },
+        ],
+        // Apagada vai com `text: null` (o índice remove o documento).
+        [
+          {
+            id: 'a3',
+            conversationId: CONVERSATION_ID,
+            senderId: USER_A,
+            text: null,
+            createdAt: CREATED_AT,
+          },
+        ],
+      ]);
+    });
+
+    it('lote cheio seguido de lote vazio encerra sem chamar o handler de novo', async () => {
+      messages.findPageAfter
+        .mockResolvedValueOnce([record({ id: 'b1' })])
+        .mockResolvedValueOnce([]);
+      const handler = jest.fn().mockResolvedValue(undefined);
+
+      await expect(service.forEachForIndexing(1, handler)).resolves.toBe(1);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(messages.findPageAfter).toHaveBeenLastCalledWith('b1', 1);
+    });
+
+    it('tamanho de lote menor que 1 vira 1 (limit(0) no MongoDB traria tudo)', async () => {
+      messages.findPageAfter.mockResolvedValue([]);
+
+      await expect(service.forEachForIndexing(0, jest.fn())).resolves.toBe(0);
+
+      expect(messages.findPageAfter).toHaveBeenCalledWith(null, 1);
+    });
+
+    it('erro do handler interrompe a varredura e propaga', async () => {
+      messages.findPageAfter.mockResolvedValue([record({ id: 'c1' })]);
+
+      await expect(
+        service.forEachForIndexing(1, jest.fn().mockRejectedValue(new Error('es down')))
+      ).rejects.toThrow('es down');
+      expect(messages.findPageAfter).toHaveBeenCalledTimes(1);
     });
   });
 

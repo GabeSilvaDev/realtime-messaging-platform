@@ -21,6 +21,7 @@ import type {
 import { conversationRepository, messageRepository, participantRepository } from '../repositories';
 import { ParticipantDirectory } from './ParticipantDirectory';
 import type {
+  IndexableMessage,
   ListMessagesOptions,
   MessageCursor,
   MessageDTO,
@@ -52,6 +53,17 @@ function toMessageDTO(record: MessageRecord): MessageDTO {
     deletedAt: record.deletedAt,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+  };
+}
+
+/** Forma da mensagem para o índice de busca: apagada vai sem texto (o índice a remove). */
+function toIndexable(record: MessageRecord): IndexableMessage {
+  return {
+    id: record.id,
+    conversationId: record.conversationId,
+    senderId: record.senderId,
+    text: record.deletedAt === null ? record.content.text : null,
+    createdAt: record.createdAt,
   };
 }
 
@@ -262,6 +274,35 @@ export class MessageService implements IMessageService {
         upToMessageId: messageId,
         at,
       });
+    }
+  }
+
+  async findByIdsForSearch(ids: string[]): Promise<MessageDTO[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const records = await this.messages.findActiveByIds(ids);
+    return records.map(toMessageDTO);
+  }
+
+  async forEachForIndexing(
+    batchSize: number,
+    handler: (batch: IndexableMessage[]) => Promise<void>
+  ): Promise<number> {
+    // limit(0) no MongoDB significa "sem limite": o lote mínimo é 1.
+    const size = Math.max(1, Math.floor(batchSize));
+    let afterId: string | null = null;
+    let total = 0;
+    for (;;) {
+      const records = await this.messages.findPageAfter(afterId, size);
+      if (records.length > 0) {
+        await handler(records.map(toIndexable));
+        total += records.length;
+      }
+      if (records.length < size) {
+        return total;
+      }
+      afterId = records.reduce<string | null>((_last, record) => record.id, null);
     }
   }
 
