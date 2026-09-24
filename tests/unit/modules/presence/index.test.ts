@@ -21,5 +21,6 @@ describe('presence module index', () => {
   it('deve exportar a integração com o realtime', () => {
     expect(presenceModule.createPresenceRealtime).toBeInstanceOf(Function);
     expect(presenceModule.registerPresenceHandlers).toBeInstanceOf(Function);
+    expect(presenceModule.registerPresenceBridge).toBeInstanceOf(Function);
   });
 });

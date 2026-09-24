@@ -11,8 +11,13 @@ export type { PresenceServiceOptions } from './services';
 
 export { registerPresenceCacheListeners } from './listeners';
 
-export { registerPresenceHandlers, createPresenceRealtime } from './realtime';
+export {
+  registerPresenceHandlers,
+  createPresenceRealtime,
+  registerPresenceBridge,
+} from './realtime';
 export type {
+  PresenceBridgeDeps,
   PresenceHandlerDeps,
   PresenceRealtimeOptions,
   PresenceRealtimeHandle,
