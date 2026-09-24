@@ -1,4 +1,5 @@
 import type { MessageDTO } from '../types/chat-message.types';
+import type { ManualPresenceStatus } from '../types/presence.types';
 import {
   SystemEvents,
   AuthEvents,
@@ -42,10 +43,15 @@ export interface EventMap {
   [AuthEvents.SESSIONS_REVOKED]: { userId: string };
 
   [UserEvents.CREATED]: { userId: string; email: string };
+  /** Perfil alterado (`fields` = campos gravados); invalida o cache do perfil público. */
   [UserEvents.UPDATED]: { userId: string; fields: string[] };
   [UserEvents.DELETED]: { userId: string };
   [UserEvents.BLOCKED]: { userId: string; blockedUserId: string };
   [UserEvents.UNBLOCKED]: { userId: string; unblockedUserId: string };
+  /** `userId` adicionou `contactId` aos contatos (quem vê a presença de `contactId` mudou). */
+  [UserEvents.CONTACT_ADDED]: { userId: string; contactId: string };
+  /** `userId` removeu `contactId` dos contatos. */
+  [UserEvents.CONTACT_REMOVED]: { userId: string; contactId: string };
 
   [ChatEvents.MESSAGE_SENT]: {
     messageId: string;
@@ -117,12 +123,12 @@ export interface EventMap {
     participantIds: string[];
   };
 
+  /** Primeira conexão válida do usuário (nenhuma outra aba/dispositivo conectado). */
   [PresenceEvents.ONLINE]: { userId: string; timestamp: Date };
+  /** Última conexão encerrada (ou expirada); `lastSeen` = `users.last_seen_at` gravado. */
   [PresenceEvents.OFFLINE]: { userId: string; lastSeen: Date };
-  [PresenceEvents.STATUS_CHANGED]: {
-    userId: string;
-    status: 'available' | 'busy' | 'away';
-  };
+  /** Status manual alterado com o usuário conectado (o estado efetivo mudou). */
+  [PresenceEvents.STATUS_CHANGED]: { userId: string; status: ManualPresenceStatus };
 
   [NotificationEvents.SEND]: {
     userId: string;

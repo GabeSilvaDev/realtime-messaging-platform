@@ -1,4 +1,5 @@
-import { UserStatus } from '@/shared/types';
+import { UserEvents, UserStatus } from '@/shared/types';
+import { eventBus, type EventBus } from '@/shared/event-bus';
 import { logger } from '@/shared/logger';
 import { userRepository } from '../repositories';
 import { avatarService } from './AvatarService';
@@ -39,7 +40,8 @@ export class ProfileService implements IProfileService {
 
   constructor(
     private readonly users: IUserRepository = userRepository,
-    private readonly avatar: IAvatarService = avatarService
+    private readonly avatar: IAvatarService = avatarService,
+    private readonly events: Pick<EventBus, 'publish'> = eventBus
   ) {}
 
   async getProfile(userId: string): Promise<UserProfile> {
@@ -112,7 +114,9 @@ export class ProfileService implements IProfileService {
       throw new ProfileNotFoundException();
     }
 
-    logger.info('Profile updated', { userId, fields: Object.keys(updateData) });
+    const fields = Object.keys(updateData);
+    logger.info('Profile updated', { userId, fields });
+    await this.publishUpdated(userId, fields);
 
     return this.mapToUserProfile(updated as unknown as Record<string, unknown>);
   }
@@ -143,6 +147,7 @@ export class ProfileService implements IProfileService {
       userId,
       avatarUrl: result.urls.medium,
     });
+    await this.publishUpdated(userId, ['avatarUrl']);
 
     return result;
   }
@@ -166,6 +171,7 @@ export class ProfileService implements IProfileService {
     await this.users.update(userId, { avatarUrl: null });
 
     logger.info('Avatar removed', { userId, filesDeleted: result.deletedFiles.length });
+    await this.publishUpdated(userId, ['avatarUrl']);
 
     return result;
   }
@@ -247,6 +253,13 @@ export class ProfileService implements IProfileService {
     logger.info('Profile settings updated', { userId, settings: Object.keys(settings) });
 
     return this.getProfileSettings(userId);
+  }
+
+  /** `user:updated` invalida o cache do perfil público; nada gravado ⇒ nada publicado. */
+  private async publishUpdated(userId: string, fields: string[]): Promise<void> {
+    if (fields.length > 0) {
+      await this.events.publish(UserEvents.UPDATED, { userId, fields });
+    }
   }
 
   private isValidUrl(url: string): boolean {

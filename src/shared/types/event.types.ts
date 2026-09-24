@@ -19,6 +19,8 @@ export enum UserEvents {
   DELETED = 'user:deleted',
   BLOCKED = 'user:blocked',
   UNBLOCKED = 'user:unblocked',
+  CONTACT_ADDED = 'user:contact-added',
+  CONTACT_REMOVED = 'user:contact-removed',
 }
 
 export enum ChatEvents {

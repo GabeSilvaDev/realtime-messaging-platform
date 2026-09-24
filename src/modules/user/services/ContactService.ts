@@ -65,6 +65,7 @@ export class ContactService implements IContactService {
       contactId: data.contactId,
       nickname: data.nickname ?? null,
     });
+    await this.events.publish(UserEvents.CONTACT_ADDED, { userId, contactId: data.contactId });
 
     return {
       ...contact,
@@ -103,6 +104,7 @@ export class ContactService implements IContactService {
     const contact = await this.findVisibleContact(userId, contactId);
 
     await this.contacts.delete(contact.id);
+    await this.events.publish(UserEvents.CONTACT_REMOVED, { userId, contactId });
   }
 
   async getContact(userId: string, contactId: string): Promise<ContactResponseDTO> {
