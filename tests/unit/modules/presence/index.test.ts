@@ -17,4 +17,9 @@ describe('presence module index', () => {
   it('deve exportar os listeners de invalidação da audiência', () => {
     expect(presenceModule.registerPresenceCacheListeners).toBeInstanceOf(Function);
   });
+
+  it('deve exportar a integração com o realtime', () => {
+    expect(presenceModule.createPresenceRealtime).toBeInstanceOf(Function);
+    expect(presenceModule.registerPresenceHandlers).toBeInstanceOf(Function);
+  });
 });

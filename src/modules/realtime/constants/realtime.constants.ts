@@ -29,6 +29,7 @@ export const CLIENT_EVENTS = {
   MESSAGE_READ: 'message:read',
   TYPING_START: 'typing:start',
   TYPING_STOP: 'typing:stop',
+  PRESENCE_SET: 'presence:set',
 } as const;
 
 /** Eventos servidor → cliente. */
@@ -40,6 +41,8 @@ export const SERVER_EVENTS = {
   CONVERSATION_NEW: 'conversation:new',
   CONVERSATION_UPDATED: 'conversation:updated',
   CONVERSATION_DELETED: 'conversation:deleted',
+  PRESENCE_UPDATE: 'presence:update',
+  PRESENCE_SNAPSHOT: 'presence:snapshot',
 } as const;
 
 /** `message` do `connect_error` que o cliente recebe quando o handshake é recusado. */
