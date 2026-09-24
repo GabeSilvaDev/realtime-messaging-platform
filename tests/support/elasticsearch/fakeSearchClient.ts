@@ -11,8 +11,12 @@
 // `term`/`range` e devolve highlight/agregação no formato do Elasticsearch. A semântica real do
 // analyzer (stemmer, plural, stopwords) é provada no teste de integração opcional e no smoke.
 // Para controlar a resposta, preencha `searchResponse`.
-import type { estypes } from '@elastic/elasticsearch';
-import type { MessageDocument, SearchClient } from '@/modules/search/types';
+import type { estypes, TransportRequestOptions } from '@elastic/elasticsearch';
+import type {
+  MessageDocument,
+  MessageSearchAggregations,
+  SearchClient,
+} from '@/modules/search/types';
 
 export interface FakeCall {
   method: string;
@@ -89,8 +93,9 @@ function strictViolation(document: Record<string, unknown>): FakeResponseError |
       });
 }
 
-export class FakeSearchClient {
+export class FakeSearchClient implements SearchClient {
   private readonly store = new Map<string, Map<string, MessageDocument>>();
+  private readonly versions = new Map<string, number>();
 
   /** Toda chamada registrada, na ordem. */
   readonly calls: FakeCall[] = [];
@@ -99,7 +104,7 @@ export class FakeSearchClient {
   failWith: Error | null = null;
 
   /** Quando preenchido, `search` devolve esta resposta em vez de avaliar a consulta. */
-  searchResponse: estypes.SearchResponse<unknown, unknown> | null = null;
+  searchResponse: estypes.SearchResponse<unknown, MessageSearchAggregations> | null = null;
 
   /** Ids cujos itens do `bulk` falham com `es_rejected_execution_exception` (429). */
   readonly failingBulkIds = new Set<string>();
@@ -140,7 +145,7 @@ export class FakeSearchClient {
 
   /** O cliente como o código da busca o enxerga. */
   get client(): SearchClient {
-    return this as unknown as SearchClient;
+    return this;
   }
 
   /** Documentos do índice (vazio se o índice não existe), em ordem de inserção. */
@@ -159,15 +164,14 @@ export class FakeSearchClient {
 
   reset(): void {
     this.store.clear();
+    this.versions.clear();
     this.calls.length = 0;
     this.failWith = null;
     this.searchResponse = null;
     this.failingBulkIds.clear();
   }
 
-  async index(
-    params: estypes.IndexRequest<MessageDocument>
-  ): Promise<Pick<estypes.IndexResponse, '_id' | '_index' | 'result'>> {
+  async index(params: estypes.IndexRequest<MessageDocument>): Promise<estypes.IndexResponse> {
     this.record('index', params);
     const document = params.document as MessageDocument;
     const violation = strictViolation(document as unknown as Record<string, unknown>);
@@ -176,23 +180,38 @@ export class FakeSearchClient {
     }
     const docs = this.indexStore(params.index);
     const id = String(params.id);
-    const result = docs.has(id) ? 'updated' : 'created';
+    const versionKey = `${params.index}:${id}`;
+    const hadDoc = docs.has(id);
     docs.set(id, { ...document });
-    return { _index: params.index, _id: id, result };
+    const version = (this.versions.get(versionKey) ?? 0) + 1;
+    this.versions.set(versionKey, version);
+    return {
+      _index: params.index,
+      _id: id,
+      _version: version,
+      result: hadDoc ? 'updated' : 'created',
+      _shards: { total: 1, successful: 1, failed: 0 },
+    };
   }
 
   async delete(
     params: estypes.DeleteRequest,
-    options?: { ignore?: number[] }
-  ): Promise<Pick<estypes.DeleteResponse, '_id' | '_index' | 'result'>> {
+    options?: TransportRequestOptions
+  ): Promise<estypes.DeleteResponse> {
     this.record('delete', params, options);
     const deleted = this.store.get(params.index)?.delete(params.id) ?? false;
+    const versionKey = `${params.index}:${params.id}`;
+    const version = (this.versions.get(versionKey) ?? 0) + 1;
+    this.versions.set(versionKey, version);
     const response = {
       _index: params.index,
       _id: params.id,
+      _version: version,
       result: deleted ? ('deleted' as const) : ('not_found' as const),
+      _shards: { total: 1, successful: 1, failed: 0 },
     };
-    if (!deleted && options?.ignore?.includes(404) !== true) {
+    const ignore = (options?.ignore as number[]) ?? [];
+    if (!deleted && !ignore.includes(404)) {
       throw new FakeResponseError(404, response);
     }
     return response;
@@ -219,7 +238,9 @@ export class FakeSearchClient {
     return { took: 1, errors, items: items as estypes.BulkResponse['items'] };
   }
 
-  async search(params: estypes.SearchRequest): Promise<estypes.SearchResponse<unknown, unknown>> {
+  async search(
+    params: estypes.SearchRequest
+  ): Promise<estypes.SearchResponse<unknown, MessageSearchAggregations>> {
     this.record('search', params);
     if (this.searchResponse !== null) {
       return this.searchResponse;
@@ -245,30 +266,38 @@ export class FakeSearchClient {
     const post = tags.post_tags[0] ?? '</em>';
     const facetSize = (params.aggs as { conversations: { terms: { size: number } } }).conversations
       .terms.size;
+    const includeSource = params._source !== false;
 
-    return {
+    const hits = matches.slice(0, params.size ?? 10).map(({ doc, score }) => {
+      const hit: estypes.SearchHit<unknown> = {
+        _index: index,
+        _id: doc.messageId,
+        _score: score,
+        highlight: { content: [highlight(doc.content, terms, pre, post)] },
+        sort: [score, Date.parse(doc.createdAt)],
+      };
+      if (includeSource) {
+        hit._source = doc;
+      }
+      return hit;
+    });
+
+    const response: estypes.SearchResponse<unknown, MessageSearchAggregations> = {
       took: 1,
       timed_out: false,
       _shards: { total: 1, successful: 1, skipped: 0, failed: 0 },
       hits: {
         total: { value: matches.length, relation: 'eq' },
         max_score: matches[0]?.score ?? null,
-        hits: matches.slice(0, params.size ?? 10).map(({ doc, score }) => ({
-          _index: index,
-          _id: doc.messageId,
-          _score: score,
-          highlight: { content: [highlight(doc.content, terms, pre, post)] },
-          sort: [score, Date.parse(doc.createdAt)],
-        })),
+        hits,
       },
       aggregations: {
         conversations: {
-          doc_count_error_upper_bound: 0,
-          sum_other_doc_count: 0,
           buckets: this.countByConversation(matches.map(({ doc }) => doc)).slice(0, facetSize),
         },
       },
     };
+    return response;
   }
 
   private record(method: string, params: unknown, options?: unknown): void {
@@ -307,9 +336,19 @@ export class FakeSearchClient {
       };
     }
     const docs = this.indexStore(index);
-    const status = docs.has(id) ? 200 : 201;
+    const versionKey = `${index}:${id}`;
+    const hadDoc = docs.has(id);
     docs.set(id, { ...document });
-    return { _index: index, _id: id, status, result: status === 201 ? 'created' : 'updated' };
+    const version = (this.versions.get(versionKey) ?? 0) + 1;
+    this.versions.set(versionKey, version);
+    const status = hadDoc ? 200 : 201;
+    return {
+      _index: index,
+      _id: id,
+      status,
+      result: status === 201 ? 'created' : 'updated',
+      _version: version,
+    };
   }
 
   private bulkDelete(index: string, id: string): estypes.BulkResponseItem {

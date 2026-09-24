@@ -73,14 +73,16 @@ describe('FakeSearchClient', () => {
 
   describe('index/delete', () => {
     it('index cria (e o índice, se faltar) e depois atualiza', async () => {
-      expect(await fake.index({ index: INDEX, id: 'm1', document: doc() })).toEqual({
+      expect(await fake.index({ index: INDEX, id: 'm1', document: doc() })).toMatchObject({
         _index: INDEX,
         _id: 'm1',
         result: 'created',
+        _version: 1,
+        _shards: { total: 1, successful: 1, failed: 0 },
       });
       expect(
         await fake.index({ index: INDEX, id: 'm1', document: doc({ content: 'outro' }) })
-      ).toMatchObject({ result: 'updated' });
+      ).toMatchObject({ result: 'updated', _version: 2 });
       expect(fake.documents(INDEX)).toEqual([doc({ content: 'outro' })]);
     });
 
@@ -95,10 +97,12 @@ describe('FakeSearchClient', () => {
     it('delete: deleted; ausente → 404 not_found, ou resposta normal com ignore [404]', async () => {
       await fake.index({ index: INDEX, id: 'm1', document: doc() });
 
-      expect(await fake.delete({ index: INDEX, id: 'm1' })).toEqual({
+      expect(await fake.delete({ index: INDEX, id: 'm1' })).toMatchObject({
         _index: INDEX,
         _id: 'm1',
         result: 'deleted',
+        _version: 2,
+        _shards: { total: 1, successful: 1, failed: 0 },
       });
       await expect(fake.delete({ index: INDEX, id: 'm1' })).rejects.toMatchObject({
         meta: { statusCode: 404, body: { result: 'not_found' } },
@@ -132,8 +136,8 @@ describe('FakeSearchClient', () => {
         took: 1,
         errors: false,
         items: [
-          { index: { _index: INDEX, _id: 'm1', status: 201, result: 'created' } },
-          { index: { _index: INDEX, _id: 'old', status: 200, result: 'updated' } },
+          { index: { _index: INDEX, _id: 'm1', status: 201, result: 'created', _version: 1 } },
+          { index: { _index: INDEX, _id: 'old', status: 200, result: 'updated', _version: 2 } },
           { delete: { _index: INDEX, _id: 'gone', status: 404, result: 'not_found' } },
         ],
       });
@@ -224,8 +228,6 @@ describe('FakeSearchClient', () => {
       });
       expect(response.aggregations).toEqual({
         conversations: {
-          doc_count_error_upper_bound: 0,
-          sum_other_doc_count: 0,
           buckets: [
             { key: 'c2', doc_count: 2 },
             { key: 'c1', doc_count: 1 },
@@ -310,6 +312,31 @@ describe('FakeSearchClient', () => {
       expect(response.hits.hits[2]?.highlight?.content).toEqual([
         'Meu <em>coração</em> está feliz',
       ]);
+    });
+
+    it('_source false: omite documento nos hits', async () => {
+      const response = await fake.search({
+        ...query('coração'),
+        _source: false,
+      });
+
+      expect(response.hits.hits[0]).not.toHaveProperty('_source');
+      expect(response.hits.hits[0]).toHaveProperty('_id');
+      expect(response.hits.hits[0]).toHaveProperty('_score');
+    });
+
+    it('_source não informado ou true: inclui documento nos hits', async () => {
+      const withoutSource = await fake.search(query('coração'));
+      const withTrue = await fake.search({ ...query('coração'), _source: true });
+
+      expect(withoutSource.hits.hits[0]).toHaveProperty('_source');
+      expect((withoutSource.hits.hits[0] as unknown as Record<string, unknown>)._source).toEqual(
+        expect.objectContaining({ messageId: 'm2', conversationId: 'c2' })
+      );
+      expect(withTrue.hits.hits[0]).toHaveProperty('_source');
+      expect((withTrue.hits.hits[0] as unknown as Record<string, unknown>)._source).toEqual(
+        expect.objectContaining({ messageId: 'm2', conversationId: 'c2' })
+      );
     });
   });
 
