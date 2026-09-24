@@ -159,6 +159,8 @@ Acks are `{ ok: true, data }` or `{ ok: false, error: { code, message, statusCod
 
 Two design notes worth knowing: a resend of an already-stored message by a sender who has since been blocked still returns the original message (idempotency is checked before the block check, and a resend isn't a new send); and typing renewals within the TTL aren't re-validated against the database — only the first `typing:start` for a given (socket, conversation) pair checks participation and conversation type.
 
+**Security note — no per-socket rate limit yet.** The HTTP rate limits (below) cover `/api` only; Socket.IO events (`message:send`, `typing:*`, receipts) aren't rate-limited per socket or per user, so an authenticated client can flood them. Per-socket/per-user limits are deferred to subproject 7 (hardening) — see the [Roadmap](#roadmap). Until then, run behind a proxy/WAF that caps WebSocket message rates if the API is exposed publicly.
+
 **Demo client** — `http://localhost:3000/demo/` is a single static page (plain JS, no build) to log in, list and open conversations, start a 1:1 chat by searching users, and watch messages, ✓ sent / ✓✓ delivered / ✓✓ (blue) read and "typing…" live. It keeps the access token in `localStorage`; it's a demo, not a production client.
 
 ### Rate limiting
@@ -325,6 +327,7 @@ tests/
 - [ ] Notifications — in-app and push delivery
 - [ ] Search — message search on Elasticsearch
 - [ ] Observability — metrics and tracing
+- [ ] Hardening — per-socket/per-user rate limiting for Socket.IO events (deferred from the real-time subproject), security review and delivery polish
 
 ## License
 

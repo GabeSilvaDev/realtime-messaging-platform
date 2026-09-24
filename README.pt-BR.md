@@ -159,6 +159,8 @@ Os acks são `{ ok: true, data }` ou `{ ok: false, error: { code, message, statu
 
 Duas notas de design importantes: um reenvio de mensagem já gravada por um remetente que foi bloqueado depois ainda devolve a mensagem original (a idempotência é checada antes do bloqueio, e um reenvio não é um envio novo); e renovações de digitação dentro do TTL não são revalidadas contra o banco — só o primeiro `typing:start` de um par (socket, conversa) checa participação e tipo de conversa.
 
+**Nota de segurança — ainda sem rate limit por socket.** Os rate limits HTTP (abaixo) cobrem só `/api`; os eventos do Socket.IO (`message:send`, `typing:*`, confirmações) não têm limite por socket nem por usuário, então um cliente autenticado consegue inundá-los. Limites por socket/usuário ficaram para o subprojeto 7 (hardening) — veja o [Roadmap](#roadmap). Até lá, se a API for exposta publicamente, rode atrás de um proxy/WAF que limite a taxa de mensagens WebSocket.
+
 **Cliente demo** — `http://localhost:3000/demo/` é uma página estática única (JS puro, sem build) para logar, listar e abrir conversas, iniciar um 1:1 buscando usuários e ver ao vivo as mensagens, ✓ enviada / ✓✓ entregue / ✓✓ (azul) lida e "digitando…". Guarda o access token no `localStorage`; é uma demo, não um cliente de produção.
 
 ### Rate limit
@@ -325,6 +327,7 @@ O `.env.example` lista todas as variáveis. As que importam:
 - [ ] Notificações — entrega in-app e push
 - [ ] Busca — busca de mensagens no Elasticsearch
 - [ ] Observabilidade — métricas e tracing
+- [ ] Hardening — rate limit por socket/usuário nos eventos do Socket.IO (adiado do subprojeto de tempo real), revisão de segurança e acabamento da entrega
 
 ## Licença
 
