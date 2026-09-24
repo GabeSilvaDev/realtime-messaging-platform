@@ -323,16 +323,18 @@ describe('MessageRepository', () => {
         .mockReturnValueOnce(execResult({ modifiedCount: 1 }))
         .mockReturnValueOnce(execResult({ modifiedCount: 3 }));
 
+      const from = new Date(CREATED_AT.getTime() - 60_000);
       const count = await repository.markReadUpTo(
         CONVERSATION_ID,
         MENTIONED_ID,
-        CREATED_AT,
+        { from, upTo: CREATED_AT },
         STATUS_AT
       );
 
+      // Limite inferior (last_read_at): a varredura não percorre o histórico inteiro.
       const fromOthers = {
         conversationId: CONVERSATION_ID,
-        createdAt: { $lte: CREATED_AT },
+        createdAt: { $gte: from, $lte: CREATED_AT },
         senderId: { $ne: MENTIONED_ID },
         deletedAt: null,
       };
@@ -353,7 +355,12 @@ describe('MessageRepository', () => {
       MockMessageModel.updateMany.mockReturnValue(execResult({ modifiedCount: 0 }));
 
       await expect(
-        repository.markReadUpTo(CONVERSATION_ID, MENTIONED_ID, CREATED_AT, STATUS_AT)
+        repository.markReadUpTo(
+          CONVERSATION_ID,
+          MENTIONED_ID,
+          { from: CREATED_AT, upTo: CREATED_AT },
+          STATUS_AT
+        )
       ).resolves.toBe(0);
     });
   });

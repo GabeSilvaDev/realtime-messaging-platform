@@ -20,6 +20,7 @@ import type {
   MessageRecord,
   ParticipantAttributes,
   ParticipantRole,
+  ReadRange,
 } from '@/modules/chat/types';
 
 /** Os repositórios em memória não têm transação real: o lock vira execução direta. */
@@ -342,13 +343,14 @@ export class InMemoryMessageRepository implements IMessageRepository {
   async markReadUpTo(
     conversationId: string,
     userId: string,
-    upTo: Date,
+    { from, upTo }: ReadRange,
     at: Date
   ): Promise<number> {
     let count = 0;
     for (const record of this.store.messages) {
       const eligible =
         record.conversationId === conversationId &&
+        record.createdAt >= from &&
         record.createdAt <= upTo &&
         record.senderId !== userId &&
         record.deletedAt === null;

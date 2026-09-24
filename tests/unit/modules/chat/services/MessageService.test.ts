@@ -606,10 +606,11 @@ describe('MessageService', () => {
 
       await service.markRead(USER_B, CONVERSATION_ID, MESSAGE_ID);
 
+      // Sem leitura anterior (last_read_at nulo): o limite inferior é o epoch.
       expect(messages.markReadUpTo).toHaveBeenCalledWith(
         CONVERSATION_ID,
         USER_B,
-        CREATED_AT,
+        { from: new Date(0), upTo: CREATED_AT },
         expect.any(Date)
       );
       expect(participants.advanceLastReadAt).toHaveBeenCalledWith(
@@ -624,6 +625,46 @@ describe('MessageService', () => {
         upToMessageId: MESSAGE_ID,
         at,
       });
+    });
+
+    it('limita a varredura a partir do last_read_at do participante (não relê o histórico)', async () => {
+      const lastReadAt = new Date(CREATED_AT.getTime() - 60_000);
+      participants.find.mockResolvedValue({ ...participant(USER_B), lastReadAt });
+      messages.markReadUpTo.mockResolvedValue(1);
+
+      await service.markRead(USER_B, CONVERSATION_ID, MESSAGE_ID);
+
+      expect(messages.markReadUpTo).toHaveBeenCalledWith(
+        CONVERSATION_ID,
+        USER_B,
+        { from: lastReadAt, upTo: CREATED_AT },
+        expect.any(Date)
+      );
+    });
+
+    it('grava no Mongo antes de avançar o last_read_at no Postgres', async () => {
+      messages.markReadUpTo.mockResolvedValue(1);
+
+      await service.markRead(USER_B, CONVERSATION_ID, MESSAGE_ID);
+
+      expect(messages.markReadUpTo.mock.invocationCallOrder[0]).toBeLessThan(
+        participants.advanceLastReadAt.mock.invocationCallOrder[0]!
+      );
+    });
+
+    it('idempotente: reler a mesma mensagem (last_read_at = alvo) não publica de novo', async () => {
+      participants.find.mockResolvedValue({ ...participant(USER_B), lastReadAt: CREATED_AT });
+      messages.markReadUpTo.mockResolvedValue(0);
+
+      await service.markRead(USER_B, CONVERSATION_ID, MESSAGE_ID);
+
+      expect(messages.markReadUpTo).toHaveBeenCalledWith(
+        CONVERSATION_ID,
+        USER_B,
+        { from: CREATED_AT, upTo: CREATED_AT },
+        expect.any(Date)
+      );
+      expect(events.publish).not.toHaveBeenCalled();
     });
 
     it('sem nada novo para marcar: avança last_read_at mas não publica', async () => {

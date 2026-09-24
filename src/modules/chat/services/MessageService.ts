@@ -26,6 +26,7 @@ import type {
   MessageMetadata,
   MessageRecord,
   PaginatedMessages,
+  ParticipantAttributes,
   SendMessageDTO,
 } from '../types';
 
@@ -236,11 +237,15 @@ export class MessageService implements IMessageService {
   }
 
   async markRead(userId: string, conversationId: string, messageId: string): Promise<void> {
-    await this.requireParticipant(conversationId, userId);
+    const membership = await this.requireParticipant(conversationId, userId);
     const message = await this.requireMessage(conversationId, messageId);
 
+    // Tudo até `last_read_at` já foi marcado numa leitura anterior: a varredura começa ali
+    // (inclusive — reler o alvo é idempotente). Mongo antes do Postgres: se a marcação falhar,
+    // `last_read_at` não avança e a próxima leitura cobre o intervalo de novo.
     const at = new Date();
-    const marked = await this.messages.markReadUpTo(conversationId, userId, message.createdAt, at);
+    const range = { from: membership.lastReadAt ?? new Date(0), upTo: message.createdAt };
+    const marked = await this.messages.markReadUpTo(conversationId, userId, range, at);
     await this.participants.advanceLastReadAt(conversationId, userId, message.createdAt);
 
     if (marked > 0) {
@@ -262,11 +267,16 @@ export class MessageService implements IMessageService {
     return message;
   }
 
-  private async requireParticipant(conversationId: string, userId: string): Promise<void> {
+  /** Não participante → 404; devolve a participação (ex.: `lastReadAt`). */
+  private async requireParticipant(
+    conversationId: string,
+    userId: string
+  ): Promise<ParticipantAttributes> {
     const membership = await this.participants.find(conversationId, userId);
     if (membership === null) {
       throw new ConversationNotFoundException();
     }
+    return membership;
   }
 }
 

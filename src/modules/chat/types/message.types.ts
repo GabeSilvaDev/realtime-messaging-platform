@@ -49,6 +49,13 @@ export interface CreateMessageResult {
   created: boolean;
 }
 
+/** Intervalo de `createdAt` (inclusive nas duas pontas) de uma marcação de leitura em lote. */
+export interface ReadRange {
+  /** `last_read_at` do participante (epoch se nunca leu): o que vem antes já foi lido. */
+  from: Date;
+  upTo: Date;
+}
+
 export interface MessageCursor {
   createdAt: Date;
   id: string;

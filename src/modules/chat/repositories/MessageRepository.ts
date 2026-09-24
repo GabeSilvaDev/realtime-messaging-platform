@@ -7,6 +7,7 @@ import type {
   FindMessagesOptions,
   MessageRecord,
   MessageStatusEntry,
+  ReadRange,
 } from '../types';
 
 /** Código do MongoDB para violação de índice único. */
@@ -118,12 +119,12 @@ export class MessageRepository implements IMessageRepository {
   async markReadUpTo(
     conversationId: string,
     userId: string,
-    upTo: Date,
+    { from, upTo }: ReadRange,
     at: Date
   ): Promise<number> {
     const fromOthers = {
       conversationId,
-      createdAt: { $lte: upTo },
+      createdAt: { $gte: from, $lte: upTo },
       senderId: { $ne: userId },
       deletedAt: null,
     };

@@ -3,6 +3,7 @@ import type {
   CreateMessageResult,
   FindMessagesOptions,
   MessageRecord,
+  ReadRange,
 } from '../types';
 
 export interface IMessageRepository {
@@ -24,9 +25,10 @@ export interface IMessageRepository {
   markDelivered(messageId: string, userId: string, at: Date): Promise<boolean>;
   /**
    * Marca como lidas por `userId` — e entregues, se ainda não estavam — as mensagens da conversa
-   * de outros autores, não apagadas, com `createdAt <= upTo`. Retorna quantas passaram a lidas.
+   * de outros autores, não apagadas, com `range.from <= createdAt <= range.upTo` (o limite
+   * inferior evita varrer o histórico inteiro a cada leitura). Retorna quantas passaram a lidas.
    */
-  markReadUpTo(conversationId: string, userId: string, upTo: Date, at: Date): Promise<number>;
+  markReadUpTo(conversationId: string, userId: string, range: ReadRange, at: Date): Promise<number>;
   /** Apaga todas as mensagens da conversa (usado quando a conversa é removida). */
   deleteByConversation(conversationId: string): Promise<number>;
 }
