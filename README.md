@@ -80,13 +80,13 @@ Access tokens expire in 15 min, refresh tokens in 7 days and are persisted per s
 | `POST` / `DELETE` | `/avatar` | ✓ | Multipart upload, resized with sharp, stored locally or on S3 |
 | `POST` | `/online` · `/offline` | ✓ | Legacy: `/online` sets the manual presence status to `available`; `/offline` → 400 (you go offline by disconnecting) — prefer `PUT /api/presence/status` |
 | `GET` | `/stats` · `/settings` | ✓ | |
-| `GET` | `/:userId` | – | Public profile |
+| `GET` | `/:userId` | ✓ | Another user's public profile — `id`, `username`, `displayName`, `avatarUrl`, `bio` (no `status`/`lastSeenAt`: use the presence API) |
 
 ### Contacts — `/api/contacts`
 
 | Method | Endpoint | Auth | Notes |
 |---|---|:---:|---|
-| `GET` | `/` | ✓ | List own contacts, paginated, with filters; each item carries `presence: { state, lastSeenAt }`; `orderBy=lastInteraction` sorts by the latest direct message (contacts never messaged come last); `orderBy=presence` sorts the loaded page — online, away, busy, then offline by most recent last seen |
+| `GET` | `/` | ✓ | List own contacts, paginated, with filters; each item carries `presence: { state, lastSeenAt }` (`presence: null` when Redis is unavailable — the list itself never depends on Redis); `orderBy=lastInteraction` sorts by the latest direct message (contacts never messaged come last); `orderBy=presence` sorts the loaded page — online, away, busy, then offline by most recent last seen |
 | `POST` | `/` | ✓ | Add a contact |
 | `GET` | `/favorites` | ✓ | List favorite contacts |
 | `GET` | `/online` | ✓ | Contacts currently connected (online, away or busy), sorted by name, each with `presence` |
@@ -96,6 +96,8 @@ Access tokens expire in 15 min, refresh tokens in 7 days and are persisted per s
 | `DELETE` | `/:contactId` | ✓ | Remove a contact |
 
 A blocked user is not a contact: `GET`/`PATCH`/`DELETE /:contactId` answer 404 for them, and unblocking only happens through `DELETE /api/blocks/:userId`.
+
+The user shown in a contact (`contact: { id, username, displayName, avatarUrl }`), in `GET /api/blocks`, in user search and in conversation participants carries no `status` or `lastSeenAt`: another user's state and last seen come only from presence (`presence` on the contact items, `GET /api/presence`, `presence:*` events), which hides blocked pairs. **Breaking change:** clients that read `status`/`lastSeenAt` from those responses must switch to presence. Your own profile (`GET /api/profile`) still carries both.
 
 ### Blocks — `/api/blocks`
 
@@ -177,7 +179,7 @@ Presence is computed from the live Socket.IO connections and kept in Redis; the 
 - **Connections** — sorted set `presence:conns:<userId>`, one member per socket (`<nodeId>:<socketId>`, `nodeId` being a UUID per process) scored with the last heartbeat. Every instance refreshes its own sockets each 15 s (`ZADD XX`); a user is connected while any member is younger than 30 s. Members left by an instance that died without disconnecting are removed by a sweep every instance runs each 30 s (`SCAN presence:conns:*`, `COUNT 100`), which also announces the offline — a crashed instance's users go offline within about a minute. The key itself expires 120 s after the last refresh.
 - **Manual status** — `presence:manual:<userId>` = `available` · `away` · `busy`, with no TTL, so it survives reconnections.
 - **Effective state** — no connection → `offline`; connected → `online` when the manual status is `available`, otherwise `away`/`busy`. Several tabs/devices count as one user: online on the first connection, offline only when the last one closes, at which point `users.last_seen_at` is written and exposed as `lastSeenAt`.
-- **Who is notified** — users who have the user as a contact plus the partners of their 1:1 conversations, minus anyone with a block in either direction. Blocking hides both sides immediately (`presence:update` with `offline` and no `lastSeenAt`) and every REST query answers `offline` for blocked pairs; unblocking sends the real state to both.
+- **Who is notified** — users who have the user as a contact plus the partners of their 1:1 conversations, minus anyone with a block in either direction. Blocking hides both sides immediately (`presence:update` with `offline` and no `lastSeenAt`), the presence endpoints (`GET /api/presence`, `GET /api/contacts/online` and the `presence` of `GET /api/contacts`) answer `offline` with no `lastSeenAt` for blocked pairs, and no other endpoint exposes another user's `status`/`lastSeenAt`; unblocking sends the real state to both.
 
 | Method | Endpoint | Auth | Notes |
 |---|---|:---:|---|
@@ -185,20 +187,29 @@ Presence is computed from the live Socket.IO connections and kept in Redis; the 
 | `PUT` | `/api/presence/status` | ✓ | `{ status }` — `available` · `away` · `busy`; 204 |
 | `GET` | `/api/contacts/online` | ✓ | Contacts currently connected, sorted by name, each with `presence` |
 
+`GET /api/presence` and `GET /api/contacts/online` need Redis (they answer 500 while it's down); `GET /api/contacts` degrades to `presence: null`.
+
 The module publishes `presence:online`, `presence:offline` and `presence:status-changed` on the EventBus. The legacy `PUT /api/profile/status` and `POST /api/profile/online` now set the manual status, `offline` answers 400 (you go offline by disconnecting), and `users.status` is no longer written for presence.
+
+Known limitations:
+
+- If an instance's heartbeats fail for more than 30 s (Redis unavailable), its sockets show as offline until they reconnect — the heartbeat uses `ZADD XX`, which doesn't bring back a member the sweep already removed.
+- Presence compares heartbeat timestamps written by different instances, so node clocks must be in sync (NTP).
+- A Redis outage longer than 120 s (the connections key expiry) can end with no offline event and no `last_seen_at` for that instance's users: the keys expire before any sweep sees them.
+- The socket is disconnected when the access token expires; to avoid a brief offline, clients should connect the new socket (with the refreshed token) before closing the old one.
 
 ### Cache — Redis
 
-`CacheService` (`src/shared/cache`) keeps JSON under `cache:*` with a 300 s TTL and falls back to the source of truth on any Redis failure (logged as `warn` — a request never fails because of the cache).
+`CacheService` (`src/shared/cache`) keeps JSON under `cache:*` with a default 300 s TTL (`cache:conv:participants:<id>` uses 60 s) and falls back to the source of truth on any Redis failure (logged as `warn` — a request never fails because of the cache).
 
 | Key | Holds | Read by | Invalidated by (EventBus, synchronous) |
 |---|---|---|---|
-| `cache:user:<id>` | public profile | conversation participants and presence `lastSeenAt` (`userService.getMultiple` / `findByIdPublic`) | `user:updated` (profile and avatar changes), `user:deleted`, and `UserService`'s own writes (e.g. last seen) |
-| `cache:conv:participants:<id>` | participant ids and roles | sending and listing messages, delivery receipts, `isParticipant`, `getParticipantIds` | `chat:conversation-created` / `-updated` / `-deleted` |
-| `cache:blocks:<id>` | ids blocked in either direction | `isBlockedByEither`, presence audience | `user:blocked` / `user:unblocked` (both users) |
-| `cache:presence:audience:<id>` | who gets the user's presence updates | presence bridge | block/unblock, `user:contact-added` / `-removed`, a new 1:1 conversation |
+| `cache:user:<id>` | public profile (internal: includes `lastSeenAt`, never sent to other users) | conversation participants and presence `lastSeenAt` (`userService.getMultiple` / `findByIdPublic`) | `user:updated` (profile and avatar changes) and `UserService`'s own writes — update, delete, last seen — which clear the key directly |
+| `cache:conv:participants:<id>` | participant ids and roles (60 s TTL) | sending and listing messages, delivery receipts, `isParticipant`, `getParticipantIds` | `chat:conversation-created` / `-updated` / `-deleted`, and `ConversationService` directly after leave / add members / remove member (immediate DEL + a second DEL 1 s later) |
+| `cache:blocks:<id>` | ids blocked in either direction | `isBlockedByEither`, presence audience | `user:blocked` / `user:unblocked` (both users; immediate DEL + a second DEL 1 s later) |
+| `cache:presence:audience:<id>` | who gets the user's presence updates | presence bridge | block/unblock, `user:contact-added` / `-removed`, a new 1:1 conversation (immediate DEL + a second DEL 1 s later) |
 
-Invalidation subscribers are synchronous: the request that changed the data returns only after the key was cleared, and the TTL bounds staleness if an event is ever lost. `POST /:id/read` still reads the participation row, since `last_read_at` changes on every read.
+Invalidation subscribers are synchronous: the request that changed the data returns only after the key was cleared, and the TTL bounds staleness if an event is ever lost. Participants, blocks and audiences also get a second DEL 1 s later (`DelayedCacheInvalidator`, a fire-and-forget unref'd timer): a read that queried the database before the change and finished after the first DEL would otherwise write the old value back for the whole TTL (e.g. a just-blocked user could keep messaging). `POST /:id/read` still reads the participation row, since `last_read_at` changes on every read.
 
 ### Rate limiting
 
@@ -216,7 +227,7 @@ Built on `express-rate-limit` with a Redis-backed store (`rate-limit-redis`) by 
 
 - **Databases** — connection helpers for PostgreSQL (Sequelize, with migrations and seeders), Redis (ioredis), MongoDB (Mongoose) and Elasticsearch, all started and stopped from `bootstrap.ts`.
 - **EventBus** — in-process publish/subscribe with priorities, once-handlers, wildcard subscriptions and counters; modules emit domain events (e.g. auth events, `user:blocked` / `user:unblocked`, `user:updated`, `user:contact-added`, `chat:message-sent`, `presence:online` / `presence:offline`) through it; `{ async: true }` subscribers run off the publisher's path.
-- **Cache** — `CacheService`: JSON on Redis under `cache:*`, 300 s TTL, batched reads/writes and graceful degradation when Redis is unavailable.
+- **Cache** — `CacheService`: JSON on Redis under `cache:*`, 300 s default TTL (participants use 60 s), batched reads/writes and graceful degradation when Redis is unavailable; `DelayedCacheInvalidator` deletes now and again 1 s later against stale write-backs.
 - **Logger** — structured, leveled, categorised; console output in development and an optional MongoDB sink.
 - **Middleware** — Helmet, CORS (shared with Socket.IO), request id, request logger, Redis-backed rate limiter (injectable store), multer upload, 404 and error handlers.
 - **Validation** — Zod schemas per module plus a `validate` middleware and shared pagination schemas.
@@ -292,7 +303,7 @@ npm run db:migrate:undo    # sequelize-cli db:migrate:undo
 npm run db:seed             # sequelize-cli db:seed:all
 ```
 
-**Tests** — 2,796 Jest tests in 185 suites (unit under `tests/unit`; HTTP feature tests with supertest and WebSocket integration tests with socket.io-client under `tests/feature`; Redis is replaced by an in-memory fake, `tests/support/redis/fakeRedis.ts`, whose command semantics were checked against Redis 7). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below the `coverageThreshold` in `jest.config.ts` — statements, branches, functions and lines all set to 90%. Coverage is collected over every file under `src/`, not only the ones a test happens to import; measured with `node node_modules/.bin/jest --coverage --all`, current coverage is 100% statements, 100% branches, 100% functions, 100% lines.
+**Tests** — 2,827 Jest tests in 189 suites (unit under `tests/unit`; HTTP feature tests with supertest and WebSocket integration tests with socket.io-client under `tests/feature`; Redis is replaced by an in-memory fake, `tests/support/redis/fakeRedis.ts`, whose command semantics were checked against Redis 7). The config module reads the database variables at import time, so they must be non-empty even for unit tests: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (any value works; no database is contacted). CI sets them and, on every push and pull request, runs ESLint, a Prettier check, `tsc --noEmit` and the suite. The build fails if coverage drops below the `coverageThreshold` in `jest.config.ts` — statements, branches, functions and lines all set to 90%. Coverage is collected over every file under `src/`, not only the ones a test happens to import; measured with `node node_modules/.bin/jest --coverage --all`, current coverage is 100% statements, 100% branches, 100% functions, 100% lines.
 
 ## Project structure
 
