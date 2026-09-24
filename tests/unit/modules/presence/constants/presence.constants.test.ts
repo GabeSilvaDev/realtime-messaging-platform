@@ -4,6 +4,7 @@ import {
   PRESENCE_CONSTANTS,
   PRESENCE_KEYS,
   PRESENCE_STATES,
+  compareByPresence,
   effectiveState,
   toManualStatus,
 } from '@/modules/presence/constants';
@@ -51,5 +52,25 @@ describe('presence constants', () => {
     [true, 'busy', 'busy'],
   ] as const)('effectiveState(conectado=%p, %s) → %s', (connected, manual, expected) => {
     expect(effectiveState(connected, manual)).toBe(expected);
+  });
+
+  it('compareByPresence: online → away → busy → offline (visto mais recente primeiro, sem data no fim)', () => {
+    const entries = [
+      { name: 'semData', state: 'offline', lastSeenAt: null },
+      { name: 'ocupado', state: 'busy', lastSeenAt: null },
+      { name: 'antigo', state: 'offline', lastSeenAt: new Date('2026-09-25T10:00:00.000Z') },
+      { name: 'online', state: 'online', lastSeenAt: null },
+      { name: 'recente', state: 'offline', lastSeenAt: new Date('2026-09-26T10:00:00.000Z') },
+      { name: 'ausente', state: 'away', lastSeenAt: null },
+    ] as const;
+
+    expect([...entries].sort(compareByPresence).map((entry) => entry.name)).toEqual([
+      'online',
+      'ausente',
+      'ocupado',
+      'recente',
+      'antigo',
+      'semData',
+    ]);
   });
 });

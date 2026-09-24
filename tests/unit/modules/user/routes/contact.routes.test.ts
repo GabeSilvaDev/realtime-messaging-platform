@@ -3,6 +3,7 @@ jest.mock('@/modules/user/controllers/ContactController', () => ({
     list: jest.fn(),
     add: jest.fn(),
     listFavorites: jest.fn(),
+    online: jest.fn(),
     stats: jest.fn(),
     get: jest.fn(),
     update: jest.fn(),
@@ -43,6 +44,7 @@ describe('contact.routes', () => {
     ['GET', '/'],
     ['POST', '/'],
     ['GET', '/favorites'],
+    ['GET', '/online'],
     ['GET', '/stats'],
     ['GET', '/:contactId'],
     ['PATCH', '/:contactId'],
@@ -59,6 +61,7 @@ describe('contact.routes', () => {
     const firstParam = paths.indexOf('/:contactId');
     expect(paths.indexOf('/favorites')).toBeLessThan(firstParam);
     expect(paths.indexOf('/stats')).toBeLessThan(firstParam);
+    expect(paths.indexOf('/online')).toBeLessThan(firstParam);
   });
 
   it('deve proteger todas as rotas com authenticate', () => {
@@ -71,6 +74,7 @@ describe('contact.routes', () => {
     ['GET', '/', 'list'],
     ['POST', '/', 'add'],
     ['GET', '/favorites', 'listFavorites'],
+    ['GET', '/online', 'online'],
     ['GET', '/stats', 'stats'],
     ['GET', '/:contactId', 'get'],
     ['PATCH', '/:contactId', 'update'],

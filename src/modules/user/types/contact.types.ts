@@ -1,3 +1,5 @@
+import type { PresenceStateDTO } from '@/shared/types';
+
 export interface ContactAttributes {
   id: string;
   userId: string;
@@ -85,4 +87,9 @@ export interface BlockResult {
   contact: ContactAttributes;
   /** `true` quando a linha foi criada ou passou de não bloqueada para bloqueada. */
   changed: boolean;
+}
+
+/** Contato com a presença do usuário (como quem lista a vê: bloqueio ⇒ offline). */
+export interface ContactWithPresence extends ContactWithUser {
+  presence: Pick<PresenceStateDTO, 'state' | 'lastSeenAt'>;
 }

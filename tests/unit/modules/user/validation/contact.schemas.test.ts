@@ -401,6 +401,11 @@ describe('contact.schemas', () => {
         expect(result.success).toBe(true);
       });
 
+      it('deve validar orderBy "presence"', () => {
+        const result = listContactsSchema.safeParse({ orderBy: 'presence' });
+        expect(result.success).toBe(true);
+      });
+
       it('deve rejeitar orderBy inválido', () => {
         const data = { orderBy: 'invalid' };
         const result = listContactsSchema.safeParse(data);

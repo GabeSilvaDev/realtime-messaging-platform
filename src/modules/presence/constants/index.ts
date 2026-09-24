@@ -6,4 +6,5 @@ export {
   PRESENCE_STATES,
   toManualStatus,
   effectiveState,
+  compareByPresence,
 } from './presence.constants';

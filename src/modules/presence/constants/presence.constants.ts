@@ -1,4 +1,4 @@
-import type { ManualPresenceStatus, PresenceState } from '@/shared/types';
+import type { ManualPresenceStatus, PresenceState, PresenceStateDTO } from '@/shared/types';
 
 export const PRESENCE_CONSTANTS = {
   /** Conexão sem heartbeat há mais que isto está vencida (usuário offline se não houver outra). */
@@ -56,4 +56,22 @@ export function effectiveState(connected: boolean, manual: ManualPresenceStatus)
     return 'offline';
   }
   return manual === 'available' ? 'online' : manual;
+}
+
+/** Ordem de exibição: online, ausente, ocupado e, por fim, offline. */
+const PRESENCE_RANK: Record<PresenceState, number> = { online: 0, away: 1, busy: 2, offline: 3 };
+
+type PresenceSortKey = Pick<PresenceStateDTO, 'state' | 'lastSeenAt'>;
+
+/** "Visto por último" em ms; sem data conta como o mais antigo possível. */
+function lastSeenMs(entry: PresenceSortKey): number {
+  return entry.lastSeenAt?.getTime() ?? 0;
+}
+
+/**
+ * Comparador para `sort`: conectados primeiro (online → away → busy), depois offline pelo
+ * "visto por último" mais recente (sem data vai para o fim). Empates mantêm a ordem original.
+ */
+export function compareByPresence(a: PresenceSortKey, b: PresenceSortKey): number {
+  return PRESENCE_RANK[a.state] - PRESENCE_RANK[b.state] || lastSeenMs(b) - lastSeenMs(a);
 }
