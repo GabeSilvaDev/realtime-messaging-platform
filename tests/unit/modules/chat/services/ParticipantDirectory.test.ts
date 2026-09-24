@@ -93,9 +93,74 @@ describe('ParticipantDirectory', () => {
     // Verifica que um timer foi agendado (delayedDeleteMs = 100ms em testes)
     expect(jest.getTimerCount()).toBeGreaterThan(0);
 
-    // Aguarda o segundo DEL
+    // Aguarda o segundo DEL (executa o timer callback)
     jest.runAllTimers();
-    // (timer expirado; se houvesse escrita concorrente, seria limpa agora)
+    // Timer removido do mapa após executar
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('segundo DEL é executado e erros são silenciosos', async () => {
+    const key = `cache:conv:participants:${CONVERSATION_ID}`;
+    const delaySpy = jest.spyOn(redis, 'del');
+
+    // Carrega no cache
+    await directory.list(CONVERSATION_ID);
+
+    // forget() executa primeiro DEL
+    await directory.forget(CONVERSATION_ID);
+    expect(delaySpy).toHaveBeenCalledWith(key);
+    expect(delaySpy).toHaveBeenCalledTimes(1);
+
+    // Simula falha no segundo DEL fazendo Redis falhar
+    redis.failWith = new Error('Redis offline during delayed delete');
+
+    // Executa o timer callback
+    jest.runAllTimers();
+
+    // Segundo DEL foi tentado (mesmo com falha)
+    expect(delaySpy).toHaveBeenCalledTimes(2);
+
+    // Nenhuma exceção foi lançada (erro foi swallowed)
+  });
+
+  it('forget() cancela timer anterior se chamado múltiplas vezes', async () => {
+    // Carrega no cache
+    await directory.list(CONVERSATION_ID);
+
+    // Primeira chamada a forget()
+    await directory.forget(CONVERSATION_ID);
+    expect(jest.getTimerCount()).toBeGreaterThan(0);
+    const timerCount1 = jest.getTimerCount();
+
+    // Segunda chamada a forget() (cancela o timer anterior)
+    await directory.forget(CONVERSATION_ID);
+    expect(jest.getTimerCount()).toBeGreaterThan(0);
+
+    // Não deve ter acumulado timers
+    expect(jest.getTimerCount()).toBe(timerCount1);
+
+    // Executa todos os timers
+    jest.runAllTimers();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('lista vazia não é cacheada (apenas em participantes reais)', async () => {
+    const emptyParticipants = {
+      listByConversation: jest.fn().mockResolvedValue([]),
+    };
+    const dirEmpty = new ParticipantDirectory(
+      emptyParticipants as unknown as IParticipantRepository,
+      new CacheService(redis),
+      100
+    );
+
+    // Retorna lista vazia
+    const result = await dirEmpty.list(CONVERSATION_ID);
+    expect(result).toEqual([]);
+
+    // Não deve ter escrito no cache
+    const key = `cache:conv:participants:${CONVERSATION_ID}`;
+    expect(await redis.get(key)).toBeNull();
   });
 
   it('instância com dependências padrão', () => {

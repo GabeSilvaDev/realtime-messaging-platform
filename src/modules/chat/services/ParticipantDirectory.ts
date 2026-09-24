@@ -30,23 +30,33 @@ export class ParticipantDirectory {
       IParticipantRepository,
       'listByConversation'
     > = participantRepository,
-    private readonly cache: Pick<ICacheService, 'getOrLoad' | 'del'> = cacheService,
+    private readonly cache: Pick<ICacheService, 'get' | 'set' | 'del'> = cacheService,
     private readonly delayedDeleteMs: number = CHAT_PARTICIPANTS_CACHE_DELAYED_DELETE_MS
   ) {}
 
   /** Do mais antigo para o mais novo (mesma ordem do repositório). */
   async list(conversationId: string): Promise<ParticipantSummary[]> {
-    return this.cache.getOrLoad(
-      CHAT_CACHE_KEYS.participants(conversationId),
-      CHAT_PARTICIPANTS_CACHE_TTL_SECONDS,
-      async () => {
-        const participants = await this.participants.listByConversation(conversationId);
-        return participants.map(({ userId, role }) => ({
-          userId,
-          role,
-        }));
-      }
-    );
+    const key = CHAT_CACHE_KEYS.participants(conversationId);
+
+    // Tenta carregar do cache
+    const cached = await this.cache.get<ParticipantSummary[]>(key);
+    if (cached !== null) {
+      return cached;
+    }
+
+    // Carrega do repositório
+    const participants = await this.participants.listByConversation(conversationId);
+    const summaries = participants.map(({ userId, role }) => ({
+      userId,
+      role,
+    }));
+
+    // Cacheia apenas se não está vazio (conversas desconhecidas não são cacheadas)
+    if (summaries.length > 0) {
+      await this.cache.set(key, summaries, CHAT_PARTICIPANTS_CACHE_TTL_SECONDS);
+    }
+
+    return summaries;
   }
 
   async userIds(conversationId: string): Promise<string[]> {
@@ -73,11 +83,11 @@ export class ParticipantDirectory {
     }
 
     // Agenda segundo DEL após delay (unref'd para não manter o processo vivo).
+    // CacheService.del() nunca rejeita (swallows erros internamente).
     const delayed = setTimeout(() => {
-      this.cache.del(key).catch(() => {
-        // Falha silenciosa no segundo delete (best-effort).
+      void this.cache.del(key).then(() => {
+        this.delayedDeleteTimers.delete(key);
       });
-      this.delayedDeleteTimers.delete(key);
     }, this.delayedDeleteMs);
 
     delayed.unref();
