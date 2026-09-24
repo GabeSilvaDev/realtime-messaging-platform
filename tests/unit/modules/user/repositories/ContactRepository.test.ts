@@ -276,6 +276,21 @@ describe('ContactRepository', () => {
       );
     });
 
+    it('deve escapar % _ e \\ no termo de pesquisa (como o UserRepository)', async () => {
+      MockContact.findAndCountAll.mockResolvedValue({ count: 0, rows: [] } as any);
+
+      await repository.findAllByUser('user-123', { filters: { search: '50%off_a\\b' } });
+
+      const call = MockContact.findAndCountAll.mock.calls[0]![0] as unknown as {
+        include: [{ where: Record<symbol, unknown> }];
+      };
+      const searchWhere = call.include[0].where[Op.or];
+      expect(searchWhere).toEqual([
+        { username: { [Op.iLike]: '%50\\%off\\_a\\\\b%' } },
+        { displayName: { [Op.iLike]: '%50\\%off\\_a\\\\b%' } },
+      ]);
+    });
+
     it('deve retornar hasMore true quando há mais resultados', async () => {
       const manyContacts = Array(51)
         .fill(null)

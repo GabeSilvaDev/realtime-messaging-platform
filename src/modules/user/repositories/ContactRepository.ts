@@ -1,4 +1,5 @@
 import User from '@/shared/database/models/User';
+import { escapeLikePattern } from '@/shared/utils/sql';
 import { Op, type Order } from 'sequelize';
 import Contact from '../models/Contact';
 import type { IContactRepository } from '../interfaces';
@@ -67,8 +68,8 @@ export class ContactRepository implements IContactRepository {
           filters.search !== undefined && filters.search !== ''
             ? {
                 [Op.or]: [
-                  { username: { [Op.iLike]: `%${filters.search}%` } },
-                  { displayName: { [Op.iLike]: `%${filters.search}%` } },
+                  { username: { [Op.iLike]: `%${escapeLikePattern(filters.search)}%` } },
+                  { displayName: { [Op.iLike]: `%${escapeLikePattern(filters.search)}%` } },
                 ],
               }
             : undefined,

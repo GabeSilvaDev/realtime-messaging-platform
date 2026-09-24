@@ -1,5 +1,6 @@
 import User from '@/shared/database/models/User';
 import type { UserAttributes, UserStatus } from '@/shared/types';
+import { escapeLikePattern } from '@/shared/utils/sql';
 import { literal, Op } from 'sequelize';
 import type { IUserRepository } from '../interfaces';
 import Contact from '../models/Contact';
@@ -12,14 +13,6 @@ import type { UserSearchOptions, UserSearchResult, UserWithContactInfo } from '.
 const BLOCKED_USER_IDS_SUBQUERY =
   '(SELECT contact_id FROM contacts WHERE user_id = :excludeUserId AND is_blocked = true ' +
   'UNION SELECT user_id FROM contacts WHERE contact_id = :excludeUserId AND is_blocked = true)';
-
-/**
- * Escapa os caracteres especiais do LIKE/ILIKE (`\`, `%`, `_`) para que um termo de busca
- * livre não seja interpretado como padrão de wildcard do SQL.
- */
-function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
 
 export class UserRepository implements IUserRepository {
   async findById(id: string): Promise<UserAttributes | null> {
