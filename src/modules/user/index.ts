@@ -40,3 +40,5 @@ export {
 } from './controllers';
 
 export { profileRoutes, contactRoutes, blockRoutes, userRoutes } from './routes';
+
+export { registerUserCacheListeners } from './listeners';

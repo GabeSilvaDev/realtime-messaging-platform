@@ -39,4 +39,12 @@ export interface IContactService {
     query: string,
     options?: { limit?: number; excludeBlocked?: boolean }
   ): Promise<PublicUserDTO[]>;
+  /** Quem tem `userId` como contato não bloqueado (audiência da presença). */
+  listWatchers(userId: string): Promise<string[]>;
+  /** Ids dos contatos não bloqueados de `userId`. */
+  listContactIds(userId: string): Promise<string[]>;
+  /** Ids com bloqueio em qualquer sentido com `userId` (cacheado em `cache:blocks:<id>`). */
+  listBlockedEitherIds(userId: string): Promise<string[]>;
+  /** Contatos não bloqueados de `userId` entre `contactIds` (ex.: os que estão online). */
+  getContactsByIds(userId: string, contactIds: string[]): Promise<ContactWithUser[]>;
 }

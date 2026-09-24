@@ -687,4 +687,78 @@ describe('ContactRepository', () => {
       );
     });
   });
+
+  describe('consultas da presença', () => {
+    it('listWatcherIds: quem tem o usuário como contato não bloqueado', async () => {
+      MockContact.findAll.mockResolvedValue([{ userId: 'w1' }, { userId: 'w2' }] as any);
+
+      const result = await repository.listWatcherIds('user-123');
+
+      expect(MockContact.findAll).toHaveBeenCalledWith({
+        where: { contactId: 'user-123', isBlocked: false },
+        attributes: ['userId'],
+      });
+      expect(result).toEqual(['w1', 'w2']);
+    });
+
+    it('listContactIds: contatos não bloqueados do usuário', async () => {
+      MockContact.findAll.mockResolvedValue([{ contactId: 'c1' }] as any);
+
+      const result = await repository.listContactIds('user-123');
+
+      expect(MockContact.findAll).toHaveBeenCalledWith({
+        where: { userId: 'user-123', isBlocked: false },
+        attributes: ['contactId'],
+      });
+      expect(result).toEqual(['c1']);
+    });
+
+    it('listBlockedEitherIds: os dois sentidos numa consulta, sem repetição', async () => {
+      MockContact.findAll.mockResolvedValue([
+        { userId: 'user-123', contactId: 'b1' },
+        { userId: 'b2', contactId: 'user-123' },
+        { userId: 'b1', contactId: 'user-123' },
+      ] as any);
+
+      const result = await repository.listBlockedEitherIds('user-123');
+
+      expect(MockContact.findAll).toHaveBeenCalledWith({
+        where: {
+          isBlocked: true,
+          [Op.or]: [{ userId: 'user-123' }, { contactId: 'user-123' }],
+        },
+        attributes: ['userId', 'contactId'],
+      });
+      expect(result).toEqual(['b1', 'b2']);
+    });
+
+    it('findByUserAndContactIds: contatos não bloqueados entre os ids, com o usuário', async () => {
+      const publicUser = { id: 'c1', username: 'c1', displayName: null, avatarUrl: null };
+      const row = {
+        contactId: 'c1',
+        toJSON: () => ({ id: 'row-1', contactId: 'c1' }),
+        contact: { toPublicJSON: () => publicUser },
+      };
+      MockContact.findAll.mockResolvedValue([row] as any);
+
+      const result = await repository.findByUserAndContactIds('user-123', ['c1', 'c2']);
+
+      expect(MockContact.findAll).toHaveBeenCalledWith({
+        where: { userId: 'user-123', contactId: { [Op.in]: ['c1', 'c2'] }, isBlocked: false },
+        include: [
+          {
+            model: expect.anything(),
+            as: 'contact',
+            attributes: ['id', 'username', 'displayName', 'avatarUrl', 'status', 'lastSeenAt'],
+          },
+        ],
+      });
+      expect(result).toEqual([{ id: 'row-1', contactId: 'c1', contact: publicUser }]);
+    });
+
+    it('findByUserAndContactIds: lista vazia não consulta', async () => {
+      await expect(repository.findByUserAndContactIds('user-123', [])).resolves.toEqual([]);
+      expect(MockContact.findAll).not.toHaveBeenCalled();
+    });
+  });
 });

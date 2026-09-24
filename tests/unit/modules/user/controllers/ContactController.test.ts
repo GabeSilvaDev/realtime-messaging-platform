@@ -29,6 +29,10 @@ function createService(): jest.Mocked<IContactService> {
     getStats: jest.fn(),
     searchUsers: jest.fn(),
     recordInteraction: jest.fn(),
+    listWatchers: jest.fn(),
+    listContactIds: jest.fn(),
+    listBlockedEitherIds: jest.fn(),
+    getContactsByIds: jest.fn(),
   };
 }
 

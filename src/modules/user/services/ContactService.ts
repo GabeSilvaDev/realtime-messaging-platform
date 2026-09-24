@@ -1,6 +1,8 @@
 import type { UserAttributes } from '@/shared/types';
+import { cacheService, type ICacheService } from '@/shared/cache';
 import { eventBus, type EventBus } from '@/shared/event-bus';
 import { UserEvents } from '@/shared/types';
+import { USER_CACHE_KEYS, USER_CACHE_TTL_SECONDS } from '../constants';
 import { contactRepository, userRepository } from '../repositories';
 import type { IContactRepository, IContactService, IUserRepository } from '../interfaces';
 import {
@@ -37,7 +39,8 @@ export class ContactService implements IContactService {
   constructor(
     private readonly contacts: IContactRepository = contactRepository,
     private readonly users: IUserRepository = userRepository,
-    private readonly events: Pick<EventBus, 'publish'> = eventBus
+    private readonly events: Pick<EventBus, 'publish'> = eventBus,
+    private readonly cache: Pick<ICacheService, 'getOrLoad'> = cacheService
   ) {}
 
   async addContact(userId: string, data: AddContactDTO): Promise<ContactResponseDTO> {
@@ -178,12 +181,27 @@ export class ContactService implements IContactService {
     return this.contacts.isBlocked(userId, targetId);
   }
 
+  /** Uma consulta (cacheada) cobre os dois sentidos do bloqueio. */
   async isBlockedByEither(userId: string, targetId: string): Promise<boolean> {
-    const [blockedByUser, blockedByTarget] = await Promise.all([
-      this.contacts.isBlocked(userId, targetId),
-      this.contacts.isBlocked(targetId, userId),
-    ]);
-    return blockedByUser || blockedByTarget;
+    return (await this.listBlockedEitherIds(userId)).includes(targetId);
+  }
+
+  async listBlockedEitherIds(userId: string): Promise<string[]> {
+    return this.cache.getOrLoad(USER_CACHE_KEYS.blocks(userId), USER_CACHE_TTL_SECONDS, () =>
+      this.contacts.listBlockedEitherIds(userId)
+    );
+  }
+
+  async listWatchers(userId: string): Promise<string[]> {
+    return this.contacts.listWatcherIds(userId);
+  }
+
+  async listContactIds(userId: string): Promise<string[]> {
+    return this.contacts.listContactIds(userId);
+  }
+
+  async getContactsByIds(userId: string, contactIds: string[]): Promise<ContactWithUser[]> {
+    return this.contacts.findByUserAndContactIds(userId, contactIds);
   }
 
   async isContact(userId: string, contactId: string): Promise<boolean> {
