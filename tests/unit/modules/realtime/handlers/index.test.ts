@@ -5,5 +5,6 @@ describe('realtime handlers index', () => {
     expect(typeof handlers.withAck).toBe('function');
     expect(typeof handlers.toAckError).toBe('function');
     expect(typeof handlers.registerMessageHandlers).toBe('function');
+    expect(typeof handlers.registerTypingHandlers).toBe('function');
   });
 });
