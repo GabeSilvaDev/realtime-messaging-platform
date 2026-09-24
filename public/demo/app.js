@@ -23,7 +23,10 @@
     typingTimer: null,
     lastRefreshAt: 0,
     refreshTimer: null,
+    presence: new Map(), // userId → { state, lastSeenAt } (snapshot + presence:update)
   };
+
+  const PRESENCE_LABELS = { online: 'online', away: 'ausente', busy: 'ocupado', offline: 'offline' };
 
   // Sessão inválida (401 no REST, token expirado ou sessões revogadas): limpa e volta ao login.
   function endSession() {
@@ -79,6 +82,31 @@
     return other ? (other.displayName ?? other.username) : 'Conversa';
   }
 
+  function presenceOf(userId) {
+    return state.presence.get(userId) ?? { state: 'offline', lastSeenAt: null };
+  }
+
+  // "online", "ausente", "ocupado" ou "visto por último em 26/09 14:05" (vai para textContent).
+  function presenceText(userId) {
+    const { state: current, lastSeenAt } = presenceOf(userId);
+    if (current !== 'offline' || !lastSeenAt) {
+      return PRESENCE_LABELS[current];
+    }
+    const time = new Date(lastSeenAt).toLocaleString([], {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return `visto por último em ${time}`;
+  }
+
+  function renderPresence() {
+    renderConversations();
+    const other = state.current?.type === 'direct' ? otherParticipant(state.current) : null;
+    $('conversation-presence').textContent = other ? presenceText(other.id) : '';
+  }
+
   function participantName(userId) {
     const participant = state.current?.participants.find((p) => p.id === userId);
     return participant ? (participant.displayName ?? participant.username) : 'alguém';
@@ -90,6 +118,7 @@
     $('login-view').hidden = true;
     $('chat-view').hidden = false;
     $('logout').hidden = false;
+    $('status-label').hidden = false;
     $('me').textContent = state.user.displayName ?? state.user.username;
     connectSocket();
     void loadConversations();
@@ -115,6 +144,16 @@
   });
 
   $('logout').addEventListener('click', endSession);
+
+  // Status manual (persiste entre reconexões); offline é só a desconexão.
+  $('status').addEventListener('change', (event) => {
+    const status = event.target.value;
+    state.socket?.emit('presence:set', { status }, (ack) => {
+      if (!ack.ok) {
+        window.alert(`Falha ao mudar o status: ${ack.error.message}`);
+      }
+    });
+  });
 
   // ---------- socket ----------
 
@@ -165,6 +204,20 @@
       if (state.current?.id === conversationId) {
         $('typing').textContent = isTyping ? `${participantName(userId)} está digitando…` : '';
       }
+    });
+    // Presença: estado de quem o usuário observa ao conectar; depois, só as mudanças.
+    socket.on('presence:snapshot', ({ states }) => {
+      states.forEach((entry) => state.presence.set(entry.userId, entry));
+      renderPresence();
+    });
+    socket.on('presence:update', (entry) => {
+      if (entry.userId === state.user.id) {
+        // Status mudado em outra aba deste usuário.
+        $('status').value = entry.state === 'online' ? 'available' : entry.state;
+        return;
+      }
+      state.presence.set(entry.userId, entry);
+      renderPresence();
     });
     socket.on('conversation:new', scheduleConversationsRefresh);
     socket.on('conversation:updated', scheduleConversationsRefresh);
@@ -235,12 +288,35 @@
     const page = await api('GET', '/conversations?limit=100');
     state.conversations = page.items;
     renderConversations();
+    void loadMissingPresence();
+  }
+
+  // Parceiros 1:1 que o snapshot não trouxe (ex.: conversa criada depois de conectar).
+  async function loadMissingPresence() {
+    const ids = state.conversations
+      .filter((conversation) => conversation.type === 'direct')
+      .map((conversation) => otherParticipant(conversation)?.id)
+      .filter((id) => id && !state.presence.has(id))
+      .slice(0, 100);
+    if (ids.length === 0) {
+      return;
+    }
+    const { items } = await api('GET', `/presence?userIds=${ids.join(',')}`);
+    items.forEach((entry) => state.presence.set(entry.userId, entry));
+    renderPresence();
   }
 
   function renderConversations() {
     $('conversations').replaceChildren(
       ...state.conversations.map((conversation) => {
-        const item = el('li', state.current?.id === conversation.id ? 'active' : '', conversationTitle(conversation));
+        const item = el('li', state.current?.id === conversation.id ? 'active' : '');
+        const other = conversation.type === 'direct' ? otherParticipant(conversation) : null;
+        if (other) {
+          const dot = el('span', `dot ${presenceOf(other.id).state}`);
+          dot.title = presenceText(other.id);
+          item.append(dot);
+        }
+        item.append(el('span', '', conversationTitle(conversation)));
         item.addEventListener('click', () => void openConversation(conversation.id));
         return item;
       })
@@ -280,6 +356,7 @@
     state.nextCursor = page.nextCursor;
     $('conversation').hidden = false;
     $('conversation-title').textContent = conversationTitle(state.current);
+    renderPresence();
     $('typing').textContent = '';
     renderMessages(true);
     markRead();
