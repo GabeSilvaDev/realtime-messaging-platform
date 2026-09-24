@@ -3,6 +3,7 @@ export {
   InvalidAvatarUrlException,
   BioTooLongException,
   DisplayNameTooLongException,
+  OfflineStatusNotAllowedException,
 } from './profile.errors';
 
 export {

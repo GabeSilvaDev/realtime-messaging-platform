@@ -11,6 +11,7 @@ export {
   BioTooLongException,
   DisplayNameTooLongException,
   InvalidAvatarUrlException,
+  OfflineStatusNotAllowedException,
   ProfileNotFoundException,
   ProfileService,
   profileService,

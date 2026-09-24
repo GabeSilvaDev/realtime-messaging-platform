@@ -18,6 +18,7 @@ jest.mock('@/modules/user/repositories', () => ({
   },
   UserRepository: jest.fn(),
 }));
+jest.mock('@/modules/presence/services/PresenceService', () => ({ presenceService: {} }));
 
 import {
   ProfileService,
@@ -25,6 +26,7 @@ import {
   InvalidAvatarUrlException,
   BioTooLongException,
   DisplayNameTooLongException,
+  OfflineStatusNotAllowedException,
 } from '@/modules/user/services/ProfileService';
 import type { IAvatarService } from '@/modules/user/interfaces';
 import type { AvatarFile, AvatarUploadResult } from '@/modules/user/types';
@@ -308,64 +310,67 @@ describe('ProfileService', () => {
     });
   });
 
-  describe('updateStatus', () => {
-    it('deve atualizar status do usuário', async () => {
-      mockUserRepository.findById.mockResolvedValue(mockUser);
-      mockUserRepository.updateStatus.mockResolvedValue();
+  describe('status legado (delegado à presença)', () => {
+    let presence: { setManualStatus: jest.Mock };
+    let service: ProfileService;
 
-      await profileService.updateStatus('user-123', UserStatus.BUSY);
-
-      expect(mockUserRepository.updateStatus).toHaveBeenCalledWith('user-123', UserStatus.BUSY);
+    beforeEach(() => {
+      presence = {
+        setManualStatus: jest.fn().mockResolvedValue({ state: 'online', changed: false }),
+      };
+      service = new ProfileService(mockUserRepository, undefined, undefined, presence);
     });
 
-    it('deve lançar ProfileNotFoundException quando usuário não existe', async () => {
+    it.each([
+      [UserStatus.ONLINE, 'available'],
+      [UserStatus.AWAY, 'away'],
+      [UserStatus.BUSY, 'busy'],
+    ])(
+      'updateStatus(%s) grava o status manual %s e não toca users.status',
+      async (status, manual) => {
+        mockUserRepository.findById.mockResolvedValue(mockUser);
+
+        await service.updateStatus('user-123', status);
+
+        expect(presence.setManualStatus).toHaveBeenCalledWith('user-123', manual);
+        expect(mockUserRepository.updateStatus).not.toHaveBeenCalled();
+      }
+    );
+
+    it('updateStatus(offline) → 400 sem consultar nada', async () => {
+      await expect(service.updateStatus('user-123', UserStatus.OFFLINE)).rejects.toThrow(
+        OfflineStatusNotAllowedException
+      );
+      expect(mockUserRepository.findById).not.toHaveBeenCalled();
+      expect(presence.setManualStatus).not.toHaveBeenCalled();
+    });
+
+    it('updateStatus de perfil inexistente → ProfileNotFoundException', async () => {
       mockUserRepository.findById.mockResolvedValue(null);
 
-      await expect(profileService.updateStatus('nonexistent', UserStatus.ONLINE)).rejects.toThrow(
+      await expect(service.updateStatus('nonexistent', UserStatus.ONLINE)).rejects.toThrow(
         ProfileNotFoundException
       );
+      expect(presence.setManualStatus).not.toHaveBeenCalled();
     });
-  });
 
-  describe('setOnline', () => {
-    it('deve definir status como online', async () => {
-      mockUserRepository.updateStatus.mockResolvedValue();
+    it.each([
+      ['setOnline', 'available'],
+      ['setAway', 'away'],
+      ['setBusy', 'busy'],
+    ] as const)('%s grava o status manual %s', async (method, manual) => {
+      await service[method]('user-123');
 
-      await profileService.setOnline('user-123');
-
-      expect(mockUserRepository.updateStatus).toHaveBeenCalledWith('user-123', UserStatus.ONLINE);
+      expect(presence.setManualStatus).toHaveBeenCalledWith('user-123', manual);
+      expect(mockUserRepository.updateStatus).not.toHaveBeenCalled();
     });
-  });
 
-  describe('setOffline', () => {
-    it('deve definir status como offline e atualizar lastSeen', async () => {
-      mockUserRepository.updateStatus.mockResolvedValue();
-      mockUserRepository.updateLastSeen.mockResolvedValue();
-
-      await profileService.setOffline('user-123');
-
-      expect(mockUserRepository.updateStatus).toHaveBeenCalledWith('user-123', UserStatus.OFFLINE);
-      expect(mockUserRepository.updateLastSeen).toHaveBeenCalledWith('user-123');
-    });
-  });
-
-  describe('setAway', () => {
-    it('deve definir status como away', async () => {
-      mockUserRepository.updateStatus.mockResolvedValue();
-
-      await profileService.setAway('user-123');
-
-      expect(mockUserRepository.updateStatus).toHaveBeenCalledWith('user-123', UserStatus.AWAY);
-    });
-  });
-
-  describe('setBusy', () => {
-    it('deve definir status como busy', async () => {
-      mockUserRepository.updateStatus.mockResolvedValue();
-
-      await profileService.setBusy('user-123');
-
-      expect(mockUserRepository.updateStatus).toHaveBeenCalledWith('user-123', UserStatus.BUSY);
+    it('setOffline → 400 (offline vem da desconexão)', async () => {
+      await expect(service.setOffline('user-123')).rejects.toThrow(
+        OfflineStatusNotAllowedException
+      );
+      expect(presence.setManualStatus).not.toHaveBeenCalled();
+      expect(mockUserRepository.updateLastSeen).not.toHaveBeenCalled();
     });
   });
 

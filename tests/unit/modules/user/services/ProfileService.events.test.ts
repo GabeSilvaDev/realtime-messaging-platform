@@ -2,6 +2,7 @@ jest.mock('@/modules/user/repositories', () => ({
   userRepository: {},
   UserRepository: jest.fn(),
 }));
+jest.mock('@/modules/presence/services/PresenceService', () => ({ presenceService: {} }));
 
 import type { IAvatarService, IUserRepository } from '@/modules/user/interfaces';
 import type { AvatarFile, AvatarUploadResult } from '@/modules/user/types';
