@@ -12,6 +12,7 @@ import {
 import type { Environment } from './shared/types';
 import { authRoutes } from './modules/auth/routes';
 import { profileRoutes, contactRoutes, blockRoutes, userRoutes } from './modules/user/routes';
+import { conversationRoutes } from './modules/chat/routes';
 
 const env: Environment = (process.env.NODE_ENV as Environment | undefined) ?? 'development';
 
@@ -71,6 +72,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/blocks', blockRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/conversations', conversationRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

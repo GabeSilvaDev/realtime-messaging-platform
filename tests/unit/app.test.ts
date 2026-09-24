@@ -192,6 +192,13 @@ describe('app', () => {
       expect(response.body.success).toBe(false);
     });
 
+    it('monta o router de conversas em /api/conversations (todas as rotas exigem autenticação real)', async () => {
+      const response = await request(app).get('/api/conversations');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
     it('retorna 404 em formato JSON (notFoundHandler + errorHandler) para rota desconhecida', async () => {
       const response = await request(app).get('/rota-que-nao-existe');
 
