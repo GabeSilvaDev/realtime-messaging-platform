@@ -2,7 +2,7 @@
 
 # Real-Time Messaging Platform
 
-**Backend de um produto de chat em tempo real, em Node.js e TypeScript** — API Express 5 com autenticação por token e perfis de usuário hoje; mensagens via WebSocket, presença, notificações e busca a caminho, cada um no banco que melhor o atende.
+**Backend de um produto de chat em tempo real, em Node.js e TypeScript** — API Express 5 com autenticação por token, perfis de usuário, contatos e chat via REST hoje; entrega via WebSocket, presença, notificações e busca a caminho, cada um no banco que melhor o atende.
 
 [![Status](https://img.shields.io/badge/status-em%20desenvolvimento-f59e0b)](#roadmap)
 [![CI](https://github.com/GabeSilvaDev/realtime-messaging-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/GabeSilvaDev/realtime-messaging-platform/actions/workflows/ci.yml)
@@ -13,14 +13,14 @@
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
 [![MongoDB](https://img.shields.io/badge/MongoDB-8-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com)
 [![Elasticsearch](https://img.shields.io/badge/Elasticsearch-8.17-005571?logo=elasticsearch&logoColor=white)](https://www.elastic.co)
-[![Testes](https://img.shields.io/badge/testes-2094%20Jest-C21325?logo=jest&logoColor=white)](#desenvolvimento)
+[![Testes](https://img.shields.io/badge/testes-2335%20Jest-C21325?logo=jest&logoColor=white)](#desenvolvimento)
 [![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-555)](LICENSE)
 
 [English](README.md) · **Português (Brasil)**
 
 </div>
 
-> **Em desenvolvimento.** Autenticação, perfis e a infraestrutura compartilhada (bancos, event bus, logger, validação, middlewares, armazenamento de arquivos) estão implementados e testados. As mensagens em si são o próximo marco — veja o [roadmap](#roadmap).
+> **Em desenvolvimento.** Autenticação, perfis, contatos/bloqueios e a API REST de chat (conversas 1:1 e em grupo, mensagens no MongoDB) estão implementados e testados sobre a infraestrutura compartilhada. A entrega em tempo real via WebSocket é o próximo marco — veja o [roadmap](#roadmap).
 
 ## Arquitetura
 
@@ -29,19 +29,20 @@ flowchart LR
     C[Cliente] -->|HTTP · Bearer JWT| API[API Express 5]
     API --> AUTH[módulo auth]
     API --> USER[módulo user]
-    API -.-> CHAT[chat · WebSocket]
+    API --> CHAT[módulo chat]
+    API -.-> RT[tempo real · WebSocket]
     API -.-> NOTIF[notificações]
     API -.-> SEARCH[busca]
-    AUTH & USER --> PG[(PostgreSQL<br/>Sequelize)]
+    AUTH & USER & CHAT --> PG[(PostgreSQL<br/>Sequelize)]
     AUTH & USER --> RD[(Redis<br/>rate limit · cache)]
     USER --> ST[(Storage<br/>local / S3)]
     API --> LOG[(MongoDB<br/>logs estruturados)]
-    CHAT -.-> MG[(MongoDB<br/>mensagens)]
+    CHAT --> MG[(MongoDB<br/>mensagens)]
     SEARCH -.-> ES[(Elasticsearch)]
-    AUTH & USER --> EB{{EventBus}}
+    AUTH & USER & CHAT --> EB{{EventBus}}
 
     classDef planned stroke-dasharray: 5 5,opacity:0.6
-    class CHAT,NOTIF,SEARCH,MG,ES planned
+    class RT,NOTIF,SEARCH,ES planned
 ```
 
 Nós sólidos existem hoje; tracejados são planejados. Cada feature é um **módulo** (`src/modules/<nome>`) com seus próprios controllers, services, repositories, models, DTOs, schemas de validação, exceções e rotas, ligados por interfaces. Tudo que é transversal vive em `src/shared`.
@@ -80,13 +81,15 @@ Access tokens expiram em 15 min, refresh tokens em 7 dias e são persistidos por
 
 | Método | Endpoint | Auth | Observações |
 |---|---|:---:|---|
-| `GET` | `/` | ✓ | Lista os próprios contatos, paginado, com filtros |
+| `GET` | `/` | ✓ | Lista os próprios contatos, paginado, com filtros; `orderBy=lastInteraction` ordena pela última mensagem direta (quem nunca conversou fica no fim) |
 | `POST` | `/` | ✓ | Adiciona um contato |
 | `GET` | `/favorites` | ✓ | Lista contatos favoritos |
 | `GET` | `/stats` | ✓ | Contadores de contatos |
 | `GET` | `/:contactId` | ✓ | Obtém um contato |
 | `PATCH` | `/:contactId` | ✓ | Atualiza apelido e/ou flag de favorito |
 | `DELETE` | `/:contactId` | ✓ | Remove um contato |
+
+Um usuário bloqueado não é contato: `GET`/`PATCH`/`DELETE /:contactId` respondem 404 para ele, e o desbloqueio só acontece por `DELETE /api/blocks/:userId`.
 
 ### Bloqueios — `/api/blocks`
 
@@ -102,6 +105,25 @@ Access tokens expiram em 15 min, refresh tokens em 7 dias e são persistidos por
 |---|---|:---:|---|
 | `GET` | `/search?query=` | ✓ | Busca por username, nome de exibição (substring, case-insensitive) ou email (apenas endereço exato, case-insensitive — nunca substring); exclui quem faz a requisição e, por padrão, qualquer usuário bloqueado por um lado ou pelo outro (`excludeBlocked=false` desativa) |
 
+### Chat — `/api/conversations`
+
+| Método | Endpoint | Auth | Observações |
+|---|---|:---:|---|
+| `POST` | `/direct` | ✓ | `{ userId }` — conversa 1:1; idempotente (201 nova, 200 existente); 403 se houver bloqueio em qualquer sentido |
+| `POST` | `/group` | ✓ | `{ name, participantIds[] }` — o criador vira `admin`; até 256 participantes contando o criador |
+| `GET` | `/` | ✓ | `archived`, `limit` (≤ 100), `offset`; atividade mais recente primeiro; cada item traz os participantes e a participação de quem pede (`role`, `isMuted`, `archivedAt`) |
+| `GET` | `/:id` | ✓ | 404 para quem não participa (não revela a existência) |
+| `PATCH` | `/:id` | ✓ | `{ name }` — só grupos, só admins |
+| `POST` · `DELETE` | `/:id/archive` | ✓ | Arquiva / desarquiva, por participante |
+| `POST` | `/:id/leave` | ✓ | Só grupos; se o último admin sai, o membro mais antigo é promovido; grupo vazio é removido |
+| `POST` | `/:id/members` | ✓ | `{ userIds[] }` — só admins; quem já participa é ignorado |
+| `DELETE` | `/:id/members/:userId` | ✓ | Só admins; remover a si mesmo equivale a sair |
+| `GET` | `/:id/messages` | ✓ | Mais recentes primeiro, `limit` ≤ 50, cursor `before=<messageId>`; retorna `{ messages, nextCursor }`; mensagens apagadas voltam como tombstone (`content: null`) |
+| `POST` | `/:id/messages` | ✓ | `{ text, replyTo?, mentions? }` — texto de 1 a 10.000 caracteres; 403 em conversa 1:1 com bloqueio em qualquer sentido |
+| `DELETE` | `/:id/messages/:messageId` | ✓ | Só o autor; soft delete, idempotente |
+
+As mensagens ficam só no MongoDB (coleção `messages`, índice `{ conversationId: 1, createdAt: -1, _id: -1 }`); conversas e participantes ficam no PostgreSQL. O módulo publica `chat:conversation-created`, `chat:conversation-updated`, `chat:message-sent` e `chat:message-deleted` no EventBus; um listener registrado no bootstrap atualiza `contacts.last_interaction_at` a cada mensagem direta.
+
 ### Rate limit
 
 Construído sobre `express-rate-limit` com store no Redis (`rate-limit-redis`) por padrão; um `MemoryStore` é selecionado automaticamente quando `NODE_ENV=test` (a suíte roda sem precisar de Redis), e a opção `store` do `createRateLimiter` permite injetar qualquer outro store. Todos os limites são identificados pelo IP do cliente (chave padrão do `express-rate-limit`), não por conta — o limiter de login conta tentativas com falha por IP, então também pode limitar várias contas que compartilhem o mesmo IP de origem. `/auth/register`, `/forgot-password` e `/reset-password` compartilham a mesma instância de limiter (mesmo prefixo de chave), então juntas dividem um único bucket de 5 requisições por IP na janela, não 5 cada uma.
@@ -112,12 +134,12 @@ Construído sobre `express-rate-limit` com store no Redis (`rate-limit-redis`) p
 | `/auth/register` · `/forgot-password` · `/reset-password` | 15 min | 5 req | Um único bucket por IP entre as três rotas; falha fechado se o store der erro |
 | `/auth/login` | 15 min | 5 tentativas com falha | Logins bem-sucedidos não contam (`skipSuccessfulRequests`); falha fechado se o store der erro |
 
-`TRUST_PROXY` (não definida por padrão) controla o `app.set('trust proxy', …)`, que por sua vez controla como o IP do cliente (e portanto a chave do rate limit) é obtido atrás de um proxy reverso. Deixe sem definir para manter o padrão do Express (`false`, só conexões diretas); defina como `true`/`false`, um número de hops (ex.: `1`) ou um preset/IP do Express como `loopback` ao rodar atrás de um proxy confiável — veja a seção Configuração, abaixo.
+`TRUST_PROXY` (não definida por padrão) controla o `app.set('trust proxy', …)`, que por sua vez controla como o IP do cliente (e portanto a chave do rate limit) é obtido atrás de um proxy reverso. Deixe sem definir para manter o padrão do Express (`false`, só conexões diretas); defina como `true`/`false`, um número de hops (ex.: `1`) ou um preset/IP do Express como `loopback` ao rodar atrás de um proxy confiável — veja a seção Configuração, abaixo. Evite `TRUST_PROXY=true` fora de um ambiente controlado: ele confia em qualquer header `X-Forwarded-For`, então clientes podem forjar o IP e escapar do rate limit — prefira o número de hops ou os IPs/sub-redes dos proxies.
 
 ### Infraestrutura compartilhada — `src/shared`
 
 - **Bancos** — helpers de conexão para PostgreSQL (Sequelize, com migrations e seeders), Redis (ioredis), MongoDB (Mongoose) e Elasticsearch, todos iniciados e encerrados pelo `bootstrap.ts`.
-- **EventBus** — publish/subscribe em processo com prioridades, handlers de execução única, assinaturas wildcard e contadores; os módulos emitem eventos de domínio (ex.: eventos de auth, `user:blocked` / `user:unblocked`) por ele.
+- **EventBus** — publish/subscribe em processo com prioridades, handlers de execução única, assinaturas wildcard e contadores; os módulos emitem eventos de domínio (ex.: eventos de auth, `user:blocked` / `user:unblocked`, `chat:message-sent`) por ele.
 - **Logger** — estruturado, com níveis e categorias; saída no console em desenvolvimento e sink opcional no MongoDB.
 - **Middlewares** — Helmet, CORS, request id, request logger, rate limiter com Redis (store injetável), upload via multer, handlers de 404 e de erro.
 - **Validação** — schemas Zod por módulo, middleware `validate` e schemas comuns de paginação.
@@ -193,7 +215,7 @@ npm run db:migrate:undo    # sequelize-cli db:migrate:undo
 npm run db:seed             # sequelize-cli db:seed:all
 ```
 
-**Testes** — 2.094 testes Jest em 122 suítes (unitários em `tests/unit`, testes de feature HTTP com supertest em `tests/feature`). O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e, a cada push e pull request, roda ESLint, uma checagem do Prettier, `tsc --noEmit` e a suíte. O build falha se a cobertura cair abaixo do `coverageThreshold` em `jest.config.ts` — statements, branches, funções e linhas todos em 90%. A cobertura é medida sobre todo arquivo em `src/`, não só os que algum teste importa; medida com `node node_modules/.bin/jest --coverage --all`, a cobertura atual é 100% statements, 100% branches, 100% funções, 100% linhas.
+**Testes** — 2.335 testes Jest em 145 suítes (unitários em `tests/unit`, testes de feature HTTP com supertest em `tests/feature`). O módulo de config lê as variáveis de banco no import, então elas precisam estar preenchidas mesmo para testes unitários: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `REDIS_PASSWORD`, `MONGO_USER`, `MONGO_PASSWORD`, `MONGO_DB`, `ELASTIC_PASSWORD` (qualquer valor serve; nenhum banco é acessado). O CI define todas e, a cada push e pull request, roda ESLint, uma checagem do Prettier, `tsc --noEmit` e a suíte. O build falha se a cobertura cair abaixo do `coverageThreshold` em `jest.config.ts` — statements, branches, funções e linhas todos em 90%. A cobertura é medida sobre todo arquivo em `src/`, não só os que algum teste importa; medida com `node node_modules/.bin/jest --coverage --all`, a cobertura atual é 100% statements, 100% branches, 100% funções, 100% linhas.
 
 ## Estrutura do projeto
 
@@ -207,8 +229,12 @@ src/
 │   ├── auth/                 controllers · services (Auth, Token, Password) ·
 │   │                         repositories (User, RefreshToken) · exceções ·
 │   │                         eventos · validação · rotas
-│   └── user/                 controller de Profile · services (Profile, User,
-│                             Contact, Avatar) · repositories · models · rotas
+│   ├── user/                 controllers de Profile, Contact, Block e User ·
+│   │                         services (Profile, User, Contact, Avatar) ·
+│   │                         repositories · models · rotas
+│   └── chat/                 controllers de Conversation e Message · services ·
+│                             repositories (PostgreSQL + MongoDB) · models ·
+│                             listeners · validação · rotas
 └── shared/
     ├── config/               env → config tipada (database, upload)
     ├── database/             clientes postgres · redis · mongo · elasticsearch
@@ -221,7 +247,8 @@ src/
     ├── errors/ interfaces/ types/ constants/ utils/
 tests/
 ├── unit/                     espelha src/
-└── feature/                  supertest contra o app Express
+├── feature/                  supertest contra o app Express
+└── support/                  fakes em memória usados pelos feature tests
 ```
 
 ## Configuração
@@ -231,7 +258,7 @@ O `.env.example` lista todas as variáveis. As que importam:
 | Variável | Uso |
 |---|---|
 | `PORT`, `NODE_ENV` | Porta HTTP (3000) e ambiente |
-| `TRUST_PROXY` | `app.set('trust proxy', …)`; sem definir mantém o padrão do Express (`false`) — veja Rate limit, acima |
+| `TRUST_PROXY` | `app.set('trust proxy', …)`; sem definir mantém o padrão do Express (`false`) — veja Rate limit, acima; prefira número de hops ou IPs dos proxies a `true` (spoof de IP) |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | PostgreSQL (host `postgres` dentro do Compose) |
 | `REDIS_PASSWORD` | Auth do Redis |
 | `MONGO_USER` / `MONGO_PASSWORD` / `MONGO_DB` | MongoDB |
@@ -247,8 +274,9 @@ O `.env.example` lista todas as variáveis. As que importam:
 - [x] Auth — registro, login, rotação de refresh token, sessões, reset e troca de senha
 - [x] Perfis — CRUD de perfil, upload de avatar, status, configurações, flag de presença
 - [x] Contatos, bloqueios e busca de usuários — rotas REST, eventos no EventBus, rate limit nas rotas de auth
+- [x] Chat base — conversas 1:1 e em grupo, mensagens no MongoDB com paginação por cursor, API REST e eventos no EventBus
 - [ ] Container `rtm-app` funcional — Dockerfile que roda `npm ci` e faz o build dentro da imagem, com uma base compatível com os binários nativos do `sharp` (veja a [limitação conhecida](#limitacao-conhecida-container-da-app))
-- [ ] Chat — conversas e mensagens via Socket.IO, histórico no MongoDB
+- [ ] Tempo real — entrega via Socket.IO, confirmações de entrega/leitura e indicador de digitação
 - [ ] Presença — status online e indicador de digitação via Redis pub/sub
 - [ ] Notificações — entrega in-app e push
 - [ ] Busca — busca de mensagens no Elasticsearch
