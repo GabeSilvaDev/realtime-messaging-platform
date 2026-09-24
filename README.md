@@ -122,7 +122,7 @@ A blocked user is not a contact: `GET`/`PATCH`/`DELETE /:contactId` answer 404 f
 | `POST` | `/:id/messages` | ✓ | `{ text, replyTo?, mentions? }` — text 1–10,000 characters; 403 in a 1:1 conversation where either side blocked the other |
 | `DELETE` | `/:id/messages/:messageId` | ✓ | Author only; soft delete, idempotent |
 
-Messages live only in MongoDB (`messages` collection, index `{ conversationId: 1, createdAt: -1, _id: -1 }`); conversations and participants live in PostgreSQL. The module publishes `chat:conversation-created`, `chat:conversation-updated`, `chat:message-sent` and `chat:message-deleted` on the EventBus; a listener registered at bootstrap updates `contacts.last_interaction_at` on every direct message.
+Messages live only in MongoDB (`messages` collection, index `{ conversationId: 1, createdAt: -1, _id: -1 }`); conversations and participants live in PostgreSQL. The module publishes `chat:conversation-created`, `chat:conversation-updated`, `chat:conversation-deleted` (when the last member leaves and the conversation is removed), `chat:message-sent` (payload carries the same `MessageDTO` returned to the REST client) and `chat:message-deleted` on the EventBus; listeners registered at bootstrap update `contacts.last_interaction_at` on every direct message and best-effort delete the conversation's messages in MongoDB on `chat:conversation-deleted`.
 
 ### Rate limiting
 

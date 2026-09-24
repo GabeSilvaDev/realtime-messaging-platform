@@ -12,6 +12,7 @@ const USER_C = '33333333-3333-4333-8333-333333333333';
 function messageSent(
   overrides: Partial<EventPayload<ChatEvents.MESSAGE_SENT>> = {}
 ): EventPayload<ChatEvents.MESSAGE_SENT> {
+  const createdAt = new Date('2026-09-24T10:00:00.000Z');
   return {
     messageId: '65f000000000000000000001',
     conversationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -20,8 +21,19 @@ function messageSent(
     text: 'oi',
     mentions: [],
     replyTo: null,
-    createdAt: new Date('2026-09-24T10:00:00.000Z'),
+    createdAt,
     participantIds: [USER_A, USER_B],
+    message: {
+      id: '65f000000000000000000001',
+      conversationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      senderId: USER_A,
+      content: { type: 'text', text: 'oi' },
+      replyTo: null,
+      mentions: [],
+      deletedAt: null,
+      createdAt,
+      updatedAt: createdAt,
+    },
     ...overrides,
   };
 }

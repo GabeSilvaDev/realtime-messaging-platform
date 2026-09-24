@@ -14,11 +14,12 @@ describe('EventBus — eventos de chat tipados', () => {
     EventBus.resetInstance();
   });
 
-  it('deve entregar MESSAGE_SENT com o payload completo', async () => {
+  it('deve entregar MESSAGE_SENT com o payload completo (incluindo o DTO da mensagem)', async () => {
     const received: BaseEvent<EventPayload<ChatEvents.MESSAGE_SENT>>[] = [];
     bus.subscribe(ChatEvents.MESSAGE_SENT, (event) => {
       received.push(event);
     });
+    const createdAt = new Date('2026-09-24T10:00:00.000Z');
     const payload: EventPayload<ChatEvents.MESSAGE_SENT> = {
       messageId: '65f000000000000000000001',
       conversationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -27,11 +28,22 @@ describe('EventBus — eventos de chat tipados', () => {
       text: 'olá',
       mentions: [],
       replyTo: null,
-      createdAt: new Date('2026-09-24T10:00:00.000Z'),
+      createdAt,
       participantIds: [
         '11111111-1111-4111-8111-111111111111',
         '22222222-2222-4222-8222-222222222222',
       ],
+      message: {
+        id: '65f000000000000000000001',
+        conversationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        senderId: '11111111-1111-4111-8111-111111111111',
+        content: { type: 'text', text: 'olá' },
+        replyTo: null,
+        mentions: [],
+        deletedAt: null,
+        createdAt,
+        updatedAt: createdAt,
+      },
     };
 
     await bus.publish(ChatEvents.MESSAGE_SENT, payload);
@@ -75,7 +87,7 @@ describe('EventBus — eventos de chat tipados', () => {
     );
   });
 
-  it('deve entregar CONVERSATION_UPDATED', async () => {
+  it('deve entregar CONVERSATION_UPDATED com affectedUserIds e name', async () => {
     const handler = jest.fn();
     bus.subscribe(ChatEvents.CONVERSATION_UPDATED, handler);
 
@@ -84,12 +96,38 @@ describe('EventBus — eventos de chat tipados', () => {
       change: 'renamed',
       actorId: '11111111-1111-4111-8111-111111111111',
       participantIds: ['11111111-1111-4111-8111-111111111111'],
+      affectedUserIds: [],
+      name: 'Novo nome',
     });
 
     expect(handler).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'chat:conversation-updated',
-        payload: expect.objectContaining({ change: 'renamed' }),
+        payload: expect.objectContaining({
+          change: 'renamed',
+          affectedUserIds: [],
+          name: 'Novo nome',
+        }),
+      })
+    );
+  });
+
+  it('deve entregar CONVERSATION_DELETED', async () => {
+    const handler = jest.fn();
+    bus.subscribe(ChatEvents.CONVERSATION_DELETED, handler);
+
+    await bus.publish(ChatEvents.CONVERSATION_DELETED, {
+      conversationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      actorId: '11111111-1111-4111-8111-111111111111',
+      participantIds: ['11111111-1111-4111-8111-111111111111'],
+    });
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'chat:conversation-deleted',
+        payload: expect.objectContaining({
+          conversationId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        }),
       })
     );
   });

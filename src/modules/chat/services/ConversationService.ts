@@ -165,7 +165,9 @@ export class ConversationService implements IConversationService {
       conversationId,
       'renamed',
       userId,
-      await this.getParticipantIds(conversationId)
+      await this.getParticipantIds(conversationId),
+      [],
+      name
     );
 
     return this.get(userId, conversationId);
@@ -187,8 +189,23 @@ export class ConversationService implements IConversationService {
       throw new GroupOnlyOperationException();
     }
 
-    const remaining = await this.removeParticipant(conversationId, userId);
-    await this.publishUpdate(conversationId, 'member_left', userId, [userId, ...remaining]);
+    const { remaining, deleted } = await this.removeParticipant(conversationId, userId);
+    if (deleted) {
+      await this.events.publish(ChatEvents.CONVERSATION_DELETED, {
+        conversationId,
+        actorId: userId,
+        participantIds: [userId],
+      });
+      return;
+    }
+
+    await this.publishUpdate(
+      conversationId,
+      'member_left',
+      userId,
+      [userId, ...remaining],
+      [userId]
+    );
   }
 
   async addMembers(
@@ -210,7 +227,13 @@ export class ConversationService implements IConversationService {
 
     if (toAdd.length > 0) {
       await this.participants.addMembers(conversationId, toAdd);
-      await this.publishUpdate(conversationId, 'members_added', userId, [...currentIds, ...toAdd]);
+      await this.publishUpdate(
+        conversationId,
+        'members_added',
+        userId,
+        [...currentIds, ...toAdd],
+        toAdd
+      );
     }
 
     return this.get(userId, conversationId);
@@ -230,8 +253,14 @@ export class ConversationService implements IConversationService {
       throw new ParticipantNotFoundException();
     }
 
-    const remaining = await this.removeParticipant(conversationId, memberId);
-    await this.publishUpdate(conversationId, 'member_removed', userId, [memberId, ...remaining]);
+    const { remaining } = await this.removeParticipant(conversationId, memberId);
+    await this.publishUpdate(
+      conversationId,
+      'member_removed',
+      userId,
+      [memberId, ...remaining],
+      [memberId]
+    );
   }
 
   async isParticipant(conversationId: string, userId: string): Promise<boolean> {
@@ -284,37 +313,44 @@ export class ConversationService implements IConversationService {
   }
 
   /**
-   * Remove o participante; se não restar ninguém, apaga a conversa; se não restar admin,
-   * promove o participante mais antigo (`joined_at`). Retorna os ids restantes.
+   * Remove o participante; se não restar ninguém, apaga a conversa (`deleted: true`); se não
+   * restar admin, promove o participante mais antigo (`joined_at`). Retorna os ids restantes.
    */
-  private async removeParticipant(conversationId: string, userId: string): Promise<string[]> {
+  private async removeParticipant(
+    conversationId: string,
+    userId: string
+  ): Promise<{ remaining: string[]; deleted: boolean }> {
     await this.participants.remove(conversationId, userId);
     const remaining = await this.participants.listByConversation(conversationId);
 
     const [oldest] = remaining;
     if (oldest === undefined) {
       await this.conversations.delete(conversationId);
-      return [];
+      return { remaining: [], deleted: true };
     }
 
     if (!remaining.some((p) => p.role === 'admin')) {
       await this.participants.setRole(conversationId, oldest.userId, 'admin');
     }
 
-    return remaining.map((p) => p.userId);
+    return { remaining: remaining.map((p) => p.userId), deleted: false };
   }
 
   private async publishUpdate(
     conversationId: string,
     change: ConversationChange,
     actorId: string,
-    participantIds: string[]
+    participantIds: string[],
+    affectedUserIds: string[],
+    name?: string
   ): Promise<void> {
     await this.events.publish(ChatEvents.CONVERSATION_UPDATED, {
       conversationId,
       change,
       actorId,
       participantIds,
+      affectedUserIds,
+      ...(name !== undefined ? { name } : {}),
     });
   }
 

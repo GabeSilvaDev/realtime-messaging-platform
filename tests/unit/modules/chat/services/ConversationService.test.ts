@@ -348,6 +348,20 @@ describe('ConversationService', () => {
       expect(result.items[2]!.participants).toEqual([]);
     });
 
+    it('deve devolver participantes vazios quando a conversa não tem entrada no mapa', async () => {
+      const orphan = conversation({ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Órfã' });
+      conversations.listForUser.mockResolvedValue({
+        total: 1,
+        rows: [{ conversation: orphan, membership: participant(USER_A) }],
+      });
+      participants.listByConversations.mockResolvedValue([]);
+      users.getMultiple.mockResolvedValue([]);
+
+      const result = await service.list(USER_A);
+
+      expect(result.items[0]!.participants).toEqual([]);
+    });
+
     it('deve usar defaults (archived=false, limit=20, offset=0) e limitar a 100', async () => {
       conversations.listForUser.mockResolvedValue({ total: 0, rows: [] });
       participants.listByConversations.mockResolvedValue([]);
@@ -417,6 +431,8 @@ describe('ConversationService', () => {
         change: 'renamed',
         actorId: USER_A,
         participantIds: [USER_A, USER_B],
+        affectedUserIds: [],
+        name: 'Novo nome',
       });
     });
 
@@ -485,6 +501,7 @@ describe('ConversationService', () => {
         change: 'member_left',
         actorId: USER_A,
         participantIds: [USER_A, USER_B, USER_C],
+        affectedUserIds: [USER_A],
       });
     });
 
@@ -497,16 +514,22 @@ describe('ConversationService', () => {
       expect(participants.setRole).not.toHaveBeenCalled();
     });
 
-    it('remove a conversa quando não resta ninguém', async () => {
+    it('remove a conversa e publica CONVERSATION_DELETED (não member_left) quando não resta ninguém', async () => {
       givenMembership(conversation(), [participant(USER_A, 'admin')]);
       participants.listByConversation.mockResolvedValue([]);
 
       await service.leave(USER_A, CONVERSATION_ID);
 
       expect(conversations.delete).toHaveBeenCalledWith(CONVERSATION_ID);
-      expect(events.publish).toHaveBeenCalledWith(
+      expect(events.publish).toHaveBeenCalledTimes(1);
+      expect(events.publish).toHaveBeenCalledWith(ChatEvents.CONVERSATION_DELETED, {
+        conversationId: CONVERSATION_ID,
+        actorId: USER_A,
+        participantIds: [USER_A],
+      });
+      expect(events.publish).not.toHaveBeenCalledWith(
         ChatEvents.CONVERSATION_UPDATED,
-        expect.objectContaining({ change: 'member_left', participantIds: [USER_A] })
+        expect.anything()
       );
     });
   });
@@ -525,6 +548,7 @@ describe('ConversationService', () => {
         change: 'members_added',
         actorId: USER_A,
         participantIds: [USER_A, USER_B, USER_C],
+        affectedUserIds: [USER_C],
       });
     });
 
@@ -593,6 +617,7 @@ describe('ConversationService', () => {
         change: 'member_removed',
         actorId: USER_A,
         participantIds: [USER_B, USER_A],
+        affectedUserIds: [USER_B],
       });
     });
 

@@ -153,6 +153,17 @@ describe('MessageService', () => {
         mentions: [],
         metadata: META,
       });
+      const expectedDto = {
+        id: MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        senderId: USER_A,
+        content: { type: 'text', text: 'olá' },
+        replyTo: null,
+        mentions: [],
+        deletedAt: null,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+      };
       expect(conversations.touchLastMessageAt).toHaveBeenCalledWith(CONVERSATION_ID, CREATED_AT);
       expect(events.publish).toHaveBeenCalledWith(ChatEvents.MESSAGE_SENT, {
         messageId: MESSAGE_ID,
@@ -164,18 +175,9 @@ describe('MessageService', () => {
         replyTo: null,
         createdAt: CREATED_AT,
         participantIds: [USER_A, USER_B],
+        message: expectedDto,
       });
-      expect(result).toEqual({
-        id: MESSAGE_ID,
-        conversationId: CONVERSATION_ID,
-        senderId: USER_A,
-        content: { type: 'text', text: 'olá' },
-        replyTo: null,
-        mentions: [],
-        deletedAt: null,
-        createdAt: CREATED_AT,
-        updatedAt: CREATED_AT,
-      });
+      expect(result).toEqual(expectedDto);
       expect(result).not.toHaveProperty('metadata');
     });
 

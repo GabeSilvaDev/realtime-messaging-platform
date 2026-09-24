@@ -110,6 +110,8 @@ export class MessageService implements IMessageService {
       });
     }
 
+    const dto = toMessageDTO(record);
+
     await this.events.publish(ChatEvents.MESSAGE_SENT, {
       messageId: record.id,
       conversationId,
@@ -120,9 +122,10 @@ export class MessageService implements IMessageService {
       replyTo: record.replyTo,
       createdAt: record.createdAt,
       participantIds,
+      message: dto,
     });
 
-    return toMessageDTO(record);
+    return dto;
   }
 
   async list(

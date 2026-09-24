@@ -122,7 +122,7 @@ Um usuário bloqueado não é contato: `GET`/`PATCH`/`DELETE /:contactId` respon
 | `POST` | `/:id/messages` | ✓ | `{ text, replyTo?, mentions? }` — texto de 1 a 10.000 caracteres; 403 em conversa 1:1 com bloqueio em qualquer sentido |
 | `DELETE` | `/:id/messages/:messageId` | ✓ | Só o autor; soft delete, idempotente |
 
-As mensagens ficam só no MongoDB (coleção `messages`, índice `{ conversationId: 1, createdAt: -1, _id: -1 }`); conversas e participantes ficam no PostgreSQL. O módulo publica `chat:conversation-created`, `chat:conversation-updated`, `chat:message-sent` e `chat:message-deleted` no EventBus; um listener registrado no bootstrap atualiza `contacts.last_interaction_at` a cada mensagem direta.
+As mensagens ficam só no MongoDB (coleção `messages`, índice `{ conversationId: 1, createdAt: -1, _id: -1 }`); conversas e participantes ficam no PostgreSQL. O módulo publica `chat:conversation-created`, `chat:conversation-updated`, `chat:conversation-deleted` (quando o último membro sai e a conversa é removida), `chat:message-sent` (o payload leva o mesmo `MessageDTO` devolvido ao cliente REST) e `chat:message-deleted` no EventBus; listeners registrados no bootstrap atualizam `contacts.last_interaction_at` a cada mensagem direta e apagam, best-effort, as mensagens da conversa no MongoDB ao receber `chat:conversation-deleted`.
 
 ### Rate limit
 
