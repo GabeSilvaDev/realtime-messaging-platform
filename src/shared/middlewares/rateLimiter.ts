@@ -55,6 +55,7 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimitRe
     keyGenerator,
     skipSuccessfulRequests = false,
     store,
+    passOnStoreError,
   } = options;
 
   const rateLimitOptions: Partial<Options> = {
@@ -65,6 +66,7 @@ export function createRateLimiter(options: RateLimiterOptions = {}): RateLimitRe
     skipSuccessfulRequests,
     skip,
     keyGenerator,
+    passOnStoreError,
     handler: (req: Request, res: Response): void => {
       const requestId = String(req.headers['x-request-id'] ?? 'unknown');
       const error = new AppError(message, HttpStatus.TOO_MANY_REQUESTS, ErrorCode.RATE_LIMITED);
@@ -91,7 +93,11 @@ let _strictRateLimiter: RateLimitRequestHandler | null = null;
 let _authRateLimiter: RateLimitRequestHandler | null = null;
 
 export function getRateLimiter(): RateLimitRequestHandler {
-  _rateLimiter ??= createRateLimiter();
+  // Limiter global de /api: prioriza disponibilidade sobre o rate limiting em si — se o
+  // store falhar (ex.: Redis fora do ar), deixa a requisição passar em vez de derrubar a
+  // API inteira. Os limiters de autenticação/login abaixo NÃO usam essa opção: preferem
+  // falhar fechado (bloquear) a arriscar deixar passar um ataque de força bruta.
+  _rateLimiter ??= createRateLimiter({ passOnStoreError: true });
   return _rateLimiter;
 }
 

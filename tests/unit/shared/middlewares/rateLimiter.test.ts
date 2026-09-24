@@ -65,11 +65,28 @@ import createRateLimiterDefault, {
   authRateLimiter,
   createRateLimiter,
   getAuthRateLimiter,
+  getLoginRateLimiter,
   getRateLimiter,
   getStrictRateLimiter,
   rateLimiter,
   strictRateLimiter,
 } from '@/shared/middlewares/rateLimiter';
+
+interface FailingStore {
+  increment: () => never;
+  decrement: () => void;
+  resetKey: () => void;
+}
+
+function createFailingStore(): FailingStore {
+  return {
+    increment: () => {
+      throw new Error('store indisponível');
+    },
+    decrement: () => undefined,
+    resetKey: () => undefined,
+  };
+}
 
 const lastStore = (): MockRedisStore => {
   const store = mockCreatedStores[mockCreatedStores.length - 1];
@@ -186,6 +203,24 @@ describe('rateLimiter middleware', () => {
       expect(skip).toHaveBeenCalledTimes(2);
       expect(skipped.headers['ratelimit-limit']).toBeUndefined();
     });
+
+    it('com passOnStoreError=true, permite a requisição quando o store falha', async () => {
+      const limiter = createRateLimiter({ store: createFailingStore(), passOnStoreError: true });
+      const app = buildApp(limiter);
+
+      const response = await request(app).get('/test');
+
+      expect(response.status).toBe(200);
+    });
+
+    it('sem passOnStoreError (padrão), erro do store propaga e a requisição falha', async () => {
+      const limiter = createRateLimiter({ store: createFailingStore() });
+      const app = buildApp(limiter);
+
+      const response = await request(app).get('/test');
+
+      expect(response.status).toBe(500);
+    });
   });
 
   describe('sendCommand do RedisStore', () => {
@@ -224,8 +259,18 @@ describe('rateLimiter middleware', () => {
   });
 
   describe('singletons', () => {
+    // Os singletons só criam (e registram em mockCreatedStores) seu store na PRIMEIRA
+    // chamada em todo o arquivo; o beforeEach global limpa mockCreatedStores antes de cada
+    // teste. Por isso guardamos aqui a referência do store de cada singleton no momento em
+    // que ele é criado, para reutilizá-la nos testes de passOnStoreError mais abaixo (que
+    // rodam depois, contra o singleton já em cache).
+    let globalStore: MockRedisStore;
+    let strictStore: MockRedisStore;
+    let authStore: MockRedisStore;
+
     it('getRateLimiter retorna sempre a mesma instância com prefixo padrão', () => {
       const first = getRateLimiter();
+      globalStore = lastStore();
       const storesAfterFirst = mockCreatedStores.length;
       const second = getRateLimiter();
 
@@ -234,21 +279,56 @@ describe('rateLimiter middleware', () => {
       expect(rateLimiter).toBe(getRateLimiter);
     });
 
-    it('getStrictRateLimiter usa limite e prefixo estritos', async () => {
-      const limiter = getStrictRateLimiter();
-      const store = lastStore();
+    it('getRateLimiter (limiter global) usa passOnStoreError=true: erro do store não bloqueia a requisição', async () => {
+      const limiter = getRateLimiter();
+      jest.spyOn(globalStore, 'increment').mockImplementation(() => {
+        throw new Error('store indisponível');
+      });
 
       const response = await request(buildApp(limiter)).get('/test');
 
-      expect(store.options.prefix).toBe(RATE_LIMIT_STRICT_KEY_PREFIX);
+      expect(response.status).toBe(200);
+    });
+
+    it('getStrictRateLimiter usa limite e prefixo estritos', async () => {
+      const limiter = getStrictRateLimiter();
+      strictStore = lastStore();
+
+      const response = await request(buildApp(limiter)).get('/test');
+
+      expect(strictStore.options.prefix).toBe(RATE_LIMIT_STRICT_KEY_PREFIX);
       expect(response.headers['ratelimit-limit']).toBe(String(RATE_LIMIT_STRICT_MAX_REQUESTS));
       expect(getStrictRateLimiter()).toBe(limiter);
       expect(strictRateLimiter).toBe(getStrictRateLimiter);
     });
 
+    it('getStrictRateLimiter permanece fail-closed: erro do store bloqueia a requisição', async () => {
+      const limiter = getStrictRateLimiter();
+      jest.spyOn(strictStore, 'increment').mockImplementation(() => {
+        throw new Error('store indisponível');
+      });
+
+      const response = await request(buildApp(limiter)).get('/test');
+
+      expect(response.status).toBe(500);
+    });
+
+    it('getLoginRateLimiter permanece fail-closed: erro do store bloqueia a requisição', async () => {
+      const limiter = getLoginRateLimiter();
+      const store = lastStore();
+      jest.spyOn(store, 'increment').mockImplementation(() => {
+        throw new Error('store indisponível');
+      });
+
+      const response = await request(buildApp(limiter)).get('/test');
+
+      expect(response.status).toBe(500);
+    });
+
     it('getAuthRateLimiter usa janela, limite, prefixo e mensagem de autenticação', async () => {
       const limiter = getAuthRateLimiter();
       const store = lastStore();
+      authStore = store;
       const app = buildApp(limiter);
 
       let response = await request(app).get('/test');
@@ -266,6 +346,17 @@ describe('rateLimiter middleware', () => {
       );
       expect(getAuthRateLimiter()).toBe(limiter);
       expect(authRateLimiter).toBe(getAuthRateLimiter);
+    });
+
+    it('getAuthRateLimiter permanece fail-closed: erro do store bloqueia a requisição', async () => {
+      const limiter = getAuthRateLimiter();
+      jest.spyOn(authStore, 'increment').mockImplementation(() => {
+        throw new Error('store indisponível');
+      });
+
+      const response = await request(buildApp(limiter)).get('/test');
+
+      expect(response.status).toBe(500);
     });
 
     it('export default é createRateLimiter', () => {

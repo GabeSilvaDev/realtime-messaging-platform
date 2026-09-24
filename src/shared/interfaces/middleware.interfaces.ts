@@ -21,6 +21,7 @@ export interface RateLimiterOptions {
   keyGenerator?: (req: Request) => string;
   skipSuccessfulRequests?: boolean;
   store?: Store;
+  passOnStoreError?: boolean;
 }
 
 export interface SecurityConfig {
