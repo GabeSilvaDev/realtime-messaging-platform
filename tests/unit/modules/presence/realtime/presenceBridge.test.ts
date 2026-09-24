@@ -22,7 +22,7 @@ function states(entries: [string, PresenceStateEntry][]): Map<string, PresenceSt
 describe('registerPresenceBridge', () => {
   let bus: EventBus;
   let io: FakeServer;
-  let presence: { presenceAudience: jest.Mock; getStates: jest.Mock };
+  let presence: { presenceAudience: jest.Mock; getStates: jest.Mock; getVisibleStates: jest.Mock };
   let unregister: () => void;
 
   beforeEach(() => {
@@ -34,6 +34,7 @@ describe('registerPresenceBridge', () => {
       getStates: jest.fn(async (ids: string[]) =>
         states(ids.map((id) => [id, { state: 'busy', lastSeenAt: null }]))
       ),
+      getVisibleStates: jest.fn(),
     };
     unregister = registerPresenceBridge(io.asServer(), { presence, bus });
   });
@@ -65,6 +66,20 @@ describe('registerPresenceBridge', () => {
     await bus.publish(PresenceEvents.ONLINE, { userId: ANA, timestamp: new Date() });
 
     expect(io.emits).toEqual([]);
+  });
+
+  // Fix round 1 (revisão, CRÍTICO/privacidade): bloqueio é por direção. `presenceAudience` já
+  // aplica `listBlockedEitherIds` (os dois sentidos) — a ponte só usa a audiência que recebe, nunca
+  // adiciona ninguém de volta. Um usuário bloqueado no sentido inverso (ele bloqueou o emissor, não
+  // o contrário) nunca aparece na audiência e por isso nunca recebe `presence:update`.
+  it('presence:online: quem bloqueou o emissor no sentido inverso nunca recebe o presence:update (a ponte só usa a audiência devolvida)', async () => {
+    presence.presenceAudience.mockResolvedValueOnce([CAROL]);
+
+    await bus.publish(PresenceEvents.ONLINE, { userId: ANA, timestamp: new Date() });
+
+    expect(io.emits).toEqual([
+      [[`user:${CAROL}`], 'presence:update', { userId: ANA, state: 'busy', lastSeenAt: null }],
+    ]);
   });
 
   // Task 8 review: `disconnect`/`sweep` gravam `last_seen_at` antes de publicar `presence:offline`
@@ -147,15 +162,22 @@ describe('registerPresenceBridge', () => {
     ]);
   });
 
-  it('user:unblocked → cada lado recebe o estado real do outro', async () => {
-    presence.getStates.mockImplementation(async ([id]: string[]) =>
-      id === ANA
-        ? states([[ANA, { state: 'online', lastSeenAt: null }]])
-        : states([[BOB, { state: 'offline', lastSeenAt: LAST_SEEN }]])
+  // Fix round 1 (revisão, CRÍTICO/privacidade): bloqueio é por direção — A desbloquear B não
+  // implica B ter desbloqueado A. Por isso `user:unblocked` relê via `getVisibleStates(viewer,
+  // [subject])` (nunca `getStates`), que reaplica o filtro dos dois sentidos.
+  it('user:unblocked → cada lado recebe o estado real do outro (via getVisibleStates, com o filtro de bloqueio dos dois sentidos)', async () => {
+    presence.getVisibleStates.mockImplementation(async (_viewerId: string, ids: string[]) =>
+      ids.map((id) =>
+        id === ANA
+          ? { userId: ANA, state: 'online', lastSeenAt: null }
+          : { userId: BOB, state: 'offline', lastSeenAt: LAST_SEEN }
+      )
     );
 
     await bus.publish(UserEvents.UNBLOCKED, { userId: ANA, unblockedUserId: BOB });
 
+    expect(presence.getVisibleStates).toHaveBeenCalledWith(BOB, [ANA]);
+    expect(presence.getVisibleStates).toHaveBeenCalledWith(ANA, [BOB]);
     expect(io.emits).toEqual([
       [[`user:${BOB}`], 'presence:update', { userId: ANA, state: 'online', lastSeenAt: null }],
       [
@@ -166,8 +188,42 @@ describe('registerPresenceBridge', () => {
     ]);
   });
 
+  it('user:unblocked: se o bloqueio continuar no sentido inverso, os dois continuam vendo offline (não vaza o estado real)', async () => {
+    // ANA desbloqueou BOB, mas BOB ainda bloqueia ANA (ou o contrário) — getVisibleStates já
+    // devolve offline para os dois sentidos enquanto durar QUALQUER bloqueio entre os dois.
+    presence.getVisibleStates.mockImplementation(async (_viewerId: string, ids: string[]) =>
+      ids.map((id) => ({ userId: id, state: 'offline' as const, lastSeenAt: null }))
+    );
+
+    await bus.publish(UserEvents.UNBLOCKED, { userId: ANA, unblockedUserId: BOB });
+
+    expect(io.emits).toEqual([
+      [[`user:${BOB}`], 'presence:update', { userId: ANA, state: 'offline', lastSeenAt: null }],
+      [[`user:${ANA}`], 'presence:update', { userId: BOB, state: 'offline', lastSeenAt: null }],
+    ]);
+  });
+
+  it('user:unblocked: quando os dois sentidos estão liberados (o outro lado também desbloqueou), o estado real é revelado', async () => {
+    // Continuação do teste anterior: agora BOB também desbloqueou ANA — os dois sentidos estão
+    // livres e getVisibleStates deixa de esconder.
+    presence.getVisibleStates.mockImplementation(async (_viewerId: string, ids: string[]) =>
+      ids.map((id) => ({
+        userId: id,
+        state: id === ANA ? ('online' as const) : ('busy' as const),
+        lastSeenAt: null,
+      }))
+    );
+
+    await bus.publish(UserEvents.UNBLOCKED, { userId: BOB, unblockedUserId: ANA });
+
+    expect(io.emits).toEqual([
+      [[`user:${ANA}`], 'presence:update', { userId: BOB, state: 'busy', lastSeenAt: null }],
+      [[`user:${BOB}`], 'presence:update', { userId: ANA, state: 'online', lastSeenAt: null }],
+    ]);
+  });
+
   it('user:unblocked de alguém que não veio na leitura não emite', async () => {
-    presence.getStates.mockResolvedValue(new Map());
+    presence.getVisibleStates.mockResolvedValue([]);
 
     await bus.publish(UserEvents.UNBLOCKED, { userId: ANA, unblockedUserId: BOB });
 
@@ -219,6 +275,49 @@ describe('registerPresenceBridge', () => {
       expect.objectContaining({ message: 'timeout' }),
       { userId: ANA }
     );
+    expect(io.emits).toHaveLength(1);
+  });
+
+  // Fix round 1 (menor, consistência): se o próprio `logger.error` do catch principal lançar, a
+  // fila não pode ficar travada para sempre — a limpeza roda nos dois desfechos de `next` (não só
+  // quando ele resolve) e a rejeição resultante é logada (não propaga).
+  it('falha ao logar o erro original não trava a fila: a limpeza roda mesmo assim e o próximo evento processa normalmente', async () => {
+    presence.presenceAudience.mockRejectedValueOnce(new Error('redis down'));
+    (logger.error as jest.Mock).mockImplementationOnce(() => {
+      throw new Error('logger caiu');
+    });
+
+    await bus.publish(PresenceEvents.OFFLINE, { userId: ANA, lastSeen: LAST_SEEN });
+
+    expect(logger.error).toHaveBeenNthCalledWith(
+      1,
+      'Falha ao avisar a mudança de presença',
+      expect.objectContaining({ message: 'redis down' }),
+      { userId: ANA }
+    );
+    expect(logger.error).toHaveBeenNthCalledWith(
+      2,
+      'Falha ao limpar a fila de presença do usuário',
+      expect.objectContaining({ message: 'logger caiu' }),
+      { userId: ANA }
+    );
+
+    // valor não-Error lançado pelo catch principal: a limpeza também envolve em `new Error(...)`.
+    presence.presenceAudience.mockRejectedValueOnce(new Error('redis down de novo'));
+    (logger.error as jest.Mock).mockImplementationOnce(() => {
+      throw 'logger caiu de novo';
+    });
+
+    await bus.publish(PresenceEvents.OFFLINE, { userId: ANA, lastSeen: LAST_SEEN });
+
+    expect(logger.error).toHaveBeenNthCalledWith(
+      4,
+      'Falha ao limpar a fila de presença do usuário',
+      expect.objectContaining({ message: 'logger caiu de novo' }),
+      { userId: ANA }
+    );
+
+    await bus.publish(PresenceEvents.OFFLINE, { userId: ANA, lastSeen: LAST_SEEN });
     expect(io.emits).toHaveLength(1);
   });
 

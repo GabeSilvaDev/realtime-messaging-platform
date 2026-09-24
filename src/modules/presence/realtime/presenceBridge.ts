@@ -7,7 +7,7 @@ import type { IPresenceService } from '../interfaces';
 import { presenceService } from '../services';
 
 export interface PresenceBridgeDeps {
-  presence?: Pick<IPresenceService, 'presenceAudience' | 'getStates'>;
+  presence?: Pick<IPresenceService, 'presenceAudience' | 'getStates' | 'getVisibleStates'>;
   bus?: Pick<EventBus, 'subscribe'>;
 }
 
@@ -32,8 +32,13 @@ function hidden(userId: string): PresenceUpdatePayload {
  * depois que o anterior termina —, a releitura sempre reflete o estado mais recente conhecido,
  * mesmo quando os eventos chegam fora da ordem real dos acontecimentos.
  *
- * Bloqueio: `user:blocked` faz cada lado ver o outro `offline` na hora; `user:unblocked` envia o
- * estado real a ambos.
+ * Bloqueio: `user:blocked` faz cada lado ver o outro `offline` na hora. `user:unblocked` NÃO
+ * emite o estado bruto (`getStates`): bloqueio é por direção (A bloquear B não implica B ter
+ * bloqueado A), então o desbloqueio de um lado pode acontecer com o outro lado ainda bloqueando de
+ * volta. Por isso `user:unblocked` usa `getVisibleStates(viewer, [subject])`, que já aplica o
+ * filtro dos dois sentidos: se ainda houver bloqueio em qualquer direção entre os dois, o estado
+ * visto continua `offline` (mesma aparência de `user:blocked`, por consistência); só quando os dois
+ * lados estiverem livres o estado real é revelado.
  *
  * Os subscribers devolvem a promise da fila (quem publica espera a emissão); falhas na leitura são
  * logadas e nunca propagam. Retorna a função que cancela as inscrições.
@@ -53,10 +58,22 @@ export function registerPresenceBridge(
       );
     });
     queues.set(userId, next);
-    void next.then(() => {
+    // Roda nos dois desfechos (não só `.then(onFulfilled)`): `next` só rejeita se o próprio
+    // `logger.error` do catch acima lançar — sem limpar também nesse caso, a entrada nunca seria
+    // removida e o próximo evento deste usuário encadearia sobre uma promise já rejeitada para
+    // sempre (fila travada). A falha é só logada; não propaga (nada aguarda esta promise).
+    const cleanup = (): void => {
       if (queues.get(userId) === next) {
         queues.delete(userId);
       }
+    };
+    void next.then(cleanup, (error: unknown) => {
+      cleanup();
+      logger.error(
+        'Falha ao limpar a fila de presença do usuário',
+        error instanceof Error ? error : new Error(String(error)),
+        { userId }
+      );
     });
     return next;
   };
@@ -105,10 +122,14 @@ export function registerPresenceBridge(
     }),
 
     bus.subscribe(UserEvents.UNBLOCKED, async ({ payload: { userId, unblockedUserId } }) => {
+      // Estado de `subject` como `viewer` o vê: `getVisibleStates` reaplica o filtro de bloqueio
+      // dos dois sentidos (nunca `getStates`/`currentState`, que ignoram bloqueio) — se `viewer`
+      // ainda bloquear `subject` (ou vice-versa) por fora deste evento, o estado revelado continua
+      // `offline`.
       const reveal = (subject: string, viewer: string): Promise<void> =>
         enqueue(subject, async () => {
-          const payload = await currentState(subject);
-          if (payload !== null) {
+          const [payload] = await presence.getVisibleStates(viewer, [subject]);
+          if (payload !== undefined) {
             emit([userRoom(viewer)], payload);
           }
         });
