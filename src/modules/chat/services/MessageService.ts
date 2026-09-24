@@ -90,13 +90,14 @@ export class MessageService implements IMessageService {
       throw new InvalidMentionsException();
     }
 
-    const record = await this.messages.create({
+    const { record } = await this.messages.create({
       conversationId,
       senderId: userId,
       content: { type: 'text', text: data.text.trim() },
       replyTo,
       mentions,
       metadata,
+      clientMessageId: null,
     });
 
     // Best-effort: falha em atualizar last_message_at não deve impedir o envio da mensagem.

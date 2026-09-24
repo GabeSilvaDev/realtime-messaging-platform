@@ -11,6 +11,12 @@ export interface MessageContent {
   text: string;
 }
 
+/** Um destinatário no status da mensagem (entregue a / lida por) e quando. */
+export interface MessageStatusEntry {
+  userId: string;
+  at: Date;
+}
+
 /** Mensagem como exposta pela API: apagada vira tombstone (`content: null`). */
 export interface MessageDTO {
   id: string;

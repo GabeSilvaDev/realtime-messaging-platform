@@ -28,6 +28,7 @@ import type {
 import { MessageService, messageService } from '@/modules/chat/services/MessageService';
 import type {
   ConversationAttributes,
+  CreateMessageResult,
   MessageRecord,
   ParticipantAttributes,
 } from '@/modules/chat/types';
@@ -83,11 +84,18 @@ function record(overrides: Partial<MessageRecord> = {}): MessageRecord {
     replyTo: null,
     mentions: [],
     metadata: META,
+    clientMessageId: null,
+    deliveredTo: [],
+    readBy: [],
     deletedAt: null,
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
     ...overrides,
   };
+}
+
+function created(message: MessageRecord): CreateMessageResult {
+  return { record: message, created: true };
 }
 
 describe('MessageService', () => {
@@ -102,8 +110,11 @@ describe('MessageService', () => {
     messages = {
       create: jest.fn(),
       findById: jest.fn(),
+      findByClientMessageId: jest.fn(),
       findByConversation: jest.fn(),
       softDelete: jest.fn(),
+      markDelivered: jest.fn(),
+      markReadUpTo: jest.fn(),
       deleteByConversation: jest.fn(),
     };
     conversations = {
@@ -143,7 +154,9 @@ describe('MessageService', () => {
     });
 
     it('deve persistir, atualizar last_message_at e publicar MESSAGE_SENT', async () => {
-      messages.create.mockResolvedValue(record({ content: { type: 'text', text: 'olá' } }));
+      messages.create.mockResolvedValue(
+        created(record({ content: { type: 'text', text: 'olá' } }))
+      );
 
       const result = await service.send(USER_A, CONVERSATION_ID, { text: '  olá  ' }, META);
 
@@ -154,6 +167,7 @@ describe('MessageService', () => {
         replyTo: null,
         mentions: [],
         metadata: META,
+        clientMessageId: null,
       });
       const expectedDto = {
         id: MESSAGE_ID,
@@ -184,7 +198,7 @@ describe('MessageService', () => {
     });
 
     it('deve continuar e publicar MESSAGE_SENT mesmo se touchLastMessageAt falhar', async () => {
-      messages.create.mockResolvedValue(record());
+      messages.create.mockResolvedValue(created(record()));
       const dbError = new Error('db down');
       conversations.touchLastMessageAt.mockRejectedValue(dbError);
 
@@ -228,7 +242,7 @@ describe('MessageService', () => {
 
     it('não deve consultar bloqueio em grupo', async () => {
       conversations.findById.mockResolvedValue(conversation({ type: 'group', name: 'Time' }));
-      messages.create.mockResolvedValue(record());
+      messages.create.mockResolvedValue(created(record()));
 
       await service.send(USER_A, CONVERSATION_ID, { text: 'oi' }, META);
 
@@ -241,7 +255,7 @@ describe('MessageService', () => {
 
     it('não deve consultar bloqueio em direct sem o outro participante', async () => {
       participants.listByConversation.mockResolvedValue([participant(USER_A)]);
-      messages.create.mockResolvedValue(record());
+      messages.create.mockResolvedValue(created(record()));
 
       await service.send(USER_A, CONVERSATION_ID, { text: 'oi' }, META);
 
@@ -250,7 +264,7 @@ describe('MessageService', () => {
 
     it('deve aceitar replyTo da mesma conversa', async () => {
       messages.findById.mockResolvedValue(record({ id: REPLY_ID }));
-      messages.create.mockResolvedValue(record({ replyTo: REPLY_ID }));
+      messages.create.mockResolvedValue(created(record({ replyTo: REPLY_ID })));
 
       const result = await service.send(
         USER_A,
@@ -277,7 +291,7 @@ describe('MessageService', () => {
     });
 
     it('deve deduplicar mentions de participantes', async () => {
-      messages.create.mockResolvedValue(record({ mentions: [USER_B] }));
+      messages.create.mockResolvedValue(created(record({ mentions: [USER_B] })));
 
       await service.send(USER_A, CONVERSATION_ID, { text: 'oi', mentions: [USER_B, USER_B] }, META);
 

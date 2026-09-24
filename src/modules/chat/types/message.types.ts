@@ -1,6 +1,14 @@
-import type { MessageContent, MessageDTO } from '@/shared/types/chat-message.types';
+import type {
+  MessageContent,
+  MessageDTO,
+  MessageStatusEntry,
+} from '@/shared/types/chat-message.types';
 
-export type { MessageContent, MessageDTO } from '@/shared/types/chat-message.types';
+export type {
+  MessageContent,
+  MessageDTO,
+  MessageStatusEntry,
+} from '@/shared/types/chat-message.types';
 
 export interface MessageMetadata {
   ip: string | null;
@@ -15,6 +23,10 @@ export interface MessageRecord {
   replyTo: string | null;
   mentions: string[];
   metadata: MessageMetadata;
+  /** UUID gerado pelo cliente para envio idempotente (`null` quando não informado). */
+  clientMessageId: string | null;
+  deliveredTo: MessageStatusEntry[];
+  readBy: MessageStatusEntry[];
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -27,6 +39,13 @@ export interface CreateMessageData {
   replyTo: string | null;
   mentions: string[];
   metadata: MessageMetadata;
+  clientMessageId: string | null;
+}
+
+export interface CreateMessageResult {
+  record: MessageRecord;
+  /** `false` quando o `clientMessageId` já existia para o remetente (nada foi criado). */
+  created: boolean;
 }
 
 export interface MessageCursor {
