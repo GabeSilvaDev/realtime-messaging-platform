@@ -32,6 +32,9 @@ jest.mock('@/shared/database', () => ({
   },
 }));
 
+// O cliente Elasticsearch da aplicação nunca é usado aqui (busca sem token → 401).
+jest.mock('@/shared/database/elasticsearch', () => ({ elasticsearch: {} }));
+
 jest.mock('jsonwebtoken', () => ({
   sign: jest.fn(() => 'mock-token'),
   verify: jest.fn(() => ({ userId: 'test', email: 'test@test.com', username: 'test' })),
@@ -201,6 +204,13 @@ describe('app', () => {
 
     it('monta o router de presença em /api/presence (todas as rotas exigem autenticação real)', async () => {
       const response = await request(app).get('/api/presence?userIds=x');
+
+      expect(response.status).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    it('monta o router de busca em /api/search (todas as rotas exigem autenticação real)', async () => {
+      const response = await request(app).get('/api/search/messages?q=oi');
 
       expect(response.status).toBe(401);
       expect(response.body.success).toBe(false);

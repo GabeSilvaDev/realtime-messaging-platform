@@ -15,6 +15,7 @@ import { authRoutes } from './modules/auth/routes';
 import { profileRoutes, contactRoutes, blockRoutes, userRoutes } from './modules/user/routes';
 import { conversationRoutes } from './modules/chat/routes';
 import { presenceRoutes } from './modules/presence/routes';
+import { searchRoutes } from './modules/search/routes';
 
 const env: Environment = (process.env.NODE_ENV as Environment | undefined) ?? 'development';
 
@@ -93,6 +94,7 @@ app.use('/api/blocks', blockRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/presence', presenceRoutes);
+app.use('/api/search', searchRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
