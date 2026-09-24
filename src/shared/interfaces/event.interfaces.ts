@@ -96,9 +96,10 @@ export interface EventMap {
     name?: string;
   };
   /**
-   * Publicado quando o último membro sai/é removido e a conversa é apagada (nesse caso
+   * Publicado quando a saída/remoção do último membro apaga a conversa (nesse caso
    * `member_left`/`member_removed` NÃO é publicado). `participantIds` traz quem participava
-   * imediatamente antes da remoção (sempre `[actorId]`, já que só há esse caminho para zerar).
+   * imediatamente antes da remoção: `[actorId]` quando o último membro sai (`leave`) e
+   * `[memberId]` quando um admin remove o último membro restante (`removeMember`).
    */
   [ChatEvents.CONVERSATION_DELETED]: {
     conversationId: string;

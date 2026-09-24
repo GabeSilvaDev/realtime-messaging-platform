@@ -22,6 +22,7 @@ import {
   conversationService,
 } from '@/modules/chat/services/ConversationService';
 import type {
+  ChatTransaction,
   ConversationAttributes,
   ParticipantAttributes,
   ParticipantRole,
@@ -35,6 +36,9 @@ const USER_C = '33333333-3333-4333-8333-333333333333';
 const USER_D = '44444444-4444-4444-8444-444444444444';
 const CONVERSATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const NOW = new Date('2026-09-24T10:00:00.000Z');
+
+/** Transação falsa: o lock é do repositório; o service só a repassa. */
+const TX = { id: 'tx' } as unknown as ChatTransaction;
 
 function conversation(overrides: Partial<ConversationAttributes> = {}): ConversationAttributes {
   return {
@@ -106,6 +110,7 @@ describe('ConversationService', () => {
       rename: jest.fn(),
       touchLastMessageAt: jest.fn(),
       delete: jest.fn(),
+      withLock: jest.fn(),
     };
     participants = {
       find: jest.fn(),
@@ -120,6 +125,7 @@ describe('ConversationService', () => {
     users = { exists: jest.fn(), getMultiple: jest.fn() };
     contacts = { isBlockedByEither: jest.fn() };
     events = { publish: jest.fn().mockResolvedValue('event-id') };
+    conversations.withLock.mockImplementation(async (_id, work) => work(TX));
     service = new ConversationService(conversations, participants, users, contacts, events);
   });
 
@@ -486,6 +492,25 @@ describe('ConversationService', () => {
       await expect(service.leave(USER_A, CONVERSATION_ID)).rejects.toThrow(
         GroupOnlyOperationException
       );
+      expect(participants.remove).not.toHaveBeenCalled();
+    });
+
+    it('roda tudo dentro do lock da conversa (mesma transação) e publica só depois', async () => {
+      givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
+      participants.listByConversation.mockResolvedValue([participant(USER_B)]);
+      conversations.withLock.mockImplementation(async (_id, work) => {
+        const result = await work(TX);
+        expect(events.publish).not.toHaveBeenCalled();
+        return result;
+      });
+
+      await service.leave(USER_A, CONVERSATION_ID);
+
+      expect(conversations.withLock).toHaveBeenCalledWith(CONVERSATION_ID, expect.any(Function));
+      expect(participants.find).toHaveBeenCalledWith(CONVERSATION_ID, USER_A, TX);
+      expect(conversations.findById).toHaveBeenCalledWith(CONVERSATION_ID, TX);
+      expect(participants.listByConversation).toHaveBeenCalledWith(CONVERSATION_ID, TX);
+      expect(events.publish).toHaveBeenCalledTimes(1);
     });
 
     it('último admin saindo promove o membro mais antigo', async () => {
@@ -494,8 +519,8 @@ describe('ConversationService', () => {
 
       await service.leave(USER_A, CONVERSATION_ID);
 
-      expect(participants.remove).toHaveBeenCalledWith(CONVERSATION_ID, USER_A);
-      expect(participants.setRole).toHaveBeenCalledWith(CONVERSATION_ID, USER_B, 'admin');
+      expect(participants.remove).toHaveBeenCalledWith(CONVERSATION_ID, USER_A, TX);
+      expect(participants.setRole).toHaveBeenCalledWith(CONVERSATION_ID, USER_B, 'admin', TX);
       expect(events.publish).toHaveBeenCalledWith(ChatEvents.CONVERSATION_UPDATED, {
         conversationId: CONVERSATION_ID,
         change: 'member_left',
@@ -520,7 +545,7 @@ describe('ConversationService', () => {
 
       await service.leave(USER_A, CONVERSATION_ID);
 
-      expect(conversations.delete).toHaveBeenCalledWith(CONVERSATION_ID);
+      expect(conversations.delete).toHaveBeenCalledWith(CONVERSATION_ID, TX);
       expect(events.publish).toHaveBeenCalledTimes(1);
       expect(events.publish).toHaveBeenCalledWith(ChatEvents.CONVERSATION_DELETED, {
         conversationId: CONVERSATION_ID,
@@ -532,6 +557,14 @@ describe('ConversationService', () => {
         expect.anything()
       );
     });
+
+    it('não publica nada quando o trabalho dentro do lock falha', async () => {
+      givenMembership(conversation(), [participant(USER_A, 'admin')]);
+      participants.remove.mockRejectedValue(new Error('db down'));
+
+      await expect(service.leave(USER_A, CONVERSATION_ID)).rejects.toThrow('db down');
+      expect(events.publish).not.toHaveBeenCalled();
+    });
   });
 
   describe('addMembers', () => {
@@ -541,8 +574,10 @@ describe('ConversationService', () => {
 
       await service.addMembers(USER_A, CONVERSATION_ID, [USER_B, USER_C, USER_C]);
 
+      expect(conversations.withLock).toHaveBeenCalledWith(CONVERSATION_ID, expect.any(Function));
+      expect(participants.listByConversation).toHaveBeenNthCalledWith(1, CONVERSATION_ID, TX);
       expect(users.getMultiple).toHaveBeenNthCalledWith(1, [USER_C]);
-      expect(participants.addMembers).toHaveBeenCalledWith(CONVERSATION_ID, [USER_C]);
+      expect(participants.addMembers).toHaveBeenCalledWith(CONVERSATION_ID, [USER_C], TX);
       expect(events.publish).toHaveBeenCalledWith(ChatEvents.CONVERSATION_UPDATED, {
         conversationId: CONVERSATION_ID,
         change: 'members_added',
@@ -569,7 +604,7 @@ describe('ConversationService', () => {
       );
     });
 
-    it('deve responder 400 ao estourar 256 participantes', async () => {
+    it('deve responder 400 ao estourar 256 participantes (contagem lida sob o lock)', async () => {
       const current = Array.from({ length: 256 }, (_, i) =>
         participant(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
       );
@@ -578,6 +613,7 @@ describe('ConversationService', () => {
       await expect(service.addMembers(USER_A, CONVERSATION_ID, [USER_C])).rejects.toThrow(
         GroupParticipantLimitException
       );
+      expect(participants.addMembers).not.toHaveBeenCalled();
     });
 
     it('deve responder 404 para usuário inexistente', async () => {
@@ -598,20 +634,22 @@ describe('ConversationService', () => {
 
       await service.removeMember(USER_A, CONVERSATION_ID, USER_A);
 
-      expect(participants.remove).toHaveBeenCalledWith(CONVERSATION_ID, USER_A);
+      expect(participants.remove).toHaveBeenCalledWith(CONVERSATION_ID, USER_A, TX);
       expect(events.publish).toHaveBeenCalledWith(
         ChatEvents.CONVERSATION_UPDATED,
         expect.objectContaining({ change: 'member_left' })
       );
     });
 
-    it('admin remove membro e publica member_removed', async () => {
+    it('admin remove membro (dentro do lock) e publica member_removed', async () => {
       givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
       participants.listByConversation.mockResolvedValue([participant(USER_A, 'admin')]);
 
       await service.removeMember(USER_A, CONVERSATION_ID, USER_B);
 
-      expect(participants.remove).toHaveBeenCalledWith(CONVERSATION_ID, USER_B);
+      expect(conversations.withLock).toHaveBeenCalledWith(CONVERSATION_ID, expect.any(Function));
+      expect(participants.find).toHaveBeenCalledWith(CONVERSATION_ID, USER_B, TX);
+      expect(participants.remove).toHaveBeenCalledWith(CONVERSATION_ID, USER_B, TX);
       expect(events.publish).toHaveBeenCalledWith(ChatEvents.CONVERSATION_UPDATED, {
         conversationId: CONVERSATION_ID,
         change: 'member_removed',
@@ -621,12 +659,28 @@ describe('ConversationService', () => {
       });
     });
 
+    it('publica CONVERSATION_DELETED (não member_removed) quando a remoção esvazia a conversa', async () => {
+      givenMembership(conversation(), [participant(USER_A, 'admin'), participant(USER_B)]);
+      participants.listByConversation.mockResolvedValue([]);
+
+      await service.removeMember(USER_A, CONVERSATION_ID, USER_B);
+
+      expect(conversations.delete).toHaveBeenCalledWith(CONVERSATION_ID, TX);
+      expect(events.publish).toHaveBeenCalledTimes(1);
+      expect(events.publish).toHaveBeenCalledWith(ChatEvents.CONVERSATION_DELETED, {
+        conversationId: CONVERSATION_ID,
+        actorId: USER_A,
+        participantIds: [USER_B],
+      });
+    });
+
     it('deve responder 404 quando o alvo não participa', async () => {
       givenMembership(conversation(), [participant(USER_A, 'admin')]);
 
       await expect(service.removeMember(USER_A, CONVERSATION_ID, USER_C)).rejects.toThrow(
         ParticipantNotFoundException
       );
+      expect(participants.remove).not.toHaveBeenCalled();
     });
 
     it('deve responder 403 para não admin', async () => {

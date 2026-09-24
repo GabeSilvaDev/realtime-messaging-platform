@@ -115,6 +115,7 @@ describe('MessageService', () => {
       rename: jest.fn(),
       touchLastMessageAt: jest.fn(),
       delete: jest.fn(),
+      withLock: jest.fn(),
     };
     participants = {
       find: jest.fn(),

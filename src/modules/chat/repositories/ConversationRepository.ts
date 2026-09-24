@@ -4,6 +4,7 @@ import Conversation from '../models/Conversation';
 import Participant from '../models/Participant';
 import type { IConversationRepository, ListForUserOptions } from '../interfaces';
 import type {
+  ChatTransaction,
   ConversationAttributes,
   ConversationListPage,
   CreateDirectData,
@@ -12,8 +13,11 @@ import type {
 } from '../types';
 
 export class ConversationRepository implements IConversationRepository {
-  async findById(id: string): Promise<ConversationAttributes | null> {
-    const conversation = await Conversation.findByPk(id);
+  async findById(
+    id: string,
+    transaction?: ChatTransaction
+  ): Promise<ConversationAttributes | null> {
+    const conversation = await Conversation.findByPk(id, { transaction });
     return conversation?.toJSON() ?? null;
   }
 
@@ -127,8 +131,18 @@ export class ConversationRepository implements IConversationRepository {
     );
   }
 
-  async delete(id: string): Promise<void> {
-    await Conversation.destroy({ where: { id } });
+  async delete(id: string, transaction?: ChatTransaction): Promise<void> {
+    await Conversation.destroy({ where: { id }, transaction });
+  }
+
+  async withLock<T>(
+    conversationId: string,
+    work: (transaction: ChatTransaction) => Promise<T>
+  ): Promise<T> {
+    return sequelize.transaction(async (transaction) => {
+      await Conversation.findByPk(conversationId, { transaction, lock: transaction.LOCK.UPDATE });
+      return work(transaction);
+    });
   }
 }
 

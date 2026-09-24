@@ -8,6 +8,7 @@ import type {
   ListForUserOptions,
 } from '@/modules/chat/interfaces';
 import type {
+  ChatTransaction,
   ConversationAttributes,
   ConversationListPage,
   CreateDirectData,
@@ -19,6 +20,9 @@ import type {
   ParticipantAttributes,
   ParticipantRole,
 } from '@/modules/chat/types';
+
+/** Os repositórios em memória não têm transação real: o lock vira execução direta. */
+const IN_MEMORY_TRANSACTION = {} as ChatTransaction;
 
 export class InMemoryChatStore {
   conversations = new Map<string, ConversationAttributes>();
@@ -172,6 +176,13 @@ export class InMemoryConversationRepository implements IConversationRepository {
   async delete(id: string): Promise<void> {
     this.store.conversations.delete(id);
     this.store.participants = this.store.participants.filter((p) => p.conversationId !== id);
+  }
+
+  async withLock<T>(
+    _conversationId: string,
+    work: (transaction: ChatTransaction) => Promise<T>
+  ): Promise<T> {
+    return work(IN_MEMORY_TRANSACTION);
   }
 }
 
