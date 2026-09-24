@@ -716,6 +716,15 @@ describe('ConversationService', () => {
       await expect(service.getParticipantIds(CONVERSATION_ID)).resolves.toEqual([USER_A, USER_B]);
     });
 
+    it('getTypeForParticipant devolve o tipo para participante e 404 para quem não participa', async () => {
+      givenMembership(conversation({ type: 'direct' }), [participant(USER_A), participant(USER_B)]);
+
+      await expect(service.getTypeForParticipant(USER_A, CONVERSATION_ID)).resolves.toBe('direct');
+      await expect(service.getTypeForParticipant(USER_C, CONVERSATION_ID)).rejects.toThrow(
+        ConversationNotFoundException
+      );
+    });
+
     it('getUserConversationIds', async () => {
       participants.listConversationIdsByUser.mockResolvedValue([CONVERSATION_ID]);
 

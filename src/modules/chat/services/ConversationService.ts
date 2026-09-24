@@ -26,6 +26,7 @@ import type {
   ConversationChange,
   ConversationDTO,
   ConversationListEntry,
+  ConversationType,
   CreateDirectResult,
   CreateGroupDTO,
   ListConversationsOptions,
@@ -282,6 +283,11 @@ export class ConversationService implements IConversationService {
 
   async getUserConversationIds(userId: string): Promise<string[]> {
     return this.participants.listConversationIdsByUser(userId);
+  }
+
+  async getTypeForParticipant(userId: string, conversationId: string): Promise<ConversationType> {
+    const { conversation } = await this.requireMembership(conversationId, userId);
+    return conversation.type;
   }
 
   /** Não participante recebe 404 — não revela a existência da conversa. */
