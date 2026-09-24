@@ -1,2 +1,2 @@
 export { createSocketAuthMiddleware, extractHandshakeToken } from './socketAuth';
-export { createJoinRoomsMiddleware } from './joinRooms';
+export { createJoinRoomsMiddleware, reconcileConversationRooms } from './joinRooms';

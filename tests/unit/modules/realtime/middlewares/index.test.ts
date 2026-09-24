@@ -8,5 +8,6 @@ describe('realtime middlewares index', () => {
     expect(typeof middlewares.createSocketAuthMiddleware).toBe('function');
     expect(typeof middlewares.createJoinRoomsMiddleware).toBe('function');
     expect(typeof middlewares.extractHandshakeToken).toBe('function');
+    expect(typeof middlewares.reconcileConversationRooms).toBe('function');
   });
 });

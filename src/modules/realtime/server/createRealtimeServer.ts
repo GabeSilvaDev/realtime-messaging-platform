@@ -13,7 +13,11 @@ import { logger } from '@/shared/logger';
 import { buildCorsOptions } from '@/shared/middlewares/cors';
 import { registerMessageHandlers, registerTypingHandlers } from '../handlers';
 import { registerRealtimeListeners } from '../listeners';
-import { createJoinRoomsMiddleware, createSocketAuthMiddleware } from '../middlewares';
+import {
+  createJoinRoomsMiddleware,
+  createSocketAuthMiddleware,
+  reconcileConversationRooms,
+} from '../middlewares';
 import { TypingService } from '../services';
 import type { RealtimeServer } from '../types';
 
@@ -87,6 +91,9 @@ export function createRealtimeServer(
   io.use(createJoinRoomsMiddleware(conversations));
 
   io.on('connection', (socket) => {
+    // Corrige mudanças de participação ocorridas durante o handshake (a ponte ainda não via o
+    // socket); nunca rejeita — falhas são logadas e desconectam o socket.
+    void reconcileConversationRooms(socket, conversations);
     registerMessageHandlers(socket, { messages });
     registerTypingHandlers(socket, { conversations, typing });
   });

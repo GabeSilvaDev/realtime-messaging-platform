@@ -22,6 +22,19 @@ const mockCreateAdapter = createAdapter as jest.Mock;
 const USER_A = '11111111-1111-4111-8111-111111111111';
 const CONVERSATION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
+/** Espera (poll curto) até a condição valer; falha após ~1s. */
+async function waitFor(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (condition()) {
+      return;
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, 10);
+    });
+  }
+  throw new Error('condição não atingida a tempo');
+}
+
 function fakePubSubPair(): {
   pub: { quit: jest.Mock; on: jest.Mock };
   sub: { quit: jest.Mock; on: jest.Mock };
@@ -264,6 +277,26 @@ describe('createRealtimeServer', () => {
       await expect(
         socket.emitWithAck('message:read', { conversationId: CONVERSATION_ID, messageId: 'x' })
       ).resolves.toEqual(expect.objectContaining({ ok: false }));
+    });
+
+    it('reconcilia as rooms na conexão: participação removida durante o handshake não fica', async () => {
+      // Middleware lê a conversa; na conexão ela já não é do usuário (removido nesse intervalo,
+      // quando o socketsLeave da ponte ainda não alcançava o socket).
+      deps.conversations.getUserConversationIds
+        .mockResolvedValueOnce([CONVERSATION_ID])
+        .mockResolvedValueOnce([]);
+
+      const socket = client('good');
+      await new Promise<void>((resolve) => {
+        socket.on('connect', () => {
+          resolve();
+        });
+      });
+
+      const rooms = handle.io.of('/').adapter.rooms;
+      await waitFor(() => !rooms.has(`conversation:${CONVERSATION_ID}`));
+      expect(deps.conversations.getUserConversationIds).toHaveBeenCalledTimes(2);
+      expect(rooms.get(`user:${USER_A}`)?.size).toBe(1);
     });
 
     it('close cancela a ponte do EventBus', async () => {

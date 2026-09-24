@@ -129,7 +129,7 @@ Messages live only in MongoDB (`messages` collection, indexes `{ conversationId:
 
 ### Real-time — Socket.IO
 
-Socket.IO shares the HTTP server and port (`http://localhost:3000`, path `/socket.io/`). Connect with the access token in the handshake — `io(url, { auth: { token } })` (preferred) or an `Authorization: Bearer <token>` header; a missing or invalid token fails with `connect_error` and `message: 'UNAUTHORIZED'`. During the handshake the socket joins `user:<id>` and `conversation:<id>` for each of the user's conversations, so every automatic reconnection restores the rooms; messages sent while disconnected are fetched over REST (`GET /api/conversations/:id/messages?before=`). CORS follows the HTTP policy (`ALLOWED_ORIGINS` in production).
+Socket.IO shares the HTTP server and port (`http://localhost:3000`, path `/socket.io/`). Connect with the access token in the handshake — `io(url, { auth: { token } })` (preferred) or an `Authorization: Bearer <token>` header; a missing or invalid token fails with `connect_error` and `message: 'UNAUTHORIZED'`. During the handshake the socket joins `user:<id>` and `conversation:<id>` for each of the user's conversations, so every automatic reconnection restores the rooms; once connected, the server re-reads the user's conversations and reconciles the `conversation:*` rooms (a membership change that happened mid-handshake, when room updates couldn't reach the socket yet, is applied — a removed member doesn't keep receiving the conversation); messages sent while disconnected are fetched over REST (`GET /api/conversations/:id/messages?before=`). CORS follows the HTTP policy (`ALLOWED_ORIGINS` in production).
 
 Client → server events (every one accepts an ack):
 

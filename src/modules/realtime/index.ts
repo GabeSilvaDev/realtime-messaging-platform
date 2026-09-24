@@ -10,6 +10,7 @@ export {
   createSocketAuthMiddleware,
   createJoinRoomsMiddleware,
   extractHandshakeToken,
+  reconcileConversationRooms,
 } from './middlewares';
 
 export { TypingService } from './services';

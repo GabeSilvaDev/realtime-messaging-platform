@@ -14,7 +14,15 @@ export interface FakeSocket {
     headers: Record<string, string | undefined>;
     address: string;
   };
+  /** Rooms atuais (começa com a room do próprio id, como no Socket.IO). */
+  rooms: Set<string>;
+  connected: boolean;
+  /** Adiciona a(s) room(s) em `rooms`. */
   join: jest.Mock;
+  /** Remove a room de `rooms`. */
+  leave: jest.Mock;
+  /** Marca `connected = false`. */
+  disconnect: jest.Mock;
   on: jest.Mock;
   to: jest.Mock;
   /** Emissões feitas via `socket.to(room).emit(...)`, na ordem: `[room, event, payload]`. */
@@ -29,11 +37,24 @@ export function createFakeSocket(
 ): FakeSocket {
   const broadcasts: [string, string, unknown][] = [];
   const handlers = new Map<string, (...args: unknown[]) => void>();
+  const id = overrides.id ?? 'socket-1';
+  const rooms = new Set<string>([id]);
   const socket: FakeSocket = {
-    id: overrides.id ?? 'socket-1',
+    id,
     data: overrides.data ?? {},
     handshake: { auth: {}, headers: {}, address: '127.0.0.1' },
-    join: jest.fn(),
+    rooms,
+    connected: true,
+    join: jest.fn((room: string | string[]) => {
+      (Array.isArray(room) ? room : [room]).forEach((name) => rooms.add(name));
+    }),
+    leave: jest.fn((room: string) => {
+      rooms.delete(room);
+    }),
+    disconnect: jest.fn(() => {
+      socket.connected = false;
+      return socket;
+    }),
     on: jest.fn((event: string, handler: (...args: unknown[]) => void) => {
       handlers.set(event, handler);
       return socket;
